@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}Добавить слово — English Mentor Bot{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow dark">Новое слово</p>
+
+    <h1>Добавить слово</h1>
+
+    <p>
+        Добавь английское слово, перевод и пример. Позже эти данные будут использоваться
+        и на сайте, и в Telegram-боте.
+    </p>
+</section>
+
+<section class="form-section">
+    <form class="word-form" method="post">
+        {% csrf_token %}
+
+        <div class="form-field">
+            <label for="{{ form.english.id_for_label }}">
+                Слово на английском
+            </label>
+            {{ form.english }}
+            {{ form.english.errors }}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.translation.id_for_label }}">
+                Перевод
+            </label>
+            {{ form.translation }}
+            {{ form.translation.errors }}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.example.id_for_label }}">
+                Пример использования
+            </label>
+            {{ form.example }}
+            {{ form.example.errors }}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.difficulty.id_for_label }}">
+                Сложность
+            </label>
+            {{ form.difficulty }}
+            {{ form.difficulty.errors }}
+        </div>
+
+        <div class="form-actions">
+            <button class="button button-primary blue" type="submit">
+                Сохранить слово
+            </button>
+
+            <a class="button button-secondary" href="{% url 'learning:word_list' %}">
+                Отмена
+            </a>
+        </div>
+    </form>
+</section>
+{% endblock %}

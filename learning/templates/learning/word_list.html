@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block title %}Слова — English Mentor Bot{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow dark">Словарный тренажер</p>
+
+    <div class="page-header-row">
+        <div>
+            <h1>Мои английские слова</h1>
+
+            <p>
+                Здесь будет храниться словарь для повторения, тренировок и проверки знаний.
+            </p>
+        </div>
+
+        <div class="page-actions">
+            <a class="button button-secondary" href="{% url 'learning:word_training' %}">
+                Тренировка
+            </a>
+
+            <a class="button button-primary blue" href="{% url 'learning:word_create' %}">
+                Добавить слово
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="words-section">
+    {% if words %}
+        <div class="words-grid">
+            {% for word in words %}
+                <article class="word-card">
+                    <div class="word-card-header">
+                        <div>
+                            <h2>{{ word.english }}</h2>
+
+                            <button
+                                class="speak-button"
+                                type="button"
+                                data-speak="{{ word.english }}"
+                            >
+                                🔊 Произнести слово
+                            </button>
+                        </div>
+
+                        <span class="difficulty difficulty-{{ word.difficulty }}">
+                            {{ word.get_difficulty_display }}
+                        </span>
+                    </div>
+
+                    <p class="translation">{{ word.translation }}</p>
+
+                    {% if word.example %}
+                        <div class="example-box">
+                            <p class="example">
+                                “{{ word.example }}”
+                            </p>
+
+                            <button
+                                class="speak-button small"
+                                type="button"
+                                data-speak="{{ word.example }}"
+                            >
+                                🔊 Произнести пример
+                            </button>
+                        </div>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <h2>Пока нет слов</h2>
+            <p>
+                Добавь первые слова через форму на сайте, и они появятся здесь.
+            </p>
+
+            <a class="button button-primary blue" href="{% url 'learning:word_create' %}">
+                Добавить первое слово
+            </a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const speakButtons = document.querySelectorAll('[data-speak]');
+
+    speakButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const text = button.dataset.speak;
+
+            if (!text) {
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.9;
+
+            window.speechSynthesis.speak(utterance);
+        });
+    });
+</script>
+{% endblock %}

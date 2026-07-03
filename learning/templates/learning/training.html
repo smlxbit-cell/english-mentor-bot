@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+
+{% block title %}Тренировка — English Mentor Bot{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <p class="eyebrow dark">Тренировка</p>
+
+    <h1>Выбери перевод</h1>
+
+    <p>
+        Посмотри на английское слово и выбери правильный перевод из вариантов.
+    </p>
+</section>
+
+<section class="training-section">
+    {% if word %}
+        <div class="training-card">
+            {% if result %}
+                {% if result.is_correct %}
+                    <div class="result-box result-success">
+                        <h2>✅ Верно!</h2>
+                        <p>
+                            Твой ответ: <strong>{{ result.selected_answer }}</strong>
+                        </p>
+                    </div>
+                {% else %}
+                    <div class="result-box result-error">
+                        <h2>❌ Не совсем</h2>
+                        <p>
+                            Твой ответ: <strong>{{ result.selected_answer }}</strong>
+                        </p>
+                        <p>
+                            Правильный ответ: <strong>{{ result.correct_answer }}</strong>
+                        </p>
+                    </div>
+                {% endif %}
+
+                <div class="training-word">
+                    <p class="training-label">Слово было:</p>
+
+                    <h2>{{ word.english }}</h2>
+
+                    <button
+                        class="speak-button"
+                        type="button"
+                        data-speak="{{ word.english }}"
+                    >
+                        🔊 Произнести слово
+                    </button>
+
+                    {% if word.example %}
+                        <p class="training-example">
+                            “{{ word.example }}”
+                        </p>
+
+                        <button
+                            class="speak-button small"
+                            type="button"
+                            data-speak="{{ word.example }}"
+                        >
+                            🔊 Произнести пример
+                        </button>
+                    {% endif %}
+                </div>
+
+                <div class="form-actions">
+                    <a class="button button-primary blue" href="{% url 'learning:word_training' %}">
+                        Следующее слово
+                    </a>
+
+                    <a class="button button-secondary" href="{% url 'learning:word_list' %}">
+                        К списку слов
+                    </a>
+                </div>
+            {% else %}
+                <form method="post">
+                    {% csrf_token %}
+
+                    <input type="hidden" name="word_id" value="{{ word.id }}">
+
+                    <div class="training-word">
+                        <p class="training-label">Как переводится слово?</p>
+
+                        <h2>{{ word.english }}</h2>
+
+                        <button
+                            class="speak-button"
+                            type="button"
+                            data-speak="{{ word.english }}"
+                        >
+                            🔊 Произнести слово
+                        </button>
+                    </div>
+
+                    <div class="answer-options">
+                        {% for option in options %}
+                            <button
+                                class="answer-option"
+                                type="submit"
+                                name="answer"
+                                value="{{ option }}"
+                            >
+                                {{ option }}
+                            </button>
+                        {% endfor %}
+                    </div>
+
+                    <div class="form-actions">
+                        <a class="button button-secondary" href="{% url 'learning:word_list' %}">
+                            К списку слов
+                        </a>
+                    </div>
+                </form>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <h2>Пока нет слов для тренировки</h2>
+
+            <p>
+                Сначала добавь несколько слов, а потом возвращайся к тренировке.
+            </p>
+
+            <a class="button button-primary blue" href="{% url 'learning:word_create' %}">
+                Добавить слово
+            </a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const speakButtons = document.querySelectorAll('[data-speak]');
+
+    speakButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const text = button.dataset.speak;
+
+            if (!text) {
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.9;
+
+            window.speechSynthesis.speak(utterance);
+        });
+    });
+</script>
+{% endblock %}
