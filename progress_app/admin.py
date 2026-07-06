@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ErrorLog, SkillProgress, UserWordProgress
+from .models import ErrorLog, SkillProgress, UserRule, UserWordProgress
 
 
 @admin.register(UserWordProgress)
@@ -44,6 +44,13 @@ class SkillProgressAdmin(admin.ModelAdmin):
         'user__first_name',
         'skill',
     )
+
+
+@admin.register(UserRule)
+class UserRuleAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'rule', 'status', 'updated_at')
+    list_filter = ('status', 'rule__level', 'rule__topic')
+    search_fields = ('user__telegram_username', 'user__first_name', 'rule__title', 'rule__key')
 
 
 @admin.register(ErrorLog)

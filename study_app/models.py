@@ -171,3 +171,84 @@ class UserAnswer(models.Model):
 
     def __str__(self):
         return f'{self.user} — {self.block}'
+
+
+class LessonProgress(models.Model):
+    """Per-user progress through a content_app.Lesson."""
+
+    class Status(models.TextChoices):
+        IN_PROGRESS = 'in_progress', 'In progress'
+        COMPLETED = 'completed', 'Completed'
+
+    user = models.ForeignKey(
+        'users_app.UserProfile',
+        on_delete=models.CASCADE,
+        related_name='lesson_progress',
+    )
+    lesson = models.ForeignKey(
+        'content_app.Lesson',
+        on_delete=models.CASCADE,
+        related_name='user_progress',
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.IN_PROGRESS,
+    )
+
+    current_step_index = models.PositiveIntegerField(default=0)
+
+    correct_count = models.PositiveIntegerField(default=0)
+    total_answered = models.PositiveIntegerField(default=0)
+    xp_earned = models.PositiveIntegerField(default=0)
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'lesson'],
+                name='unique_user_lesson_progress',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.lesson} ({self.status})'
+
+
+class StepAttempt(models.Model):
+    """A learner's answer to one interactive LessonStep (for analytics/feedback)."""
+
+    user = models.ForeignKey(
+        'users_app.UserProfile',
+        on_delete=models.CASCADE,
+        related_name='step_attempts',
+    )
+    lesson = models.ForeignKey(
+        'content_app.Lesson',
+        on_delete=models.CASCADE,
+        related_name='step_attempts',
+    )
+    step = models.ForeignKey(
+        'content_app.LessonStep',
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+
+    answer_text = models.TextField(blank=True)
+    is_correct = models.BooleanField(default=False)
+    score = models.FloatField(default=0.0)
+    used_ai = models.BooleanField(default=False)
+    method = models.CharField(max_length=30, blank=True)
+    feedback = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user} — step {self.step_id}'

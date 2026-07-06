@@ -37,6 +37,18 @@ class UserProfile(models.Model):
         IN_PROGRESS = 'in_progress', 'In progress'
         COMPLETED = 'completed', 'Completed'
 
+    class Sphere(models.TextChoices):
+        ECOMMERCE = 'ecommerce', 'E-commerce'
+        IT = 'it', 'IT / разработка'
+        HOSPITALITY = 'hospitality', 'Отели / туризм'
+        FOOD = 'food', 'Кафе / рестораны'
+        EDUCATION = 'education', 'Образование'
+        PSYCHOLOGY = 'psychology', 'Психология'
+        MEDICINE = 'medicine', 'Медицина'
+        FINANCE = 'finance', 'Финансы'
+        MARKETING = 'marketing', 'Маркетинг'
+        OTHER = 'other', 'Другое'
+
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
     telegram_username = models.CharField(max_length=150, blank=True)
     first_name = models.CharField(max_length=150, blank=True)
@@ -52,6 +64,13 @@ class UserProfile(models.Model):
         max_length=30,
         choices=LearningGoal.choices,
         blank=True,
+    )
+
+    profession = models.CharField(
+        max_length=30,
+        choices=Sphere.choices,
+        blank=True,
+        help_text='Professional sphere used to bias personalized content.',
     )
 
     daily_minutes = models.PositiveSmallIntegerField(default=10)
@@ -72,12 +91,41 @@ class UserProfile(models.Model):
     preferred_formats = models.JSONField(default=list, blank=True)
 
     current_story_day = models.PositiveIntegerField(default=1)
-    timezone = models.CharField(max_length=50, default='UTC')
+    timezone = models.CharField(max_length=50, default='Europe/Moscow')
+
+    notifications_enabled = models.BooleanField(
+        default=False,
+        help_text='Send daily training reminders via Telegram.',
+    )
+    reminder_time = models.TimeField(
+        null=True, blank=True,
+        help_text='Local reminder time (uses timezone field).',
+    )
+    reminder_setup_done = models.BooleanField(
+        default=False,
+        help_text='User was asked about notifications (do not re-prompt).',
+    )
+
+    # Diagnostic + trial state (free funnel before subscription).
+    diagnostic_completed = models.BooleanField(default=False)
+    trial_lessons_used = models.PositiveIntegerField(default=0)
+    weak_skills = models.JSONField(
+        default=list, blank=True,
+        help_text="Skills to focus on, e.g. ['listening', 'grammar'].",
+    )
 
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    last_seen = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Updated on every bot interaction (not just /start).',
+    )
+    last_inactive_nudge_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Last “we miss you” message sent after 7+ days away.',
+    )
 
     class Meta:
         ordering = ['-created_at']

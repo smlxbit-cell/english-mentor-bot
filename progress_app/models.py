@@ -121,3 +121,45 @@ class ErrorLog(models.Model):
 
     def __str__(self):
         return f'{self.user} — {self.error_type}'
+
+
+class UserRule(models.Model):
+    """Learner's personal grammar rule status (Rules Library checkmarks)."""
+
+    class Status(models.TextChoices):
+        NEW = 'new', 'New'
+        LEARNED = 'learned', 'Learned'
+        KNOWN = 'known', 'Already knew'
+
+    user = models.ForeignKey(
+        'users_app.UserProfile',
+        on_delete=models.CASCADE,
+        related_name='user_rules',
+    )
+    rule = models.ForeignKey(
+        'content_app.GrammarRule',
+        on_delete=models.CASCADE,
+        related_name='user_rules',
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.NEW,
+    )
+    note = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'rule'],
+                name='unique_user_rule',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.rule} ({self.status})'

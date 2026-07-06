@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import DailySession, DailySessionBlock, UserAnswer
+from .models import (
+    DailySession,
+    DailySessionBlock,
+    LessonProgress,
+    StepAttempt,
+    UserAnswer,
+)
 
 
 class DailySessionBlockInline(admin.TabularInline):
@@ -98,3 +104,25 @@ class UserAnswerAdmin(admin.ModelAdmin):
         'corrected_text',
     )
     readonly_fields = ('answered_at',)
+
+
+@admin.register(LessonProgress)
+class LessonProgressAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'user', 'lesson', 'status', 'current_step_index',
+        'correct_count', 'total_answered', 'xp_earned', 'completed_at',
+    )
+    list_filter = ('status', 'started_at')
+    search_fields = ('user__telegram_username', 'user__first_name', 'lesson__title')
+    readonly_fields = ('started_at',)
+
+
+@admin.register(StepAttempt)
+class StepAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'user', 'lesson', 'step', 'is_correct', 'score',
+        'used_ai', 'method', 'created_at',
+    )
+    list_filter = ('is_correct', 'used_ai', 'method', 'created_at')
+    search_fields = ('user__telegram_username', 'answer_text', 'feedback')
+    readonly_fields = ('created_at',)

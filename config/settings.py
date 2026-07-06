@@ -20,14 +20,94 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# -------------------------------------------------------------------
+# Telegram
+# -------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_PAYMENT_PROVIDER_TOKEN = os.getenv('TELEGRAM_PAYMENT_PROVIDER_TOKEN', '')
 
-MONTHLY_SUBSCRIPTION_PRICE_KOPEKS = int(
-    os.getenv('MONTHLY_SUBSCRIPTION_PRICE_KOPEKS', '99000')
-)
+# -------------------------------------------------------------------
+# Subscription / billing (single plan)
+# -------------------------------------------------------------------
+# One plan: 390 RUB for 30 days, no auto-renewal.
+SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 390)
+SUBSCRIPTION_PRICE_KOPEKS = SUBSCRIPTION_PRICE_RUB * 100
+SUBSCRIPTION_DAYS = env_int('SUBSCRIPTION_DAYS', 30)
+TRIAL_LESSONS_LIMIT = env_int('TRIAL_LESSONS_LIMIT', 2)
 
+# 'mock'  -> instant activation for development / YooKassa screenshots
+# 'live'  -> real payment via YooKassa (enable after store moderation)
+# To go live: set PAYMENT_MODE=live and TELEGRAM_PAYMENT_PROVIDER_TOKEN
+# (the YooKassa provider token from @BotFather → Payments). Nothing else in the
+# bot needs to change; buy_subscription() already sends a real Telegram invoice.
 PAYMENT_MODE = os.getenv('PAYMENT_MODE', 'mock')
+
+# YooKassa (filled in after the store is approved)
+YOOKASSA_SHOP_ID = os.getenv('YOOKASSA_SHOP_ID', '')
+YOOKASSA_SECRET_KEY = os.getenv('YOOKASSA_SECRET_KEY', '')
+
+# Backwards-compat with legacy bot_app while it is being retired.
+MONTHLY_SUBSCRIPTION_PRICE_KOPEKS = SUBSCRIPTION_PRICE_KOPEKS
+
+# -------------------------------------------------------------------
+# AI provider (answer checking, hints, AI dialogue) — economical by design
+# -------------------------------------------------------------------
+# 'openai' | 'openai_compatible' (any OpenAI-style gateway) | 'mock'.
+AI_PROVIDER = os.getenv(
+    'AI_PROVIDER',
+    'openai' if os.getenv('OPENAI_API_KEY') else 'mock',
+)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+# Optional tiered models (fall back to OPENAI_MODEL). Cheap = simple checks,
+# advanced = harder writing/dialogue. Lets us spend less on trivial tasks.
+OPENAI_CHEAP_MODEL = os.getenv('OPENAI_CHEAP_MODEL', OPENAI_MODEL)
+OPENAI_ADVANCED_MODEL = os.getenv('OPENAI_ADVANCED_MODEL', OPENAI_MODEL)
+# Base URL of the OpenAI-compatible endpoint (proxy/gateway friendly).
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+
+# Request/behaviour tuning (read from .env with these exact names).
+AI_TIMEOUT_SECONDS = env_int('AI_TIMEOUT_SECONDS', 30)
+AI_MAX_OUTPUT_TOKENS = env_int('AI_MAX_OUTPUT_TOKENS', 400)
+# How many recent chat messages to keep in an AI dialogue window.
+AI_HISTORY_MESSAGES = env_int('AI_HISTORY_MESSAGES', 8)
+
+# Token-economy guardrail (internal; not required in .env).
+AI_DAILY_CALL_LIMIT_PER_USER = env_int('AI_DAILY_CALL_LIMIT_PER_USER', 40)
+
+# -------------------------------------------------------------------
+# Text-to-speech (voicing English words / phrases for listening practice)
+# -------------------------------------------------------------------
+TTS_ENABLED = env_bool('TTS_ENABLED', True)
+# 'edge'  -> free Microsoft Edge neural voices (no key, works from Russia)
+# 'openai'-> OpenAI-compatible /audio/speech (uses your OPENAI_* credentials)
+# 'mock'  -> disabled / offline
+TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'edge')
+TTS_VOICE = os.getenv('TTS_VOICE', 'en-US-AriaNeural')
+TTS_TIMEOUT_SECONDS = env_int('TTS_TIMEOUT_SECONDS', 30)
+# Used only when TTS_PROVIDER=openai
+OPENAI_TTS_MODEL = os.getenv('OPENAI_TTS_MODEL', 'tts-1')
+OPENAI_TTS_VOICE = os.getenv('OPENAI_TTS_VOICE', 'alloy')
+
+# -------------------------------------------------------------------
+# Speech-to-text (voice answers) — Yandex SpeechKit
+# -------------------------------------------------------------------
+STT_PROVIDER = os.getenv('STT_PROVIDER', 'yandex' if os.getenv('YANDEX_SPEECHKIT_API_KEY') else 'mock')
+YANDEX_SPEECHKIT_API_KEY = os.getenv('YANDEX_SPEECHKIT_API_KEY', '')
+YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID', '')
+YANDEX_STT_TIMEOUT_SECONDS = env_int('YANDEX_STT_TIMEOUT_SECONDS', 20)
 
 
 # Quick-start development settings - unsuitable for production
@@ -63,8 +143,11 @@ INSTALLED_APPS = [
     'study_app',
     'progress_app',
     'gamification_app',
+    'billing_app',
     'telegram_app',
     'ai_app',
+
+    # Legacy (being retired; kept installed until data migration is done)
     'bot_app',
 ]
 
@@ -148,4 +231,8 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+
+# Media (uploaded lesson media: images, audio, video, GIFs)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
