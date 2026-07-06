@@ -10,4 +10,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS('English Mentor bot starting…'))
         application = build_application()
-        application.run_polling()
+        # Retry forever on Telegram network errors (server/VPS may be slow to reach api.telegram.org).
+        application.run_polling(
+            bootstrap_retries=-1,
+            drop_pending_updates=False,
+        )

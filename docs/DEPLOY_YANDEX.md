@@ -202,6 +202,27 @@ sudo systemctl restart english-mentor-bot
 | Два бота | остановить `runbot` на ПК |
 | Нет Spirit | `sync_spirit_media --force` на сервере |
 | Голос не работает | проверить `YANDEX_*` в `.env` |
+| **`curl api.telegram.org` timeout** | **Yandex VM не видит Telegram** — см. ниже |
+
+### Telegram заблокирован с VPS (ваш случай)
+
+Проверка на сервере:
+
+```bash
+curl -I --max-time 20 https://api.telegram.org
+```
+
+Если **timeout** — бот с этого сервера **не сможет** работать без прокси.
+
+**Варианты:**
+
+1. **Проще всего:** другой VPS, где Telegram открыт (Hetzner Финляндия ~€4, Timeweb/Selectel — проверить `curl` перед оплатой).
+2. **Остаться на Yandex:** прокси в `.env`:
+   ```env
+   TELEGRAM_PROXY=socks5://127.0.0.1:1080
+   ```
+   Поднять SOCKS на маленьком EU-VPS или через `ssh -D` туннель (autossh).
+3. После смены хоста или прокси: `systemctl restart english-mentor-bot`.
 
 ---
 

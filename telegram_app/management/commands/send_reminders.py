@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config.settings import TELEGRAM_BOT_TOKEN
 from telegram_app.bot import db
+from telegram_app.bot.telegram_client import make_bot
 
 
 class Command(BaseCommand):
@@ -41,7 +42,7 @@ class Command(BaseCommand):
             self.stdout.write(f'No users due at {hour:02d}:{minute:02d}.')
             return
 
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        bot = make_bot()
         sent = 0
         for u in users:
             plan = u['plan']

@@ -37,6 +37,9 @@ def env_int(name: str, default: int) -> int:
 # -------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_PAYMENT_PROVIDER_TOKEN = os.getenv('TELEGRAM_PAYMENT_PROVIDER_TOKEN', '')
+# If api.telegram.org is blocked from your VPS (common on some RU DCs), set e.g.:
+# TELEGRAM_PROXY=socks5://127.0.0.1:1080  or  http://user:pass@host:port
+TELEGRAM_PROXY = os.getenv('TELEGRAM_PROXY', '').strip()
 
 # -------------------------------------------------------------------
 # Subscription / billing (single plan)

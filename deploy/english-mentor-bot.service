@@ -11,7 +11,8 @@ WorkingDirectory=/home/mentor/english-mentor-bot
 EnvironmentFile=/home/mentor/english-mentor-bot/.env
 ExecStart=/home/mentor/english-mentor-bot/.venv/bin/python manage.py runbot
 Restart=always
-RestartSec=10
+RestartSec=15
+StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target

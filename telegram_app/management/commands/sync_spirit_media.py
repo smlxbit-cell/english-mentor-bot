@@ -20,11 +20,11 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from telegram import Bot
 from telegram.error import BadRequest, TimedOut
-from telegram.request import HTTPXRequest
 
 from config.settings import TELEGRAM_BOT_TOKEN
 from content_app.models import Character, CharacterMedia
 from telegram_app.bot.mentor import EMOTION_KEYS
+from telegram_app.bot.telegram_client import make_bot
 from telegram_app.spirit_video import ffmpeg_path, make_square_note, needs_square_crop
 
 SPIRIT_ROOT = Path('media') / 'spirit'
@@ -255,13 +255,8 @@ class Command(BaseCommand):
         )
         return int(profile.telegram_id) if profile else None
 
-    def _bot(self) -> Bot:
-        request = HTTPXRequest(
-            connect_timeout=30.0,
-            read_timeout=120.0,
-            write_timeout=120.0,
-        )
-        return Bot(token=TELEGRAM_BOT_TOKEN, request=request)
+    def _bot(self):
+        return make_bot(read_timeout=120.0, write_timeout=120.0)
 
     async def _delete_upload(self, bot: Bot, chat_id: int, message_id: int) -> None:
         try:

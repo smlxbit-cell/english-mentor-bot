@@ -16,9 +16,8 @@ import os
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from telegram import Bot
-
 from config.settings import TELEGRAM_BOT_TOKEN
+from telegram_app.bot.telegram_client import make_bot
 from content_app.models import Character, CharacterMedia
 
 
@@ -71,7 +70,7 @@ class Command(BaseCommand):
         ))
 
     async def _upload(self, path: str, chat_id: int, kind: str) -> str:
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        bot = make_bot()
         with open(path, 'rb') as fh:
             if kind == 'image':
                 msg = await bot.send_photo(chat_id=chat_id, photo=fh)

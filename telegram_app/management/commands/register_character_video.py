@@ -13,9 +13,8 @@ import os
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from telegram import Bot
-
 from config.settings import TELEGRAM_BOT_TOKEN
+from telegram_app.bot.telegram_client import make_bot
 from content_app.models import Character
 
 
@@ -53,7 +52,7 @@ class Command(BaseCommand):
         ))
 
     async def _upload(self, path: str, chat_id: int) -> str:
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        bot = make_bot()
         with open(path, 'rb') as fh:
             msg = await bot.send_video_note(chat_id=chat_id, video_note=fh)
         if not msg.video_note:

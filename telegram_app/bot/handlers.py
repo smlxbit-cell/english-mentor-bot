@@ -2464,12 +2464,20 @@ def build_application():
     from telegram.request import HTTPXRequest
 
     request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0,
+        connect_timeout=60.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0,
     )
-    app = ApplicationBuilder().token(token).request(request).post_init(_post_init).build()
+    app_builder = (
+        ApplicationBuilder()
+        .token(token)
+        .request(request)
+        .get_updates_read_timeout(60.0)
+    )
+    if settings.TELEGRAM_PROXY:
+        app_builder = app_builder.proxy(settings.TELEGRAM_PROXY)
+    app = app_builder.post_init(_post_init).build()
 
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('help', help_command))
