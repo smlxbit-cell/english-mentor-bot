@@ -1,0 +1,17 @@
+[Unit]
+Description=English Mentor Telegram bot (polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mentor
+Group=mentor
+WorkingDirectory=/home/mentor/english-mentor-bot
+EnvironmentFile=/home/mentor/english-mentor-bot/.env
+ExecStart=/home/mentor/english-mentor-bot/.venv/bin/python manage.py runbot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

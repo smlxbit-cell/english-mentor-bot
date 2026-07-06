@@ -1,0 +1,12 @@
+# English Mentor — install with: crontab -e (user mentor)
+# Paths match deploy/server_setup.sh defaults.
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+TZ=Europe/Moscow
+
+# Daily plan reminders — every hour at :00
+0 * * * * cd /home/mentor/english-mentor-bot && .venv/bin/python manage.py send_reminders >> /home/mentor/logs/reminders.log 2>&1
+
+# “We miss you” after 7+ days away — once a day at 10:00 Moscow
+0 10 * * * cd /home/mentor/english-mentor-bot && .venv/bin/python manage.py send_inactive_nudge >> /home/mentor/logs/inactive.log 2>&1
