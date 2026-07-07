@@ -9,6 +9,32 @@ when context memory runs out.
 > TTS on all English, STT fallbacks, tutor grammar, Spirit persona. **Do not break these
 > when implementing changes.**
 
+> **🎯 North star & daily program v2:** [`docs/DAILY_PROGRAM_V2.md`](DAILY_PROGRAM_V2.md) —
+> personalized plan per level/interests/schedule, interactive practice, motivation roadmap.
+> **Agreed build order:** Phase 1+2 (progress UX + onboarding sizing) → Phase 3 (roadmap).
+
+---
+
+## North star (do not lose this between sessions)
+
+**We are building a maximum-filled app that gives each user a high-quality, personal English program.**
+
+| What learners get | How we deliver it |
+|-------------------|-------------------|
+| Program fits **their level** | Diagnostic + CEFR → lessons, rules map, exercise difficulty |
+| Program fits **their interests** | Preset interests + **free-text** `interests_custom` → topics, AI examples, warmup bias |
+| Program fits **their life** | `daily_minutes` (20/30/60), study days/week, rest day (default Sunday) |
+| **Interactive** training | Quizzes, exercises, speaking, listening, dialogue — not passive reading |
+| **Quality** theory & examples | Bilingual tables, real words only, 🔊 every English phrase |
+| **Motivation** | Visible progress, realistic «path to B1», streaks/XP, cool Spirit + serial story |
+
+**One serial for everyone** (Emma's story). Personalization = *how* they practice inside that story,
+not a different plot per user.
+
+When we change the product, **extend structure — don't break it.** See invariants + v2 safe-change protocol.
+
+---
+
 Locked decisions (agreed with product owner):
 
 1. **Content model: curated core + AI personalization.** We hand-author high-quality

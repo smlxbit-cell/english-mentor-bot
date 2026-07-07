@@ -5,7 +5,7 @@
 to voice, lessons, tutor, STT/TTS, or prompts. If a fix would violate an invariant,
 fix it another way or extend — never remove.
 
-**Related:** `docs/PRODUCT_CONCEPT.md`, `docs/PROGRAM_STRUCTURE.md`, `docs/TARIFFS.md`
+**Related:** `docs/PRODUCT_CONCEPT.md`, `docs/PROGRAM_STRUCTURE.md`, `docs/DAILY_PROGRAM_V2.md`, `docs/TARIFFS.md`
 
 ---
 

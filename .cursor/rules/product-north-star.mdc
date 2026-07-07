@@ -1,0 +1,34 @@
+---
+description: Product north star — personalized interactive program per learner. Read before daily plan, onboarding, or progress work.
+alwaysApply: true
+---
+
+# Product north star
+
+Full specs: `docs/PRODUCT_CONCEPT.md`, `docs/DAILY_PROGRAM_V2.md`, `docs/PROGRAM_STRUCTURE.md`.
+
+Locked behavior (voice, TTS, STT, tutor): `docs/PRODUCT_INVARIANTS.md` — **never break when extending the program**.
+
+## Mission
+
+Be an **interesting, high-quality personal tutor** with a **full program for each user**:
+
+- **Level** (CEFR + diagnostic weak skills) drives difficulty and rules.
+- **Interests** (preset + free text) and **profession/sphere** drive topics and AI examples.
+- **Schedule** (`daily_minutes` 20/30/60, days/week, rest day) sizes the daily chapter.
+- **One serial story** for everyone; personalization is practice inside the plot, not a different plot.
+
+## Product pillars
+
+1. **Lots of interactive practice** — speaking, listening, exercises, dialogue; minimal passive reading.
+2. **High-quality theory** — bilingual rule tables, real vocabulary, 🔊 on all English.
+3. **Motivation & focus** — show real progress and realistic path to next level; support streaks without replacing substance.
+4. **Safe evolution** — additive changes, defaults for existing users, re-check invariants before ship.
+
+## Implementation order (agreed 2026-07-07)
+
+1. **Phase 1 + 2:** progress UX + interactive warmup + onboarding plan sizing.
+2. **Phase 3:** roadmap / motivation map with realistic timeline.
+3. **Phase 4:** content depth (listening blocks, level variants, drill bank).
+
+When unsure, ask the owner — then update `docs/DAILY_PROGRAM_V2.md` so the plan stays single source of truth.

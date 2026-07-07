@@ -3,7 +3,8 @@
 **Last updated:** 2026-07-07  
 **Purpose:** How the learning program is organized — series, levels, daily flow, rules, exercises.
 
-> **Locked rules (TTS, STT, tutor):** [`PRODUCT_INVARIANTS.md`](PRODUCT_INVARIANTS.md)
+> **Locked rules (TTS, STT, tutor):** [`PRODUCT_INVARIANTS.md`](PRODUCT_INVARIANTS.md)  
+> **Daily program v2 (in progress):** [`DAILY_PROGRAM_V2.md`](DAILY_PROGRAM_V2.md)
 
 ---
 
@@ -165,3 +166,26 @@ Level (A1 | A2 | B1 | B2)
 3. ~~Ep.3 Hotel Check-in~~ ✅ Manchester, James, 16 steps
 4. ~~Polish daily plan UX~~ ✅ adventure chapter, bonus words after episode, rules → 📖 Правила
 5. Ep.4 — First day at work
+
+---
+
+## 9. Daily program v2 — implementation track
+
+**Spec:** [`DAILY_PROGRAM_V2.md`](DAILY_PROGRAM_V2.md)
+
+| Phase | Scope | Status |
+|-------|--------|--------|
+| **1** | Weighted progress bar, interactive warmup quiz | 🔜 next |
+| **2** | Onboarding 20/30/60 min, days/week, rest Sunday; plan sizing in `daily_plan.py` | 🔜 with Phase 1 |
+| **3** | Roadmap screen — realistic timeline to next CEFR | planned |
+| **4** | Listening blocks, level variants, rule drill bank | ongoing content |
+
+**Today vs target**
+
+| Today | v2 target |
+|-------|-----------|
+| `daily_minutes` default 10, unused | 20/30/60 drives block list |
+| Warmup = read fact/phrase | Warmup = micro-quiz + 🔊 |
+| Progress `●●○○○○ 1/2` | `58% · ~22/30 мин` weighted bar |
+| Interest hint in greeting only | Interests + sphere shape block mix & AI personalize |
+| No roadmap ETA | «~8–12 weeks to B1» map (Phase 3) |
