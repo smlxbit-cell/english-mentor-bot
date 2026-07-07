@@ -4,6 +4,6 @@
 """
 
 from .base import STTProvider, Transcript
-from .registry import get_stt_provider
+from .registry import get_stt_provider, get_tutor_stt_provider
 
-__all__ = ['STTProvider', 'Transcript', 'get_stt_provider']
+__all__ = ['STTProvider', 'Transcript', 'get_stt_provider', 'get_tutor_stt_provider']

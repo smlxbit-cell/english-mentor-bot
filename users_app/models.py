@@ -23,14 +23,15 @@ class UserProfile(models.Model):
         C2 = 'C2', 'Proficiency / C2'
 
     class LearningGoal(models.TextChoices):
-        TRAVEL = 'travel', 'Travel'
-        WORK = 'work', 'Work'
-        STUDY = 'study', 'Study'
-        MOVIES = 'movies', 'Movies and series'
-        RELOCATION = 'relocation', 'Relocation'
-        COMMUNICATION = 'communication', 'Communication'
-        EXAMS = 'exams', 'Exams'
-        OTHER = 'other', 'Other'
+        TRAVEL = 'travel', 'Путешествия'
+        WORK = 'work', 'Работа'
+        STUDY = 'study', 'Учёба'
+        MOVIES = 'movies', 'Фильмы и сериалы'
+        RELOCATION = 'relocation', 'Переезд'
+        COMMUNICATION = 'communication', 'Общение'
+        EXAMS = 'exams', 'Экзамены'
+        PERSONAL = 'personal', 'Для себя'
+        OTHER = 'other', '✍️ Написать свою цель'
 
     class OnboardingStatus(models.TextChoices):
         NOT_STARTED = 'not_started', 'Not started'
@@ -38,16 +39,20 @@ class UserProfile(models.Model):
         COMPLETED = 'completed', 'Completed'
 
     class Sphere(models.TextChoices):
-        ECOMMERCE = 'ecommerce', 'E-commerce'
+        ECOMMERCE = 'ecommerce', 'Онлайн-магазины'
         IT = 'it', 'IT / разработка'
         HOSPITALITY = 'hospitality', 'Отели / туризм'
         FOOD = 'food', 'Кафе / рестораны'
         EDUCATION = 'education', 'Образование'
-        PSYCHOLOGY = 'psychology', 'Психология'
         MEDICINE = 'medicine', 'Медицина'
         FINANCE = 'finance', 'Финансы'
         MARKETING = 'marketing', 'Маркетинг'
-        OTHER = 'other', 'Другое'
+        PSYCHOLOGY = 'psychology', 'Психология'
+        DESIGN = 'design', 'Дизайн'
+        LAW = 'law', 'Юриспруденция'
+        LOGISTICS = 'logistics', 'Логистика'
+        STUDENT = 'student', 'Пока только учусь'
+        OTHER = 'other', '✍️ Написать свою сферу'
 
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
     telegram_username = models.CharField(max_length=150, blank=True)
@@ -66,11 +71,23 @@ class UserProfile(models.Model):
         blank=True,
     )
 
+    learning_goal_custom = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Free-text goal when learning_goal is «other».',
+    )
+
     profession = models.CharField(
         max_length=30,
         choices=Sphere.choices,
         blank=True,
         help_text='Professional sphere used to bias personalized content.',
+    )
+
+    profession_custom = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Free-text sphere when profession is «other».',
     )
 
     daily_minutes = models.PositiveSmallIntegerField(default=10)
@@ -86,6 +103,12 @@ class UserProfile(models.Model):
         through='UserInterest',
         blank=True,
         related_name='users',
+    )
+
+    interests_custom = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text='Comma-separated custom interests typed by the learner.',
     )
 
     preferred_formats = models.JSONField(default=list, blank=True)
@@ -125,6 +148,30 @@ class UserProfile(models.Model):
     last_inactive_nudge_at = models.DateTimeField(
         null=True, blank=True,
         help_text='Last “we miss you” message sent after 7+ days away.',
+    )
+
+    voice_seconds_used = models.PositiveIntegerField(
+        default=0,
+        help_text='Voice seconds consumed in the current voice_usage_period.',
+    )
+    voice_bonus_seconds = models.PositiveIntegerField(
+        default=0,
+        help_text='Extra voice seconds from purchased add-on packs.',
+    )
+    voice_usage_period = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text='YYYY-MM for monthly voice quota reset.',
+    )
+
+    tutor_messages_used = models.PositiveIntegerField(
+        default=0,
+        help_text='Tutor text replies used in tutor_usage_period.',
+    )
+    tutor_usage_period = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text='YYYY-MM for monthly tutor message quota reset.',
     )
 
     class Meta:

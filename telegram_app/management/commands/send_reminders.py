@@ -7,6 +7,7 @@ from django.utils import timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config.settings import TELEGRAM_BOT_TOKEN
+from study_app.services.daily_plan import format_plan_reminder_summary
 from telegram_app.bot import db
 from telegram_app.bot.telegram_client import make_bot
 
@@ -50,7 +51,9 @@ class Command(BaseCommand):
             name = u.get('first_name') or 'друг'
             lines = [
                 f'Привет, {name}! 👋',
-                'Пора к английскому — твой план на сегодня ждёт.',
+                'Пора к английскому.',
+                '',
+                format_plan_reminder_summary(plan),
             ]
             if warmup:
                 lines.append('')

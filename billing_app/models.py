@@ -5,13 +5,45 @@ from django.utils import timezone
 
 
 class SubscriptionPlan(models.Model):
-    """A tariff plan. For the prototype there is a single active plan (390 RUB)."""
+    """A tariff plan (subscription or voice add-on)."""
+
+    class PlanKind(models.TextChoices):
+        SUBSCRIPTION = 'subscription', 'Subscription'
+        VOICE_ADDON = 'voice_addon', 'Voice add-on'
 
     code = models.SlugField(max_length=100, unique=True)
     name = models.CharField(max_length=255)
 
-    price_rub = models.PositiveIntegerField(default=390)
+    price_rub = models.PositiveIntegerField(default=590)
     duration_days = models.PositiveIntegerField(default=30)
+
+    plan_kind = models.CharField(
+        max_length=20,
+        choices=PlanKind.choices,
+        default=PlanKind.SUBSCRIPTION,
+    )
+    voice_minutes_monthly = models.PositiveIntegerField(
+        default=60,
+        help_text='Included voice minutes per billing month (subscription plans).',
+    )
+    voice_minutes_in_pack = models.PositiveIntegerField(
+        default=0,
+        help_text='Minutes granted on purchase (voice add-on packs).',
+    )
+    tutor_ai_daily_limit = models.PositiveIntegerField(
+        default=80,
+        help_text='Soft anti-spam cap per calendar day (not the main tutor budget).',
+    )
+    tutor_ai_monthly_limit = models.PositiveIntegerField(
+        default=500,
+        help_text='Tutor AI replies included per calendar month (main budget).',
+    )
+    stt_model = models.CharField(
+        max_length=80,
+        blank=True,
+        help_text='AITUNNEL STT model slug for mentor voice, e.g. whisper-large-v3-turbo.',
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
 
     description = models.TextField(blank=True)
 
@@ -20,7 +52,7 @@ class SubscriptionPlan(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['price_rub']
+        ordering = ['sort_order', 'price_rub']
 
     def __str__(self):
         return f'{self.name} — {self.price_rub} ₽ / {self.duration_days} дней'

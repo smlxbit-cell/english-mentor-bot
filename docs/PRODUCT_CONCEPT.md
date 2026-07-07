@@ -1,9 +1,13 @@
 # English Mentor — Product Concept & Content Structure
 
-**Last updated:** 2026-07-05  
+**Last updated:** 2026-07-07  
 **Purpose:** Single source of truth for product vision, **the ongoing serial story**,
 implementation status, and a **copy-paste prompt** to continue work in a new Cursor chat
 when context memory runs out.
+
+> **⚠️ Locked behavior rules:** see [`docs/PRODUCT_INVARIANTS.md`](PRODUCT_INVARIANTS.md) —
+> TTS on all English, STT fallbacks, tutor grammar, Spirit persona. **Do not break these
+> when implementing changes.**
 
 Locked decisions (agreed with product owner):
 

@@ -19,7 +19,7 @@ from gamification_app.models import Achievement, UserAchievement, UserStats
 from users_app.models import Interest, UserInterest, UserProfile
 
 LEVELS = ['a1', 'a2', 'b1', 'b2']
-PLAN_CODE = 'monthly'
+PLAN_CODE = 'basic'
 XP_PER_LEVEL = 100
 
 SKILL_RU = {
@@ -40,8 +40,94 @@ SPHERE_EN = {
     'medicine': 'healthcare and medicine',
     'finance': 'finance and banking',
     'marketing': 'marketing and advertising',
+    'design': 'design and creative work',
+    'law': 'law and legal services',
+    'logistics': 'logistics and supply chain',
+    'student': 'studying (not working yet)',
     'other': '',
 }
+
+
+def sphere_display_label(profession: str, profession_custom: str = '') -> str:
+    if profession == 'other' and profession_custom:
+        return profession_custom
+    return dict(UserProfile.Sphere.choices).get(profession, '')
+
+
+def sphere_topic(profession: str, profession_custom: str = '') -> str:
+    if profession == 'other' and profession_custom:
+        return profession_custom.strip()
+    return SPHERE_EN.get(profession or '', '')
+
+GOAL_EN = {
+    'travel': 'travel',
+    'work': 'work and career',
+    'study': 'studying',
+    'movies': 'movies and TV series',
+    'relocation': 'moving abroad',
+    'communication': 'everyday communication',
+    'exams': 'English exams',
+    'personal': 'personal growth and self-development',
+}
+
+
+def personalization_topic(
+    learning_goal: str,
+    learning_goal_custom: str = '',
+    profession: str = '',
+    profession_custom: str = '',
+    interest_names: list[str] | None = None,
+) -> str:
+    """English context string for AI exercises (goal + interests + sphere)."""
+    parts: list[str] = []
+    if learning_goal == 'other' and learning_goal_custom:
+        parts.append(learning_goal_custom.strip())
+    elif learning_goal and learning_goal in GOAL_EN:
+        parts.append(GOAL_EN[learning_goal])
+    if interest_names:
+        parts.append('interests: ' + ', '.join(interest_names[:8]))
+    sphere = sphere_topic(profession, profession_custom)
+    if sphere:
+        parts.append(sphere)
+    return '; '.join(parts)
+
+
+def parse_custom_interests(text: str) -> list[str]:
+    return [p.strip() for p in (text or '').split(',') if p.strip()]
+
+
+def all_interest_names(
+    profile_id: int,
+    *,
+    preset_names: list[str] | None = None,
+    interests_custom: str = '',
+) -> list[str]:
+    names = list(preset_names or [])
+    names.extend(parse_custom_interests(interests_custom))
+    return names
+
+
+def goal_display_label(learning_goal: str, learning_goal_custom: str = '') -> str:
+    if learning_goal == 'other' and learning_goal_custom:
+        return learning_goal_custom
+    return dict(UserProfile.LearningGoal.choices).get(learning_goal, '')
+
+
+def onboarding_state(profile: UserProfile) -> dict:
+    """Which onboarding step is missing before lessons can start."""
+    if not profile.diagnostic_completed:
+        return {'complete': False, 'step': 'diagnostic'}
+    if not profile.learning_goal:
+        return {'complete': False, 'step': 'goal'}
+    has_preset = UserInterest.objects.filter(user_id=profile.id).exists()
+    has_custom = bool(parse_custom_interests(profile.interests_custom))
+    if not has_preset and not has_custom:
+        return {'complete': False, 'step': 'interests'}
+    if not profile.profession:
+        return {'complete': False, 'step': 'sphere'}
+    if profile.profession == 'other' and not (profile.profession_custom or '').strip():
+        return {'complete': False, 'step': 'sphere'}
+    return {'complete': True, 'step': 'done'}
 
 
 # --------------------------------------------------------------------------- #
@@ -70,6 +156,17 @@ def _media_dict(media) -> dict | None:
 
 
 def _profile_dict(profile: UserProfile) -> dict:
+    preset_interests = list(
+        UserInterest.objects.filter(user_id=profile.id)
+        .select_related('interest')
+        .values_list('interest__name', flat=True)
+    )
+    interest_names = all_interest_names(
+        profile.id,
+        preset_names=preset_interests,
+        interests_custom=profile.interests_custom or '',
+    )
+    onboarding = onboarding_state(profile)
     return {
         'id': profile.id,
         'telegram_id': profile.telegram_id,
@@ -81,7 +178,20 @@ def _profile_dict(profile: UserProfile) -> dict:
         'trial_limit': settings.TRIAL_LESSONS_LIMIT,
         'weak_skills': profile.weak_skills or [],
         'profession': profile.profession or '',
-        'sphere_en': SPHERE_EN.get(profile.profession or '', ''),
+        'sphere_en': sphere_topic(
+            profile.profession or '', profile.profession_custom or '',
+        ),
+        'learning_goal': profile.learning_goal or '',
+        'interests_custom': profile.interests_custom or '',
+        'onboarding_complete': onboarding['complete'],
+        'onboarding_step': onboarding['step'],
+        'personalization_topic': personalization_topic(
+            profile.learning_goal or '',
+            profile.learning_goal_custom or '',
+            profile.profession or '',
+            profile.profession_custom or '',
+            interest_names=interest_names,
+        ),
         'is_premium': _has_active_subscription(profile.id),
     }
 
@@ -139,6 +249,7 @@ def get_profile_detail(profile_id: int) -> dict:
         .select_related('interest')
         .values_list('interest__name', flat=True)
     )
+    interests.extend(parse_custom_interests(profile.interests_custom))
 
     achievements = []
     unlocked_ids = set(
@@ -155,8 +266,20 @@ def get_profile_detail(profile_id: int) -> dict:
     xp_into_level = stats.xp_total % XP_PER_LEVEL
     xp_to_next = XP_PER_LEVEL - xp_into_level
 
-    goal_label = dict(UserProfile.LearningGoal.choices).get(profile.learning_goal, '')
-    sphere_label = dict(UserProfile.Sphere.choices).get(profile.profession, '')
+    goal_label = goal_display_label(
+        profile.learning_goal or '',
+        profile.learning_goal_custom or '',
+    )
+    sphere_label = sphere_display_label(
+        profile.profession or '', profile.profession_custom or '',
+    )
+
+    from billing_app.limits import get_user_limits, voice_remaining_minutes
+
+    limits = get_user_limits(profile)
+    plan_name = limits['plan_name']
+    if limits['has_subscription'] and sub:
+        plan_name = sub.plan.name
 
     return {
         'first_name': profile.first_name or '',
@@ -175,6 +298,12 @@ def get_profile_detail(profile_id: int) -> dict:
         'trial_limit': settings.TRIAL_LESSONS_LIMIT,
         'premium': _has_active_subscription(profile.id),
         'subscription_until': sub.expires_at.strftime('%d.%m.%Y') if sub else None,
+        'plan_name': plan_name,
+        'plan_code': limits['plan_code'],
+        'voice_remaining_minutes': voice_remaining_minutes(profile),
+        'voice_minutes_monthly': limits['voice_minutes_monthly'],
+        'tutor_ai_monthly_limit': limits['tutor_ai_monthly_limit'],
+        'tutor_messages_remaining': limits['tutor_messages_remaining'],
         'achievements': achievements,
     }
 
@@ -184,8 +313,64 @@ def get_profile_detail(profile_id: int) -> dict:
 # --------------------------------------------------------------------------- #
 
 @sync_to_async
+def get_interests_custom(profile_id: int) -> str:
+    return UserProfile.objects.filter(id=profile_id).values_list(
+        'interests_custom', flat=True,
+    ).first() or ''
+
+
+@sync_to_async
+def set_interests_custom(profile_id: int, text: str) -> None:
+    UserProfile.objects.filter(id=profile_id).update(
+        interests_custom=(text or '')[:500],
+    )
+
+
+@sync_to_async
+def clear_user_interests(profile_id: int) -> None:
+    UserInterest.objects.filter(user_id=profile_id).delete()
+    UserProfile.objects.filter(id=profile_id).update(interests_custom='')
+
+
+@sync_to_async
+def complete_onboarding(profile_id: int) -> None:
+    UserProfile.objects.filter(id=profile_id).update(
+        onboarding_status=UserProfile.OnboardingStatus.COMPLETED,
+    )
+
+
+@sync_to_async
+def has_any_interests(profile_id: int) -> bool:
+    profile = UserProfile.objects.get(id=profile_id)
+    if UserInterest.objects.filter(user_id=profile_id).exists():
+        return True
+    return bool(parse_custom_interests(profile.interests_custom))
+
+
+# Curated interest order for the picker (slug from slugify(name, allow_unicode=True)).
+INTEREST_ORDER = [
+    'путешествия', 'кино-и-сериалы', 'музыка', 'игры', 'спорт', 'книги',
+    'искусство', 'природа', 'работа-и-карьера', 'бизнес', 'технологии', 'наука',
+    'еда-и-кухня', 'мода', 'психология', 'история',
+]
+
+
+@sync_to_async
 def get_interests() -> list[dict]:
-    return [{'id': i.id, 'name': i.name} for i in Interest.objects.all().order_by('name')]
+    by_slug = {
+        i.slug: {'id': i.id, 'name': i.name, 'slug': i.slug}
+        for i in Interest.objects.all()
+    }
+    ordered: list[dict] = []
+    seen: set[str] = set()
+    for slug in INTEREST_ORDER:
+        if slug in by_slug:
+            ordered.append(by_slug[slug])
+            seen.add(slug)
+    for slug in sorted(by_slug):
+        if slug not in seen:
+            ordered.append(by_slug[slug])
+    return ordered
 
 
 @sync_to_async
@@ -210,13 +395,41 @@ def toggle_interest(profile_id: int, interest_id: int) -> list[int]:
 
 
 @sync_to_async
-def set_learning_goal(profile_id: int, goal_code: str) -> None:
-    UserProfile.objects.filter(id=profile_id).update(learning_goal=goal_code)
+def clear_learning_goal(profile_id: int) -> None:
+    UserProfile.objects.filter(id=profile_id).update(
+        learning_goal='', learning_goal_custom='',
+    )
 
 
 @sync_to_async
-def set_profession(profile_id: int, sphere_code: str) -> None:
-    UserProfile.objects.filter(id=profile_id).update(profession=sphere_code)
+def set_learning_goal(
+    profile_id: int, goal_code: str, custom_text: str = '',
+) -> None:
+    updates = {'learning_goal': goal_code}
+    if goal_code == 'other':
+        updates['learning_goal_custom'] = (custom_text or '')[:200]
+    else:
+        updates['learning_goal_custom'] = ''
+    UserProfile.objects.filter(id=profile_id).update(**updates)
+
+
+@sync_to_async
+def clear_profession(profile_id: int) -> None:
+    UserProfile.objects.filter(id=profile_id).update(
+        profession='', profession_custom='',
+    )
+
+
+@sync_to_async
+def set_profession(
+    profile_id: int, sphere_code: str, custom_text: str = '',
+) -> None:
+    updates = {'profession': sphere_code}
+    if sphere_code == 'other':
+        updates['profession_custom'] = (custom_text or '')[:200]
+    else:
+        updates['profession_custom'] = ''
+    UserProfile.objects.filter(id=profile_id).update(**updates)
 
 
 def learning_goal_choices() -> list[dict]:
@@ -244,6 +457,7 @@ def get_diagnostic_items() -> list[dict]:
             'options': item.options or [],
             'correct': item.correct or [],
             'keywords': item.keywords or [],
+            'explanation_ru': item.explanation_ru or '',
             'audio': _media_dict(item.audio),
         })
     return items
@@ -256,8 +470,8 @@ def finish_diagnostic(profile_id: int, level_code: str, weak_skills: list[str]) 
     profile.diagnostic_completed = True
     profile.trial_lessons_used = 0
     profile.weak_skills = weak_skills
-    if profile.onboarding_status != UserProfile.OnboardingStatus.COMPLETED:
-        profile.onboarding_status = UserProfile.OnboardingStatus.COMPLETED
+    if profile.onboarding_status == UserProfile.OnboardingStatus.NOT_STARTED:
+        profile.onboarding_status = UserProfile.OnboardingStatus.IN_PROGRESS
     profile.save()
 
 
@@ -279,8 +493,15 @@ def _rank_lessons(profile, qs, completed_ids):
     incomplete lesson as recommended."""
     weak = set(profile.weak_skills or [])
     interest_names = {
-        n.lower() for n in UserInterest.objects.filter(user_id=profile.id)
-        .select_related('interest').values_list('interest__name', flat=True)
+        n.lower() for n in all_interest_names(
+            profile.id,
+            preset_names=list(
+                UserInterest.objects.filter(user_id=profile.id)
+                .select_related('interest')
+                .values_list('interest__name', flat=True)
+            ),
+            interests_custom=profile.interests_custom or '',
+        )
     }
 
     scored = []
@@ -1033,6 +1254,63 @@ def get_rule_drill(profile_id: int) -> dict | None:
     }
 
 
+def _rule_as_dict(rule) -> dict:
+    return {
+        'key': rule.key,
+        'title': rule.title,
+        'level': rule.level,
+        'topic': rule.topic,
+        'summary_ru': rule.summary_ru,
+        'table': rule.table,
+        'examples': rule.examples,
+        'tip_ru': rule.tip_ru,
+    }
+
+
+@sync_to_async
+def get_next_unlearned_rule_key(profile_id: int) -> str | None:
+    from content_app.models import GrammarRule
+    from progress_app.models import UserRule
+
+    profile = UserProfile.objects.get(id=profile_id)
+    level = (profile.cefr_level or 'A1').lower()
+    allowed = _levels_up_to(level)
+    known_ids = set(
+        UserRule.objects.filter(
+            user_id=profile_id,
+            status__in=[UserRule.Status.LEARNED, UserRule.Status.KNOWN],
+        ).values_list('rule_id', flat=True)
+    )
+    rule = (
+        GrammarRule.objects.filter(is_published=True, level__in=allowed)
+        .exclude(id__in=known_ids)
+        .order_by('order', 'id')
+        .first()
+    )
+    return rule.key if rule else None
+
+
+@sync_to_async
+def get_rule_training(rule_key: str) -> dict | None:
+    """Exercise set (3–4 steps) for one grammar rule."""
+    from content_app.models import GrammarRule
+    from content_app.rule_training import build_rule_training_exercises
+
+    try:
+        rule = GrammarRule.objects.get(key=rule_key, is_published=True)
+    except GrammarRule.DoesNotExist:
+        return None
+    rule_dict = _rule_as_dict(rule)
+    exercises = build_rule_training_exercises(rule_dict)
+    if not exercises:
+        return None
+    return {
+        'rule_key': rule.key,
+        'rule_title': rule.title,
+        'rule_level': rule.level.upper(),
+        'exercises': exercises,
+    }
+
 # --------------------------------------------------------------------------- #
 # Notifications
 # --------------------------------------------------------------------------- #
@@ -1125,24 +1403,134 @@ def mark_inactive_nudge_sent(profile_id: int) -> None:
 # Billing
 # --------------------------------------------------------------------------- #
 
-@sync_to_async
-def get_or_create_plan() -> dict:
-    plan, _ = SubscriptionPlan.objects.get_or_create(
-        code=PLAN_CODE,
-        defaults={
-            'name': 'Месячный доступ',
-            'price_rub': settings.SUBSCRIPTION_PRICE_RUB,
-            'duration_days': settings.SUBSCRIPTION_DAYS,
-            'is_active': True,
-        },
-    )
+def _plan_dict(plan: SubscriptionPlan) -> dict:
     return {
         'id': plan.id,
         'code': plan.code,
         'name': plan.name,
         'price_rub': plan.price_rub,
+        'price_kopeks': plan.price_kopeks,
         'duration_days': plan.duration_days,
+        'plan_kind': plan.plan_kind,
+        'voice_minutes_monthly': plan.voice_minutes_monthly,
+        'voice_minutes_in_pack': plan.voice_minutes_in_pack,
+        'tutor_ai_daily_limit': plan.tutor_ai_daily_limit,
+        'tutor_ai_monthly_limit': plan.tutor_ai_monthly_limit,
+        'stt_model': plan.stt_model,
+        'description': plan.description,
+        'sort_order': plan.sort_order,
     }
+
+
+@sync_to_async
+def get_subscription_plans() -> list[dict]:
+    plans = SubscriptionPlan.objects.filter(is_active=True).order_by('sort_order', 'price_rub')
+    if not plans.exists():
+        from billing_app.plans_catalog import PLANS
+        return [
+            {
+                'id': None,
+                'code': p['code'],
+                'name': p['name'],
+                'price_rub': p['price_rub'],
+                'price_kopeks': p['price_rub'] * 100,
+                'duration_days': p['duration_days'],
+                'plan_kind': p['plan_kind'],
+                'voice_minutes_monthly': p['voice_minutes_monthly'],
+                'voice_minutes_in_pack': p['voice_minutes_in_pack'],
+                'tutor_ai_daily_limit': p['tutor_ai_daily_limit'],
+                'tutor_ai_monthly_limit': p['tutor_ai_monthly_limit'],
+                'stt_model': p['stt_model'],
+                'description': p['description'],
+                'sort_order': p['sort_order'],
+            }
+            for p in PLANS
+        ]
+    return [_plan_dict(p) for p in plans]
+
+
+@sync_to_async
+def get_plan_by_code(plan_code: str) -> dict | None:
+    plan = SubscriptionPlan.objects.filter(code=plan_code, is_active=True).first()
+    if plan:
+        return _plan_dict(plan)
+    from billing_app.plans_catalog import PLANS
+    for p in PLANS:
+        if p['code'] == plan_code:
+            return {
+                'id': None,
+                'code': p['code'],
+                'name': p['name'],
+                'price_rub': p['price_rub'],
+                'price_kopeks': p['price_rub'] * 100,
+                'duration_days': p['duration_days'],
+                'plan_kind': p['plan_kind'],
+                'voice_minutes_monthly': p['voice_minutes_monthly'],
+                'voice_minutes_in_pack': p['voice_minutes_in_pack'],
+                'tutor_ai_daily_limit': p['tutor_ai_daily_limit'],
+                'tutor_ai_monthly_limit': p['tutor_ai_monthly_limit'],
+                'stt_model': p['stt_model'],
+                'description': p['description'],
+                'sort_order': p['sort_order'],
+            }
+    return None
+
+
+@sync_to_async
+def get_user_limits(profile_id: int) -> dict:
+    from billing_app.limits import get_user_limits as _limits, voice_remaining_minutes
+
+    profile = UserProfile.objects.get(id=profile_id)
+    data = _limits(profile)
+    data['voice_remaining_minutes'] = voice_remaining_minutes(profile)
+    return data
+
+
+@sync_to_async
+def check_voice_usage(profile_id: int, duration_sec: int) -> tuple[bool, str]:
+    from billing_app.limits import can_use_voice_seconds
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return can_use_voice_seconds(profile, duration_sec)
+
+
+@sync_to_async
+def record_voice_usage(profile_id: int, duration_sec: int) -> None:
+    from billing_app.limits import register_voice_usage
+
+    profile = UserProfile.objects.get(id=profile_id)
+    register_voice_usage(profile, duration_sec)
+
+
+@sync_to_async
+def check_tutor_message(profile_id: int) -> tuple[bool, str]:
+    from billing_app.limits import can_send_tutor_message
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return can_send_tutor_message(profile)
+
+
+@sync_to_async
+def register_tutor_message(profile_id: int) -> None:
+    from billing_app.limits import register_tutor_message as _register
+
+    profile = UserProfile.objects.get(id=profile_id)
+    _register(profile)
+
+
+@sync_to_async
+def get_or_create_plan() -> dict:
+    """Legacy helper — returns Basic plan."""
+    plan, _ = SubscriptionPlan.objects.get_or_create(
+        code='basic',
+        defaults={
+            'name': 'Basic',
+            'price_rub': 590,
+            'duration_days': settings.SUBSCRIPTION_DAYS,
+            'is_active': True,
+        },
+    )
+    return _plan_dict(plan)
 
 
 @sync_to_async
@@ -1151,17 +1539,32 @@ def has_active_subscription(profile_id: int) -> bool:
 
 
 @sync_to_async
-def activate_mock_subscription(profile_id: int) -> dict:
+def activate_mock_subscription(profile_id: int, plan_code: str = 'basic') -> dict:
+    from billing_app.limits import add_voice_bonus_minutes
+
     profile = UserProfile.objects.get(id=profile_id)
-    plan, _ = SubscriptionPlan.objects.get_or_create(
-        code=PLAN_CODE,
-        defaults={
-            'name': 'Месячный доступ',
-            'price_rub': settings.SUBSCRIPTION_PRICE_RUB,
-            'duration_days': settings.SUBSCRIPTION_DAYS,
-            'is_active': True,
-        },
-    )
+    plan = SubscriptionPlan.objects.filter(code=plan_code, is_active=True).first()
+    if not plan:
+        from billing_app.plans_catalog import PLANS
+        spec = next((p for p in PLANS if p['code'] == plan_code), PLANS[0])
+        plan, _ = SubscriptionPlan.objects.update_or_create(
+            code=spec['code'],
+            defaults={
+                'name': spec['name'],
+                'price_rub': spec['price_rub'],
+                'duration_days': spec['duration_days'],
+                'plan_kind': spec['plan_kind'],
+                'voice_minutes_monthly': spec['voice_minutes_monthly'],
+                'voice_minutes_in_pack': spec['voice_minutes_in_pack'],
+                'tutor_ai_daily_limit': spec['tutor_ai_daily_limit'],
+                'tutor_ai_monthly_limit': spec['tutor_ai_monthly_limit'],
+                'stt_model': spec['stt_model'],
+                'description': spec['description'],
+                'sort_order': spec['sort_order'],
+                'is_active': True,
+            },
+        )
+
     Payment.objects.create(
         user=profile,
         plan=plan,
@@ -1169,8 +1572,27 @@ def activate_mock_subscription(profile_id: int) -> dict:
         status=Payment.Status.SUCCEEDED,
         amount_rub=plan.price_rub,
         currency='RUB',
-        payload=f'mock:{profile.id}',
-        raw_data={'mode': 'mock', 'comment': 'Dev/screenshot activation'},
+        payload=f'mock:{profile.id}:{plan.code}',
+        raw_data={'mode': 'mock', 'plan_code': plan.code},
     )
+
+    if plan.plan_kind == SubscriptionPlan.PlanKind.VOICE_ADDON:
+        if not _has_active_subscription(profile.id):
+            return {'ok': False, 'reason': 'no_subscription'}
+        add_voice_bonus_minutes(profile, plan.voice_minutes_in_pack)
+        from billing_app.limits import voice_remaining_minutes
+        return {
+            'ok': True,
+            'kind': 'voice_addon',
+            'minutes_added': plan.voice_minutes_in_pack,
+            'voice_remaining_minutes': voice_remaining_minutes(profile),
+        }
+
     sub = Subscription.activate(profile, plan)
-    return {'expires_at': sub.expires_at.strftime('%d.%m.%Y')}
+    return {
+        'ok': True,
+        'kind': 'subscription',
+        'plan_code': plan.code,
+        'plan_name': plan.name,
+        'expires_at': sub.expires_at.strftime('%d.%m.%Y'),
+    }

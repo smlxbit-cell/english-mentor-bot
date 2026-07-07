@@ -286,6 +286,10 @@ class DiagnosticItem(models.Model):
         default=list, blank=True,
         help_text='Must-have keywords for translation/speaking checks.',
     )
+    explanation_ru = models.TextField(
+        blank=True,
+        help_text='Short tip shown when the learner answers wrong.',
+    )
 
     audio = models.ForeignKey(
         MediaAsset, on_delete=models.SET_NULL, null=True, blank=True,

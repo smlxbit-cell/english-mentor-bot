@@ -21,16 +21,16 @@ def _today_key(user_key: str) -> str:
     return f'ai:budget:{user_key}:{date.today().isoformat()}'
 
 
-def remaining_budget(user_key: str) -> int:
-    limit = settings.AI_DAILY_CALL_LIMIT_PER_USER
+def remaining_budget(user_key: str, *, daily_limit: int | None = None) -> int:
+    limit = daily_limit if daily_limit is not None else settings.AI_DAILY_CALL_LIMIT_PER_USER
     used = cache.get(_today_key(user_key), 0)
     return max(0, limit - used)
 
 
-def can_spend(user_key: str | None) -> bool:
+def can_spend(user_key: str | None, *, daily_limit: int | None = None) -> bool:
     if not user_key:
         return True
-    return remaining_budget(user_key) > 0
+    return remaining_budget(user_key, daily_limit=daily_limit) > 0
 
 
 def register_spend(user_key: str | None, amount: int = 1) -> None:

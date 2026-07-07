@@ -1,7 +1,9 @@
 # Program Structure — English Mentor Bot
 
-**Last updated:** 2026-07-05  
+**Last updated:** 2026-07-07  
 **Purpose:** How the learning program is organized — series, levels, daily flow, rules, exercises.
+
+> **Locked rules (TTS, STT, tutor):** [`PRODUCT_INVARIANTS.md`](PRODUCT_INVARIANTS.md)
 
 ---
 

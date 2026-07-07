@@ -1,5 +1,5 @@
 """Telegram bot: onboarding, adaptive diagnostic, interactive lessons
-(with media, voice and AI checking), gamification and the 390 ₽ paywall.
+(with media, voice and AI checking), gamification and subscription paywall.
 
 State for the current flow lives in context.user_data (in-memory, single polling
 process). DB access goes through .db (async wrappers). AI/STT go through ai_app.
@@ -33,14 +33,35 @@ from ai_app.services import (
     DialoguePartner,
     explain_grammar,
     generate_practice,
+    is_garbage_transcript,
     normalize,
     score_speaking,
     score_word_review,
+    tutor,
 )
-from ai_app.speech import get_stt_provider
+from ai_app.speech import get_stt_provider, get_tutor_stt_provider
+from ai_app.speech.bilingual import (
+    english_portion_for_tutor,
+    is_code_switch_message,
+    merge_tutor_transcripts,
+    merge_whisper_tutor_transcript,
+    prepare_tutor_voice_transcript,
+    tutor_transcript_label,
+)
+from ai_app.services.rule_hints import (
+    reply_has_substantive_grammar_mistakes,
+    strip_rule_tags,
+    suggest_rule_keys,
+)
+from ai_app.services.spirit_character import is_spirit_chat_turn
+from ai_app.services.tutor_context import (
+    extract_grammar_followup_target,
+    is_grammar_followup_turn,
+)
 from ai_app.tts import get_tts_provider
 
 from . import db, keyboards
+from . import diagnostic_flow as diag_flow
 from .mentor import (
     mark_correct_spirit_shown,
     mark_wrong_spirit_shown,
@@ -55,7 +76,7 @@ logger = logging.getLogger(__name__)
 checker = AnswerChecker()
 partner = DialoguePartner()
 
-MAX_DIAGNOSTIC_QUESTIONS = 6
+MAX_DIAGNOSTIC_QUESTIONS = diag_flow.PRIMARY_QUESTIONS
 
 # Open-ended exercise types where voice answers are useful (STT → same checker).
 VOICE_EXERCISE_TYPES = frozenset({
@@ -81,7 +102,41 @@ async def _ensure_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data['profile_id'] = profile['id']
     context.user_data['user_key'] = str(update.effective_user.id)
     context.user_data['sphere_en'] = profile.get('sphere_en', '')
+    context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
     return profile
+
+
+def _practice_topic(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return context.user_data.get('personalization_topic') or context.user_data.get('sphere_en') or ''
+
+
+_ONBOARDING_PROMPTS = {
+    'goal': 'Осталось настроить профиль. Сначала — зачем тебе английский 👇',
+    'interests': 'Теперь интересы — от них зависят темы уроков и историй 👇',
+    'sphere': 'И последнее — твоя сфера работы или учёбы 👇',
+}
+
+
+async def _resume_onboarding_if_needed(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, profile: dict | None = None,
+) -> bool:
+    """Redirect to the missing onboarding step. Returns True if blocked."""
+    profile = profile or await _ensure_profile(update, context)
+    if profile.get('onboarding_complete'):
+        return False
+    step = profile.get('onboarding_step', 'goal')
+    if step == 'diagnostic':
+        return False
+    context.user_data['onboarding'] = True
+    prompt = _ONBOARDING_PROMPTS.get(step, 'Давай донастроим профиль 👇')
+    await _send(context, _chat_id(update), prompt)
+    if step == 'goal':
+        await show_goal(update, context)
+    elif step == 'interests':
+        await show_interests(update, context)
+    elif step == 'sphere':
+        await show_sphere(update, context)
+    return True
 
 
 def _chat_id(update: Update) -> int:
@@ -247,43 +302,224 @@ async def _send_character_turn(
 
 
 async def _send_tts(context, chat_id, text: str) -> bool:
-    """Voice English `text` via TTS (edge-tts by default). Best-effort."""
+    """Voice English `text` via TTS. Tries configured provider, then fallbacks."""
     text = (text or '').strip()
     if not text or not settings.TTS_ENABLED:
         return False
-    try:
-        provider = get_tts_provider()
-        result = await provider.synthesize(text)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning('tts failed: %s', exc)
-        return False
-    if not result.ok or not result.audio:
-        return False
 
-    bio = io.BytesIO(result.audio)
-    bio.name = f'speech.{result.fmt}'
-    try:
-        if result.fmt == 'ogg':
-            await context.bot.send_voice(chat_id, bio)
-        else:
-            await context.bot.send_audio(chat_id, bio, title='🔊 English')
-    except Exception as exc:  # noqa: BLE001
-        logger.warning('tts send failed: %s', exc)
+    chain: list[str] = []
+    primary = (settings.TTS_PROVIDER or 'openai').lower()
+    for name in (primary, 'edge', 'openai'):
+        if name not in chain:
+            chain.append(name)
+
+    for prov_name in chain:
+        try:
+            provider = get_tts_provider(prov_name)
+            if getattr(provider, 'name', '') == 'mock':
+                continue
+            result = await provider.synthesize(text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('tts failed (%s): %s', prov_name, exc)
+            continue
+        if not result.ok or not result.audio:
+            continue
+
+        bio = io.BytesIO(result.audio)
+        bio.name = f'speech.{result.fmt}'
+        try:
+            if result.fmt == 'ogg':
+                await context.bot.send_voice(chat_id, bio)
+            else:
+                await context.bot.send_audio(chat_id, bio, title='🔊 English')
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('tts send failed: %s', exc)
+            continue
+        return True
+    return False
+
+
+async def _play_tts(context, chat_id: int, text: str | None) -> None:
+    """Send TTS audio or a short RU notice if synthesis failed."""
+    clean = (text or '').strip()
+    if not clean:
+        clean = _tts_from_tutor_history(context)
+    if not clean:
+        await _send(context, chat_id, 'Нет текста для озвучки.')
+        return
+    if not await _send_tts(context, chat_id, clean):
+        await _send(
+            context, chat_id,
+            'Не удалось озвучить 🔊 Попробуй ещё раз через секунду.',
+        )
+
+
+def _is_english(text: str | None) -> bool:
+    """True if `text` is predominantly English (so we can safely voice it)."""
+    if not text:
         return False
-    return True
+    latin = len(re.findall(r'[A-Za-z]', text))
+    cyrillic = len(re.findall(r'[А-Яа-яЁё]', text))
+    return latin >= 3 and latin >= cyrillic
+
+
+def _is_english_enough(text: str | None) -> bool:
+    """Relaxed check for short TTS fragments."""
+    if not text:
+        return False
+    latin = len(re.findall(r'[A-Za-z]', text))
+    cyrillic = len(re.findall(r'[А-Яа-яЁё]', text))
+    return latin >= 2 and latin > cyrillic
+
+
+def _strip_guillemets(text: str) -> str:
+    return re.sub(r'^[«"\'\s]+|[»"\'\s]+$', '', (text or '').strip())
+
+
+def _normalize_tts_key(text: str) -> str:
+    t = _strip_guillemets(re.sub(r'<[^>]+>', '', text or ''))
+    return re.sub(r'\s+', ' ', t).strip().lower()
+
+
+def _extract_english_from_bilingual_line(line: str) -> str:
+    """Spirit / lesson line: «English: phrase — «RU»» or «phrase — «RU»»."""
+    line = re.sub(r'<[^>]+>', '', line or '').strip()
+    if not line:
+        return ''
+    m = re.match(r'^english:\s*(.+)$', line, re.I)
+    body = m.group(1).strip() if m else line
+    if '—' in body:
+        left, right = body.split('—', 1)
+        right = right.strip()
+        if re.search(r'[А-Яа-яЁё]', right) or right.startswith('«'):
+            body = left.strip()
+    if '«' in body:
+        body = body.split('«', 1)[0].strip()
+    return body.rstrip('.').strip()
+
+
+def _english_lead_from_mixed_line(line: str) -> str:
+    """«EN phrase» — «RU» or EN — «RU» → keep the English lead."""
+    line = (line or '').strip()
+    if not line:
+        return ''
+    if '—' in line:
+        left = line.split('—', 1)[0].strip()
+        if _is_english_enough(left):
+            return left.rstrip(':').strip()
+    if '«' in line:
+        before = line.split('«', 1)[0].strip()
+        if before and _is_english_enough(before):
+            return before.rstrip(':').strip()
+    return line if _is_english_enough(line) else ''
+
+
+def _english_text_for_tts(reply: str) -> str:
+    """Pull English phrase(s) from a tutor reply for the listen button."""
+    reply = reply or ''
+    plain = re.sub(r'<[^>]+>', '', reply)
+    parts: list[str] = []
+    seen: set[str] = set()
+
+    def _add(phrase: str) -> None:
+        phrase = _strip_guillemets(phrase).strip()
+        if not phrase or not _is_english_enough(phrase):
+            return
+        key = _normalize_tts_key(phrase)
+        if key and key not in seen:
+            seen.add(key)
+            parts.append(phrase)
+
+    if '🇬🇧' in plain:
+        for block in plain.split('🇬🇧')[1:]:
+            for line in block.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('('):
+                    continue
+                _add(_extract_english_from_bilingual_line(line))
+
+    for line in plain.split('\n'):
+        stripped = line.strip()
+        low = stripped.lower()
+        if re.match(r'^english:\s*.+[a-z]', stripped, re.I):
+            _add(_extract_english_from_bilingual_line(stripped))
+            continue
+        if any(k in low for k in ('услышал:', 'ещё можно сказать:', 'лучше:', 'грамматика:')):
+            tail = stripped.split(':', 1)[-1]
+            quoted = re.search(r'«([^»]+)»', tail)
+            if quoted and _is_english_enough(quoted.group(1)):
+                _add(quoted.group(1))
+            else:
+                _add(_english_lead_from_mixed_line(tail))
+
+    if not parts:
+        for match in re.finditer(r'«([^»]+)»|"([^"]+)"', plain):
+            chunk = (match.group(1) or match.group(2) or '').strip()
+            _add(chunk)
+
+    if parts:
+        return '. '.join(p.rstrip('.').strip() for p in parts[:6])[:800]
+
+    clean = plain.strip()
+    return clean if _is_english(clean) else ''
+
+
+def _tts_from_tutor_history(context) -> str:
+    """Recover speakable English from the last tutor reply if tts_text was lost."""
+    history = context.user_data.get('tutor_history') or []
+    for msg in reversed(history):
+        if getattr(msg, 'role', '') == 'assistant':
+            text = _english_text_for_tts(getattr(msg, 'content', '') or '')
+            if text:
+                return text
+    return ''
+
+
+def _restore_tutor_mode_if_active(context, *, voice_turn: bool = False) -> None:
+    """Keep mentor mode across turns when session history is still active."""
+    if not context.user_data.get('tutor_history'):
+        return
+    hard_block = {'lesson', 'diagnostic', 'dialogue', 'review', 'practice'}
+    if context.user_data.get('mode') in hard_block:
+        return
+    if voice_turn:
+        context.user_data.pop('rule_training', None)
+        context.user_data.pop('rule_drill', None)
+        context.user_data['expect'] = None
+    context.user_data['mode'] = 'tutor'
 
 
 def _voice_allowed(context) -> bool:
     """True when the current flow accepts a Telegram voice message."""
     mode = context.user_data.get('mode')
     expect = context.user_data.get('expect')
+    if context.user_data.get('tutor_history'):
+        if mode not in ('lesson', 'diagnostic', 'dialogue', 'review'):
+            return True
     if mode in ('diagnostic', 'dialogue', 'tutor', 'review'):
         return True
+    if context.user_data.get('lesson_help_return'):
+        return True
+    if mode == 'rule_drill':
+        training = context.user_data.get('rule_training') or {}
+        exercises = training.get('exercises') or []
+        idx = training.get('index', 0)
+        if idx < len(exercises):
+            ex = exercises[idx]
+            if ex.get('exercise_type') == 'fill_gap' and ex.get('accept_voice'):
+                return True
+        return False
     if mode == 'practice' and context.user_data.get('practice_expect') == 'text':
         return True
     if mode == 'lesson' and expect in ('ex_voice', 'ex_text_or_voice'):
         return True
     return False
+
+
+def _clear_tutor_session(context) -> None:
+    context.user_data.pop('tutor_history', None)
+    context.user_data.pop('lesson_help_return', None)
+    context.user_data.pop('tutor_level', None)
 
 
 def _stt_langs_for_context(context) -> list[str]:
@@ -299,6 +535,88 @@ def _stt_langs_for_context(context) -> list[str]:
         return ['en-US']
     return ['en-US']
 
+
+def _stt_quality_score(text: str) -> int:
+    if is_garbage_transcript(text):
+        return -1000
+    from ai_app.speech.bilingual import looks_like_transliterated_russian
+    if looks_like_transliterated_russian(text):
+        return -500
+    words = re.findall(r'\w+', text, flags=re.UNICODE)
+    unique = len({w.lower() for w in words})
+    latin = len(re.findall(r'[A-Za-z]', text))
+    cyrillic = len(re.findall(r'[А-Яа-яЁё]', text))
+    long_words = sum(1 for w in words if len(w) >= 4)
+    return unique * 12 + long_words * 5 + len(words) + latin + cyrillic * 3
+
+
+async def _transcribe_tutor_voice(stt, audio: bytes, *, short: bool) -> str:
+    """Transcribe mentor voice — Whisper + Yandex RU/EN passes, then merge."""
+
+    async def _transcribe_one(provider, lang: str) -> str:
+        try:
+            transcript = await provider.transcribe(audio, lang=lang, short_utterance=short)
+            return (transcript.text or '').strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                'Tutor STT failed (%s via %s): %s',
+                lang, getattr(provider, 'name', '?'), exc,
+            )
+            return ''
+
+    ru_text = ''
+    en_text = ''
+
+    # Whisper (AITUNNEL) first when configured — best on mixed RU+EN.
+    if settings.OPENAI_API_KEY:
+        whisper = get_stt_provider('whisper')
+        if whisper.name != 'mock':
+            ru_text = await _transcribe_one(whisper, 'ru-RU')
+            en_text = await _transcribe_one(whisper, 'en-US')
+
+    # Yandex reinforces weak passes (or is primary when Whisper blocked).
+    yandex = get_stt_provider('yandex')
+    if yandex.name != 'mock':
+        ru_is_latin_only = bool(
+            ru_text and not re.search(r'[А-Яа-яЁё]', ru_text) and re.search(r'[A-Za-z]', ru_text),
+        )
+        if ru_is_latin_only:
+            ru_text = ''
+        if not ru_text or not re.search(r'[А-Яа-яЁё]', ru_text):
+            yandex_ru = await _transcribe_one(yandex, 'ru-RU')
+            if yandex_ru:
+                ru_text = yandex_ru
+        if not en_text:
+            yandex_en = await _transcribe_one(yandex, 'en-US')
+            if yandex_en:
+                en_text = yandex_en
+        elif getattr(stt, 'name', '') == 'yandex' and not ru_text:
+            yandex_ru = await _transcribe_one(yandex, 'ru-RU')
+            if yandex_ru:
+                ru_text = yandex_ru
+
+    if not ru_text and not en_text and getattr(stt, 'name', '') not in ('mock',):
+        ru_text = await _transcribe_one(stt, 'ru-RU')
+        en_text = await _transcribe_one(stt, 'en-US')
+
+    merged = merge_tutor_transcripts(ru_text, en_text)
+    if merged:
+        return merged
+
+    if settings.OPENAI_API_KEY:
+        whisper = get_stt_provider('whisper')
+        if whisper.name != 'mock':
+            auto = await _transcribe_one(whisper, 'auto')
+            if auto:
+                return merge_whisper_tutor_transcript(auto)
+
+    if yandex.name != 'mock':
+        for lang in ('ru-RU', 'en-US'):
+            yandex_text = await _transcribe_one(yandex, lang)
+            if yandex_text:
+                return yandex_text
+
+    return ru_text or en_text
 
 def _exercise_has_hint(content: dict) -> bool:
     return bool(
@@ -335,15 +653,42 @@ async def _transcribe_voice(update: Update, context, *, langs: list[str] | None 
         logger.warning('voice download failed: %s', exc)
         return ''
 
+    if context.user_data.get('mode') == 'tutor':
+        limits = await db.get_user_limits(context.user_data['profile_id'])
+        tutor_stt = get_tutor_stt_provider(stt_model=limits.get('stt_model'))
+        return await _transcribe_tutor_voice(tutor_stt, audio, short=short)
+
+    best_text = ''
+    best_score = -1001
     for lang in langs:
         try:
             transcript = await stt.transcribe(audio, lang=lang, short_utterance=short)
             text = (transcript.text or '').strip()
-            if text:
-                return text
+            if not text:
+                continue
+            score = _stt_quality_score(text)
+            if score > best_score:
+                best_score = score
+                best_text = text
         except Exception as exc:  # noqa: BLE001
             logger.warning('STT failed (%s): %s', lang, exc)
-    return ''
+
+    if not best_text and settings.STT_YANDEX_FALLBACK and getattr(stt, 'name', '') != 'yandex':
+        yandex = get_stt_provider('yandex')
+        if yandex.name != 'mock':
+            for lang in langs:
+                try:
+                    transcript = await yandex.transcribe(audio, lang=lang, short_utterance=short)
+                    text = (transcript.text or '').strip()
+                    if not text:
+                        continue
+                    score = _stt_quality_score(text)
+                    if score > best_score:
+                        best_score = score
+                        best_text = text
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning('Yandex STT fallback failed (%s): %s', lang, exc)
+    return best_text
 
 
 def _exercise_accepts_voice(content: dict, etype: str) -> bool:
@@ -352,15 +697,6 @@ def _exercise_accepts_voice(content: dict, etype: str) -> bool:
     if content.get('accept_voice') is True:
         return True
     return etype in VOICE_EXERCISE_TYPES
-
-
-def _is_english(text: str | None) -> bool:
-    """True if `text` is predominantly English (so we can safely voice it)."""
-    if not text:
-        return False
-    latin = len(re.findall(r'[A-Za-z]', text))
-    cyrillic = len(re.findall(r'[А-Яа-яЁё]', text))
-    return latin >= 3 and latin >= cyrillic
 
 
 def _speak_text_for_step(step: dict) -> str | None:
@@ -399,10 +735,12 @@ def _speak_text_for_step(step: dict) -> str | None:
     if stype == 'grammar_note':
         return _grammar_speak_text(content)
 
-    # Generic: voice the step's English text/title if it looks English.
-    for candidate in (step.get('text'), step.get('title')):
-        if _is_english(candidate):
-            return candidate
+    for candidate in (_compose_step_text(step), step.get('text'), step.get('title')):
+        if not candidate:
+            continue
+        extracted = _english_text_for_tts(candidate)
+        if extracted:
+            return extracted
     return None
 
 
@@ -434,10 +772,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'Привет, {name}! 👋\n\n'
             'Я — English Mentor. Помогу учить английский маленькими шагами: '
             'истории, диалоги, игры и живая практика с проверкой ответов.\n\n'
-            'Сначала пройдём короткую диагностику уровня — это бесплатно и займёт '
-            '2–3 минуты. Можно отвечать текстом или голосом 🎙️',
+            'Сначала короткая диагностика — подберём программу под твой уровень.',
             reply_markup=keyboards.start_diagnostic_kb(),
         )
+        return
+
+    if not profile.get('onboarding_complete'):
+        await send_mentor_reaction(context, chat_id, 'welcome_back')
+        await _resume_onboarding_if_needed(update, context, profile)
         return
 
     from django.utils import timezone as dj_tz
@@ -543,39 +885,89 @@ async def _begin_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         group.setdefault(it['level'], []).append(it)
 
     context.user_data['mode'] = 'diagnostic'
-    context.user_data['diag'] = {
-        'group': group,
-        'asked': [],
-        'level_idx': 1,  # start at A2
-        'count': 0,
-        'skill': {},
-        'current': None,
-    }
+    context.user_data['diag'] = {'group': group}
+    await send_mentor_reaction(context, chat_id, 'diagnostic_start')
     await _send(
         context, chat_id,
-        'Начинаем диагностику 🎯\nОтвечай, как можешь — это поможет подобрать уровень.',
+        'Диагностика уровня 🎯\n\n'
+        'Как ты оцениваешь свой английский сейчас?',
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboards.diagnostic_self_assess_kb(),
     )
+
+
+async def _start_diagnostic_test(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, claimed: str,
+):
+    chat_id = _chat_id(update)
+    group = context.user_data['diag']['group']
+    min_i, max_i, start_i = diag_flow.test_band(claimed)
+
+    context.user_data['diag'] = {
+        'group': group,
+        'claimed': claimed,
+        'claimed_idx': diag_flow.level_index(claimed),
+        'band': (min_i, max_i),
+        'asked': [],
+        'level_idx': start_i,
+        'count': 0,
+        'correct': 0,
+        'skill': {},
+        'skills_used': set(),
+        'current': None,
+        'challenge': False,
+        'challenge_count': 0,
+        'challenge_correct': 0,
+    }
     await _ask_next_diagnostic(update, context)
 
 
 def _pick_diagnostic_item(diag: dict):
-    li = diag['level_idx']
-    order = [li, li - 1, li + 1, li - 2, li + 2, li - 3, li + 3]
-    for idx in order:
-        if 0 <= idx <= 3:
-            level = db.LEVELS[idx]
-            for it in diag['group'].get(level, []):
-                if it['id'] not in diag['asked']:
-                    return it
-    return None
+    item = diag_flow.pick_item(
+        diag['group'],
+        set(diag['asked']),
+        diag['band'],
+        diag['level_idx'],
+        used_skills=diag.get('skills_used') or set(),
+    )
+    if item:
+        diag.setdefault('skills_used', set()).add(item['skill'])
+    return item
+
+
+def _diag_limit(diag: dict) -> int:
+    return (
+        diag_flow.CHALLENGE_QUESTIONS if diag.get('challenge')
+        else diag_flow.PRIMARY_QUESTIONS
+    )
+
+
+def _diag_progress(diag: dict) -> int:
+    if diag.get('challenge'):
+        return diag.get('challenge_count', 0)
+    return diag.get('count', 0)
 
 
 async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data['diag']
     chat_id = _chat_id(update)
+    limit = _diag_limit(diag)
 
-    if diag['count'] >= MAX_DIAGNOSTIC_QUESTIONS:
-        await _finish_diagnostic(update, context)
+    if _diag_progress(diag) >= limit:
+        if diag.get('challenge'):
+            diag['phase'] = 'challenge_done'
+            await _finish_diagnostic(update, context)
+        elif diag_flow.should_offer_challenge({**diag, 'phase': 'primary_done'}):
+            diag['phase'] = 'primary_done'
+            await send_mentor_reaction(context, chat_id, 'answer_correct')
+            await _send(
+                context, chat_id,
+                'Отлично справляешься! 👍\n\n'
+                'Похоже, можешь больше. Проверим посложнее?',
+                reply_markup=keyboards.diagnostic_challenge_kb(),
+            )
+        else:
+            await _finish_diagnostic(update, context)
         return
 
     item = _pick_diagnostic_item(diag)
@@ -585,27 +977,47 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
 
     diag['current'] = item
     diag['asked'].append(item['id'])
-    diag['count'] += 1
-    number = diag['count']
+    if diag.get('challenge'):
+        diag['challenge_count'] = diag.get('challenge_count', 0) + 1
+        number = diag['challenge_count']
+        total = diag_flow.CHALLENGE_QUESTIONS
+    else:
+        diag['count'] += 1
+        number = diag['count']
+        total = diag_flow.PRIMARY_QUESTIONS
 
     if item['item_type'] == 'listening' and item.get('audio'):
         await _send_media(context, chat_id, item['audio'])
 
-    prompt = f'Вопрос {number}/{MAX_DIAGNOSTIC_QUESTIONS}\n\n{item["prompt"]}'
-
-    # Offer audio when the question itself is in English.
-    listen = _is_english(item['prompt'])
-    context.user_data['tts_text'] = item['prompt'] if listen else None
+    prompt = f'Вопрос {number}/{total}\n\n{item["prompt"]}'
+    task = diag_flow.task_instruction(item)
+    if task:
+        prompt += f'\n\n{task}'
+    listen_text = _english_text_for_tts(item['prompt'])
+    listen = bool(listen_text)
+    context.user_data['tts_text'] = listen_text or None
+    parse_mode = (
+        ParseMode.HTML
+        if any(x in item['prompt'] for x in ('<b>', '<i>', '«'))
+        else None
+    )
 
     if item['item_type'] in ('multiple_choice', 'listening') and item['options']:
-        await _send(context, chat_id, prompt,
-                    reply_markup=keyboards.diagnostic_options_kb(item['options'], with_listen=listen))
+        await _send(
+            context, chat_id, prompt,
+            reply_markup=keyboards.diagnostic_options_kb(
+                item['options'], item_id=item['id'], with_listen=listen,
+            ),
+            parse_mode=parse_mode,
+        )
     elif item['item_type'] == 'speaking':
-        hint = '\n\nПроизнеси вслух и пришли голосовое 🎙️ (можно и текстом).'
-        await _send(context, chat_id, prompt + hint)
+        await _send(context, chat_id, prompt, parse_mode=parse_mode)
     else:
-        await _send(context, chat_id, prompt + '\n\nНапиши ответ сообщением ✍️',
-                    reply_markup=keyboards.say_kb() if listen else None)
+        await _send(
+            context, chat_id, prompt,
+            reply_markup=keyboards.say_kb() if listen else None,
+            parse_mode=parse_mode,
+        )
 
 
 async def _score_diagnostic_answer(item: dict, answer_text: str, voice_ok: bool = False):
@@ -625,11 +1037,22 @@ async def _score_diagnostic_answer(item: dict, answer_text: str, voice_ok: bool 
     return result.is_correct
 
 
+async def _clear_diagnostic_buttons(update: Update) -> None:
+    query = update.callback_query
+    if not query or not query.message:
+        return
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def _handle_diagnostic_answer(update, context, answer_text: str):
     diag = context.user_data.get('diag')
     if not diag or not diag.get('current'):
         return
     item = diag['current']
+    chat_id = _chat_id(update)
 
     is_correct = await _score_diagnostic_answer(item, answer_text)
 
@@ -637,18 +1060,59 @@ async def _handle_diagnostic_answer(update, context, answer_text: str):
     c, t = diag['skill'].get(skill, [0, 0])
     diag['skill'][skill] = [c + (1 if is_correct else 0), t + 1]
 
+    min_i, max_i = diag['band']
     if is_correct:
-        diag['level_idx'] = min(3, diag['level_idx'] + 1)
+        diag['correct'] = diag.get('correct', 0) + 1
+        if diag.get('challenge'):
+            diag['challenge_correct'] = diag.get('challenge_correct', 0) + 1
+        diag['level_idx'] = min(max_i, diag['level_idx'] + 1)
+        await send_mentor_reaction(context, chat_id, 'answer_correct')
+        feedback = 'Верно! 👍'
     else:
-        diag['level_idx'] = max(0, diag['level_idx'] - 1)
+        diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
+        await send_mentor_reaction(context, chat_id, 'answer_wrong')
+        feedback = 'Не совсем — ничего страшного, идём дальше 🙂'
+        tip = (item.get('explanation_ru') or '').strip()
+        if tip:
+            feedback += f'\n\n💡 {tip}'
+        elif item.get('correct'):
+            ans = item['correct'][0]
+            feedback += (
+                f'\n\n💡 Ты выбрал(а): <b>{_esc(answer_text)}</b>\n'
+                f'Правильно: <b>{_esc(ans)}</b>'
+            )
 
+    diag['current'] = None
+    await _clear_diagnostic_buttons(update)
+    use_html = bool((item.get('explanation_ru') or '').strip()) or (
+        not is_correct and item.get('correct')
+    )
+    await _send(
+        context, chat_id, feedback,
+        parse_mode=ParseMode.HTML if use_html else None,
+    )
+    await _ask_next_diagnostic(update, context)
+
+
+async def _begin_challenge_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    diag = context.user_data['diag']
+    claimed_idx = diag.get('claimed_idx', 1)
+    result_idx = diag.get('level_idx', 1)
+    diag['challenge'] = True
+    diag['band'] = diag_flow.challenge_band(claimed_idx, result_idx)
+    diag['level_idx'] = diag['band'][0]
+    diag['challenge_count'] = 0
+    diag['challenge_correct'] = 0
+    chat_id = _chat_id(update)
+    await send_mentor_reaction(context, chat_id, 'lesson_start')
     await _ask_next_diagnostic(update, context)
 
 
 async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data.get('diag', {})
     chat_id = _chat_id(update)
-    level_code = db.LEVELS[diag.get('level_idx', 0)]
+    level_code = diag_flow.finalize_level(diag)
+    claimed = diag.get('claimed', 'unsure')
 
     weak = [
         skill for skill, (c, t) in diag.get('skill', {}).items()
@@ -668,18 +1132,20 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
             'listening': 'аудирование', 'reading': 'чтение',
             'speaking': 'говорение', 'pronunciation': 'произношение',
         }
-        weak_text = '\nНад чем поработаем: ' + ', '.join(
+        weak_text = '\n\nНад чем поработаем: ' + ', '.join(
             names.get(s, s) for s in weak
         ) + '.'
 
+    await send_mentor_reaction(context, chat_id, 'diagnostic_done')
+    body = diag_flow.result_message(claimed, level_code, diag) + weak_text
     await _send(
         context, chat_id,
-        f'Готово! Твой уровень: {level_code.upper()} 🎯{weak_text}\n\n'
-        'Ещё пара вопросов, чтобы подобрать уроки именно под тебя 👇',
+        body + '\n\nЕщё пара вопросов, чтобы подобрать уроки именно под тебя 👇',
+        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.main_menu(),
     )
-    # Continue onboarding: goal, then interests.
     context.user_data['onboarding'] = True
+    await db.clear_learning_goal(profile_id)
     await show_goal(update, context)
 
 
@@ -697,43 +1163,56 @@ def _progress_bar(done: int, total: int) -> str:
 def _format_daily_plan_text(plan: dict) -> str:
     episode = plan.get('episode')
     ep_num = (episode or {}).get('episode_num', 0)
-    header = f'📖 <b>Глава дня</b>'
+    header = '📖 <b>Глава дня</b>'
     if ep_num:
         header += f' · Эпизод {ep_num}'
 
     lines = [header, _esc(plan.get('greeting', '')), '']
 
+    steps: list[str] = []
+    total_mins = 0
+    total_xp = 0
+
+    warmup = plan.get('warmup')
+    if warmup:
+        from study_app.daily_facts import warmup_label
+        icon, label = warmup_label(warmup.get('kind', 'fact'))
+        mark = '✅' if warmup.get('done') else '○'
+        steps.append(f'{mark} {icon} {label} — ~1 мин')
+        total_mins += 1
+
     if episode:
-        lines.append(f'📺 <b>{_esc(episode.get("title", "Эпизод"))}</b>')
-        sub = episode.get('subtitle')
-        if sub:
-            lines.append(_esc(sub))
-        mins = episode.get('minutes', 0)
-        xp = episode.get('xp_reward', 0)
-        meta = []
-        if mins:
-            meta.append(f'⏱ ~{mins} мин')
+        mark = '✅' if episode.get('done') else '○'
+        mins = episode.get('minutes') or 8
+        xp = episode.get('xp_reward') or 0
+        title = episode.get('subtitle') or episode.get('title', 'Эпизод')
+        meta = f'~{mins} мин'
         if xp:
-            meta.append(f'+{xp} XP')
-        if meta:
-            lines.append(' · '.join(meta))
-        if episode.get('done'):
-            lines.append('✅ Глава пройдена')
-        lines.append('')
+            meta += f' · +{xp} XP'
+            total_xp += xp
+        total_mins += mins
+        steps.append(f'{mark} 📺 {_esc(title)} — {meta}')
     elif not plan.get('has_episode'):
         lines.append('🎬 Все эпизоды пройдены — скоро новая глава!')
         lines.append('')
 
-    warmup = plan.get('warmup')
-    if warmup and not warmup.get('done'):
-        from study_app.daily_facts import warmup_label
-        _, label = warmup_label(warmup.get('kind', 'fact'))
-        lines.append(f'{label} — короткая разминка (1 мин)')
-        lines.append('')
-
     bonus = plan.get('bonus_words')
-    if bonus and not bonus.get('done') and (not episode or episode.get('done')):
-        lines.append(f'🗂 <b>Бонус:</b> повторить {bonus.get("count", 0)} слов')
+    if bonus:
+        mark = '✅' if bonus.get('done') else '○'
+        cnt = bonus.get('count', 0)
+        est = max(2, min(cnt, 5))
+        steps.append(f'{mark} 🗂 Повторить {cnt} слов — ~{est} мин')
+        total_mins += est
+
+    if steps:
+        summary = f'<b>Маршрут на сегодня</b> (~{total_mins} мин'
+        if total_xp:
+            summary += f' · +{total_xp} XP'
+        summary += '):'
+        lines.append(summary)
+        lines.append('')
+        for i, step in enumerate(steps, 1):
+            lines.append(f'{i}. {step}')
         lines.append('')
 
     done = plan.get('progress_done', 0)
@@ -745,10 +1224,9 @@ def _format_daily_plan_text(plan: dict) -> str:
 
     if plan.get('all_done'):
         lines.append('🎉 Глава дня закрыта! Завтра — новое приключение.')
-    elif episode and not episode.get('done'):
-        lines.append('Жми <b>▶️ Продолжить</b> — я поведу по сценарию.')
-    elif bonus and not bonus.get('done'):
-        lines.append('Остался бонус — закрепи слова за пару минут.')
+    else:
+        cta = 'Продолжить' if plan.get('progress_done', 0) > 0 else 'Начать'
+        lines.append(f'Нажми <b>▶️ {cta}</b> — поведу по шагам, без выбора.')
 
     if not plan.get('premium'):
         left = plan.get('trial_left', 0)
@@ -765,6 +1243,9 @@ async def show_daily_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send(context, chat_id,
                     'Сначала пройдём диагностику уровня 🙂',
                     reply_markup=keyboards.start_diagnostic_kb())
+        return
+
+    if await _resume_onboarding_if_needed(update, context, profile):
         return
 
     plan = await db.get_daily_plan(profile['id'])
@@ -838,7 +1319,7 @@ async def _prompt_notifications(update: Update, context: ContextTypes.DEFAULT_TY
     await _send(
         context, _chat_id(update),
         '🔔 Хочешь, чтобы я напоминал о тренировке каждый день?\n\n'
-        'Пришлю интересный факт на двух языках и ссылку на твой план — '
+        'Пришлю интересный факт на двух языках и план на день — '
         'можно послушать факт по-английски 🔊',
         reply_markup=keyboards.notification_ask_kb(),
     )
@@ -965,29 +1446,180 @@ async def _show_exercise_hint(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _send(context, chat_id, text, parse_mode=ParseMode.HTML)
 
 
-async def start_rule_drill(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _maybe_show_mistake_rule_tablet(
+    update, context, rule_keys: list[str], *, chat_id: int,
+) -> None:
+    if not rule_keys:
+        return
+    rule_key = rule_keys[0]
+    rule = await db.get_rule_detail(context.user_data['profile_id'], rule_key)
+    if not rule:
+        return
+    status = rule.get('status', '')
+    header = '📋 <b>Правило по этой теме</b>\n\n'
+    if status in ('learned', 'known'):
+        header += 'ℹ️ Это правило уже есть в твоей библиотеке — можно повторить или потренировать.\n\n'
+    else:
+        header += 'ℹ️ Этого правила ещё нет в библиотеке — можешь добавить.\n\n'
+    context.user_data['tts_text'] = _grammar_speak_text({
+        'table': rule.get('table', {}),
+        'examples': rule.get('examples', []),
+    }) or ''
+    await _send(
+        context, chat_id,
+        header + _rule_to_html(rule),
+        reply_markup=keyboards.mistake_rule_kb(rule_key, status),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def start_rule_training(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, rule_key: str | None = None,
+):
     profile_id = context.user_data['profile_id']
     chat_id = _chat_id(update)
-    drill = await db.get_rule_drill(profile_id)
-    if not drill:
+    if not rule_key:
+        rule_key = await db.get_next_unlearned_rule_key(profile_id)
+    if not rule_key:
         await _send(
             context, chat_id,
             'Все правила отмечены — отлично! 🎉 Новые появятся в следующих эпизодах.',
             reply_markup=keyboards.main_menu(),
         )
         return
+    session = await db.get_rule_training(rule_key)
+    if not session:
+        await _send(context, chat_id, 'Для этого правила тренировка пока не готова.')
+        return
     context.user_data['mode'] = 'rule_drill'
-    context.user_data['rule_drill'] = drill
-    prompt = drill['prompt_ru']
-    if drill.get('hint_ru'):
-        prompt += f'\n\n💡 {drill["hint_ru"]}'
+    context.user_data['rule_training'] = {
+        'rule_key': session['rule_key'],
+        'rule_title': session['rule_title'],
+        'exercises': session['exercises'],
+        'index': 0,
+        'score': 0,
+    }
+    context.user_data.pop('rule_drill', None)
     await _send(
-        context, chat_id, f'🐦 Тренировка правил\n\n{prompt}',
-        reply_markup=keyboards.exercise_options_kb(
-            drill['options'], with_hint=False, with_ask=True,
-        ),
+        context, chat_id,
+        f'🎯 Тренировка: «{session["rule_title"]}»\n'
+        f'Заданий: {len(session["exercises"])}',
     )
+    await _show_rule_training_step(update, context)
 
+
+async def start_rule_drill(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_rule_training(update, context, rule_key=None)
+
+
+async def _show_rule_training_step(update, context):
+    training = context.user_data.get('rule_training') or {}
+    chat_id = _chat_id(update)
+    exercises = training.get('exercises') or []
+    idx = training.get('index', 0)
+    total = len(exercises)
+    if idx >= total:
+        await _finish_rule_training(update, context)
+        return
+    ex = exercises[idx]
+    etype = ex.get('exercise_type', 'multiple_choice')
+    header = f'🎯 ({idx + 1}/{total})\n\n{ex.get("prompt_ru", "")}'
+    if etype == 'multiple_choice':
+        context.user_data['expect'] = 'rule_mc'
+        await _send(
+            context, chat_id, header,
+            reply_markup=keyboards.exercise_options_kb(
+                ex.get('options', []), with_hint=False, with_ask=False,
+            ),
+        )
+    else:
+        context.user_data['expect'] = 'rule_text'
+        await _send(context, chat_id, header + '\n\n✍️ Напиши ответ текстом или 🎙️ голосом.')
+
+
+async def _finish_rule_training(update, context):
+    training = context.user_data.get('rule_training') or {}
+    chat_id = _chat_id(update)
+    score = training.get('score', 0)
+    total = len(training.get('exercises') or [])
+    rule_key = training.get('rule_key', '')
+    if score >= max(1, total - 1):
+        await db.set_user_rule_status(
+            context.user_data['profile_id'], rule_key, 'learned',
+        )
+        msg = f'✅ Отлично! {score}/{total} — правило в библиотеке.'
+    else:
+        msg = f'📊 Результат: {score}/{total}. Повтори правило в 📖 Правила.'
+    context.user_data['mode'] = None
+    context.user_data['expect'] = None
+    context.user_data.pop('rule_training', None)
+    await _send(context, chat_id, msg, reply_markup=keyboards.main_menu())
+
+
+async def _grade_rule_training_answer(update, context, answer: str) -> None:
+    training = context.user_data.get('rule_training') or {}
+    chat_id = _chat_id(update)
+    exercises = training.get('exercises') or []
+    idx = training.get('index', 0)
+    if idx >= len(exercises):
+        return
+    ex = exercises[idx]
+    etype = ex.get('exercise_type', 'multiple_choice')
+    result = await checker.check(
+        exercise_type=etype,
+        user_answer=answer,
+        correct=ex.get('correct', []),
+        keywords=ex.get('keywords'),
+    )
+    if result.is_correct:
+        training['score'] = training.get('score', 0) + 1
+        feedback = '✅ Верно!'
+    else:
+        correction = ex.get('correct', [''])[0]
+        feedback = f'❌ Правильно: {correction}'
+    training['index'] = idx + 1
+    context.user_data['rule_training'] = training
+    await _send(context, chat_id, feedback)
+    await _show_rule_training_step(update, context)
+
+
+async def _handle_rule_drill_choice(update, context, option_index: int):
+    training = context.user_data.get('rule_training')
+    if training:
+        exercises = training.get('exercises') or []
+        idx = training.get('index', 0)
+        if idx >= len(exercises):
+            return
+        ex = exercises[idx]
+        options = ex.get('options', [])
+        if option_index >= len(options):
+            return
+        await _grade_rule_training_answer(update, context, options[option_index])
+        return
+
+    drill = context.user_data.get('rule_drill') or {}
+    chat_id = _chat_id(update)
+    options = drill.get('options', [])
+    if option_index >= len(options):
+        return
+    chosen = options[option_index]
+    correct = drill.get('correct', [])
+    is_ok = chosen in correct
+    if is_ok:
+        await db.set_user_rule_status(
+            context.user_data['profile_id'], drill['rule_key'], 'learned',
+        )
+        msg = '✅ Верно! Правило добавлено в библиотеку.'
+    else:
+        msg = f'❌ Правильный вариант: {correct[0] if correct else "—"}'
+    context.user_data['mode'] = None
+    context.user_data['rule_drill'] = None
+    plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+        context.user_data['profile_id'],
+    )
+    await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'rules')
+    await _send(context, chat_id, msg)
+    await show_daily_plan(update, context)
 
 # --------------------------------------------------------------------------- #
 # Lessons: menu + engine
@@ -1000,8 +1632,12 @@ async def show_lessons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def open_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson_id: int,
                       *, plan_block_id: int | None = None):
-    profile_id = context.user_data['profile_id']
+    profile = await _ensure_profile(update, context)
+    profile_id = profile['id']
     chat_id = _chat_id(update)
+
+    if await _resume_onboarding_if_needed(update, context, profile):
+        return
 
     gate = await db.can_start_lesson(profile_id, lesson_id)
     if not gate['allowed']:
@@ -1088,6 +1724,12 @@ def _compose_step_text(step: dict) -> str:
     return '\n\n'.join(p for p in parts if p) or '…'
 
 
+# Step types that auto-send English voiceover when the step is shown.
+_AUTO_VOICE_STEP_TYPES = frozenset({
+    'hook', 'story', 'dialogue', 'vocabulary', 'grammar_note', 'audio',
+})
+
+
 async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('lesson')
     chat_id = _chat_id(update)
@@ -1120,7 +1762,7 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         personalized = False
         if content.get('personalize'):
             await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
-            topic = context.user_data.get('sphere_en') or ''
+            topic = _practice_topic(context)
             gen = await generate_practice(
                 level=state.get('level', 'a2'),
                 skill=content.get('skill') or step.get('skill') or 'grammar',
@@ -1185,7 +1827,14 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             has_hint = _exercise_has_hint(content)
             if has_hint:
                 hint += '\n<i>Застрял? Нажми 💡 Подсказка</i>'
-            kb = keyboards.exercise_text_kb(with_hint=has_hint, with_ask=True)
+            prompt_speak = _english_text_for_tts(prompt)
+            if prompt_speak:
+                context.user_data['tts_text'] = prompt_speak
+            kb = keyboards.exercise_text_kb(
+                with_hint=has_hint,
+                with_ask=True,
+                with_listen=bool(prompt_speak),
+            )
             await _send(
                 context, chat_id, prompt + hint,
                 reply_markup=kb,
@@ -1225,16 +1874,14 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kb = keyboards.continue_kb()
         await _send(context, chat_id, _grammar_html(step),
                     reply_markup=kb, parse_mode=ParseMode.HTML)
+        if speak_text:
+            await _send_tts(context, chat_id, speak_text)
         return
 
     # ---- Content steps ------------------------------------------------- #
     speak_text = _speak_text_for_step(step)
     if speak_text:
         context.user_data['tts_text'] = speak_text
-
-    # An "audio" step with no uploaded media is voiced on the fly via TTS.
-    if stype == 'audio' and not step.get('media') and speak_text:
-        await _send_tts(context, chat_id, speak_text)
 
     text = _compose_step_text(step)
     label = '🎉 Забрать награду' if stype == 'reward' else '➡️ Далее'
@@ -1246,6 +1893,10 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = keyboards.continue_kb(label)
     parse_mode = ParseMode.HTML if _step_uses_html(step) else None
     await _send(context, chat_id, text, reply_markup=kb, parse_mode=parse_mode)
+
+    if speak_text and stype in _AUTO_VOICE_STEP_TYPES:
+        if stype != 'audio' or not step.get('media'):
+            await _send_tts(context, chat_id, speak_text)
 
 
 async def _handle_exercise_text(update, context, answer_text: str, is_voice=False):
@@ -1283,32 +1934,6 @@ async def _handle_exercise_text(update, context, answer_text: str, is_voice=Fals
     )
     context.user_data['expect'] = None
     await _advance(update, context)
-
-
-async def _handle_rule_drill_choice(update, context, option_index: int):
-    drill = context.user_data.get('rule_drill') or {}
-    chat_id = _chat_id(update)
-    options = drill.get('options', [])
-    if option_index >= len(options):
-        return
-    chosen = options[option_index]
-    correct = drill.get('correct', [])
-    is_ok = chosen in correct
-    if is_ok:
-        await db.set_user_rule_status(
-            context.user_data['profile_id'], drill['rule_key'], 'learned',
-        )
-        msg = '✅ Верно! Правило добавлено в библиотеку.'
-    else:
-        msg = f'❌ Правильный вариант: {correct[0] if correct else "—"}'
-    context.user_data['mode'] = None
-    context.user_data['rule_drill'] = None
-    plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
-        context.user_data['profile_id'],
-    )
-    await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'rules')
-    await _send(context, chat_id, msg)
-    await show_daily_plan(update, context)
 
 
 def _matching_options(pool: list[str], correct: str) -> list[str]:
@@ -1635,6 +2260,7 @@ async def start_weak_practice(update: Update, context: ContextTypes.DEFAULT_TYPE
     exercise = await generate_practice(
         level=profile.get('level_code', 'a2'),
         skill=skill,
+        topic=_practice_topic(context),
         user_key=context.user_data.get('user_key'),
     )
 
@@ -1848,8 +2474,27 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ach_line = (
         ' '.join(a['icon'] for a in unlocked) if unlocked else 'пока нет — всё впереди!'
     )
-    sub = (f'активна до {d["subscription_until"]}'
-           if d['subscription_until'] else 'нет активной')
+    if d['premium'] and d.get('subscription_until'):
+        sub = (
+            f'{d["plan_name"]} — активна до {d["subscription_until"]}\n'
+            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось '
+            f'(пакет {d["voice_minutes_monthly"]} мин/мес)\n'
+            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов '
+            f'осталось в этом месяце'
+        )
+    elif d['premium']:
+        sub = (
+            f'{d["plan_name"]}\n'
+            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось\n'
+            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
+        )
+    else:
+        sub = (
+            'нет активной (2 пробных урока)\n'
+            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин '
+            f'(пробный лимит {d["voice_minutes_monthly"]} мин/мес)\n'
+            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
+        )
     interests = ', '.join(d['interests']) if d['interests'] else 'не выбраны'
     weak = ', '.join(d['weak_skills_ru']) if d['weak_skills_ru'] else '—'
 
@@ -1879,11 +2524,12 @@ async def show_interests(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'Список интересов ещё не настроен.', reply_markup=keyboards.main_menu())
         return
     selected = set(await db.get_user_interest_ids(profile['id']))
+    custom = await db.get_interests_custom(profile['id'])
+    has_custom = bool(custom.strip())
     await _send(
         context, _chat_id(update),
-        'Выбери, что тебе интересно — я буду подбирать уроки под это 👇\n'
-        '(нажимай, чтобы отметить; потом «Готово»)',
-        reply_markup=keyboards.interests_kb(items, selected),
+        'Выбери из списка или напиши свои — от этого зависят темы уроков 👇',
+        reply_markup=keyboards.interests_kb(items, selected, has_custom=has_custom),
     )
 
 
@@ -1891,22 +2537,26 @@ async def _refresh_interests(update, context):
     profile_id = context.user_data['profile_id']
     items = await db.get_interests()
     selected = set(await db.get_user_interest_ids(profile_id))
+    custom = await db.get_interests_custom(profile_id)
+    has_custom = bool(custom.strip())
+    kb = keyboards.interests_kb(items, selected, has_custom=has_custom)
+    query = update.callback_query
+    if not query or not query.message:
+        return
     try:
-        await update.callback_query.edit_message_reply_markup(
-            reply_markup=keyboards.interests_kb(items, selected)
-        )
+        await query.edit_message_reply_markup(reply_markup=kb)
     except Exception:  # noqa: BLE001
-        pass
+        try:
+            await query.message.edit_reply_markup(reply_markup=kb)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('interests keyboard refresh failed: %s', exc)
 
 
 async def show_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    d = await db.get_profile_detail(profile['id'])
     goals = db.learning_goal_choices()
-    current = ''
-    for g in goals:
-        if g['label'] == d['goal']:
-            current = g['code']
+    # Fresh onboarding — no pre-selected tick from an old profile value.
+    current = '' if context.user_data.get('onboarding') else (profile.get('learning_goal') or '')
     await _send(
         context, _chat_id(update),
         'Зачем тебе английский? Это поможет подобрать темы уроков 👇',
@@ -1914,88 +2564,204 @@ async def show_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def show_sphere(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    profile = await _ensure_profile(update, context)
-    current = profile.get('profession', '')
+async def _continue_after_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get('onboarding'):
+        await db.clear_user_interests(context.user_data['profile_id'])
+        await _send(context, _chat_id(update), 'Супер! Теперь выбери интересы 👇')
+        await show_interests(update, context)
+    else:
+        await _send(context, _chat_id(update), 'Цель сохранена ✅')
+        await show_profile(update, context)
+
+
+async def _prompt_custom_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['expect'] = 'goal_custom'
     await _send(
         context, _chat_id(update),
-        'В какой сфере ты работаешь или учишься? '
-        'Буду иногда давать практику из твоей области 👇\n'
-        '(можно пропустить — нажми «🏠 В меню»)',
+        'Напиши своими словами, зачем тебе английский ✍️\n'
+        'Например: «для работы с иностранными клиентами» или «читаю научные статьи».',
+    )
+
+
+async def show_sphere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    current = '' if context.user_data.get('onboarding') else (profile.get('profession') or '')
+    if context.user_data.get('onboarding'):
+        text = (
+            'В какой сфере ты работаешь или учишься?\n'
+            'Выбери из списка или напиши свою — под это подстрою практику 👇'
+        )
+    else:
+        text = (
+            'В какой сфере ты работаешь или учишься? '
+            'Буду иногда давать практику из твоей области 👇'
+        )
+    await _send(
+        context, _chat_id(update), text,
         reply_markup=keyboards.sphere_kb(db.sphere_choices(), current),
     )
+
+
+async def _prompt_custom_sphere(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['expect'] = 'sphere_custom'
+    await _send(
+        context, _chat_id(update),
+        'Напиши своими словами, в какой сфере ты работаешь или учишься ✍️\n'
+        'Например: строительство, ветеринария, фриланс',
+    )
+
+
+async def _finish_sphere_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    context.user_data['sphere_en'] = profile.get('sphere_en', '')
+    context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
+    if context.user_data.pop('onboarding', False):
+        await db.complete_onboarding(context.user_data['profile_id'])
+        await _send(
+            context, _chat_id(update),
+            'Всё готово! 🎉 Я собрал персональный план под твой уровень, '
+            'интересы и сферу.\n\n'
+            'Жми «📚 Учиться» — там чеклист на сегодня, без выбора уроков.',
+            reply_markup=keyboards.main_menu(),
+        )
+        notify = await db.get_notification_settings(context.user_data['profile_id'])
+        if not notify.get('setup_done'):
+            await _prompt_notifications(update, context)
+    else:
+        await _send(context, _chat_id(update), 'Сфера сохранена ✅')
+        await show_profile(update, context)
 
 
 # --------------------------------------------------------------------------- #
 # Ask the tutor (free-form AI help)
 # --------------------------------------------------------------------------- #
 
+TUTOR_INTRO = (
+    '💬 <b>Спирит на связи</b>\n\n'
+    'Привет! Я <b>Spirit</b> — дух английского языка 🌟 Летаю между словами '
+    'и помогаю, когда хочется поговорить, спросить или попрактиковаться.\n\n'
+    '<b>Что можно:</b>\n'
+    '• поболтать — спроси «как дела?», «что ты делал сегодня?» — расскажу историю\n'
+    '• говорить или писать по-английски, по-русски или вперемешку 🎙️\n'
+    '• забыл слово — скажи по-русски, подскажу по-английски\n'
+    '• пришли фразу — мягко поправлю; полезное — в 📖 библиотеку правил\n\n'
+    'Ошибаться нормально. Я рядом — спрашивай текстом или голосом 👇'
+)
+
+
 async def start_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     context.user_data['mode'] = 'tutor'
-    context.user_data['tutor_history'] = [
-        ChatMessage(
-            'assistant',
-            "Hi! I'm your English tutor. Ask me anything about English — "
-            'grammar, words, or how to say something.',
-        )
-    ]
+    context.user_data['tutor_history'] = []
     context.user_data['tutor_level'] = profile.get('level_code', 'a2')
+    await send_mentor_reaction(context, _chat_id(update), 'tutor_start')
     await _send(
         context, _chat_id(update),
-        '💬 Режим наставника включён.\n\n'
-        'Задай вопрос по английскому (можно по-русски): грамматика, перевод, '
-        '«как сказать…», разбор ошибки. Можно написать или записать голосом 🎙️ — '
-        'я распознаю речь и отвечу.\n'
-        'Попробуй и потренируй произношение: задай вопрос на английском вслух.\n\n'
-        'Чтобы выйти — нажми любую кнопку меню 👇',
+        TUTOR_INTRO,
         reply_markup=keyboards.main_menu(),
+        parse_mode=ParseMode.HTML,
     )
 
 
-async def _handle_tutor_turn(update, context, user_text: str):
+async def _send_tutor_reply(context, chat_id: int, reply: str, *, update=None):
+    context.user_data['mode'] = 'tutor'
+    tts = _english_text_for_tts(reply)
+    context.user_data['tts_text'] = tts or None
+    if tts:
+        context.user_data['last_tutor_tts'] = tts
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = []
+    if context.user_data.get('tts_text') or context.user_data.get('last_tutor_tts'):
+        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
+    if context.user_data.get('lesson_help_return'):
+        rows.append([InlineKeyboardButton('↩️ Вернуться к уроку', callback_data='lesson:resume')])
+    kb = InlineKeyboardMarkup(rows) if rows else None
+    await _send(context, chat_id, reply, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+
+async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: bool = False):
     chat_id = _chat_id(update)
+    context.user_data['mode'] = 'tutor'
     history = context.user_data.get('tutor_history') or []
 
-    # Deterministic-first: answer common grammar questions for free (0 tokens).
-    canned = explain_grammar(user_text)
+    if from_voice and is_garbage_transcript(user_text):
+        await _send(
+            context, chat_id,
+            'Плохо расслышал 😕\n'
+            'Повтори чуть медленнее — сначала по-русски, потом по-английски.\n'
+            'Или напиши текстом.',
+        )
+        return
+
+    # Canned grammar only for typed questions — STT noise caused false matches.
+    canned = None if from_voice else explain_grammar(user_text)
     if canned:
+        ok, limit_msg = await db.check_tutor_message(context.user_data['profile_id'])
+        if not ok:
+            await _send(context, chat_id, limit_msg, reply_markup=keyboards.main_menu())
+            return
         history.append(ChatMessage('user', user_text))
         history.append(ChatMessage('assistant', canned))
         context.user_data['tutor_history'] = history[-12:]
+        await db.register_tutor_message(context.user_data['profile_id'])
         kb = None
         if context.user_data.get('lesson_help_return'):
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
             kb = InlineKeyboardMarkup([[
                 InlineKeyboardButton('↩️ Вернуться к уроку', callback_data='lesson:resume'),
             ]])
-        await _send(context, chat_id, canned + '\n\nЕщё вопрос? Спрашивай 🙂',
-                    reply_markup=kb)
+        await _send(
+            context, chat_id,
+            canned + '\n\nЕщё вопрос? Спрашивай 🙂',
+            reply_markup=kb,
+        )
         return
 
+    check_english = bool(english_portion_for_tutor(user_text, from_voice=from_voice))
+    code_switch = is_code_switch_message(user_text)
+    grammar_followup = is_grammar_followup_turn(user_text, history)
+    followup_target = extract_grammar_followup_target(history) if grammar_followup else ''
+    if check_english and not code_switch and not grammar_followup:
+        en_norm = english_portion_for_tutor(user_text, from_voice=from_voice)
+        if '\n' in user_text:
+            ru_part = user_text.split('\n', 1)[0].strip()
+            user_text = f'{ru_part}\n{en_norm}' if ru_part else en_norm
+        else:
+            user_text = en_norm
     history.append(ChatMessage('user', user_text))
+    profile_id = context.user_data['profile_id']
+    ok, limit_msg = await db.check_tutor_message(profile_id)
+    if not ok:
+        await _send(context, chat_id, limit_msg, reply_markup=keyboards.main_menu())
+        return
+
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
-    reply = await partner.reply(
+    spirit_chat = is_spirit_chat_turn(user_text) and not grammar_followup
+    reply = await tutor.reply(
         history=history,
-        character_name='Tutor',
-        character_role='patient English tutor for a Russian speaker',
-        personality='clear, concise, encouraging; explains simply and gives one example',
         level=context.user_data.get('tutor_level', 'a2'),
-        situation='answering a learner question about English; reply in the '
-                  'language of the question, keep it short, add one example',
-        user_key=context.user_data.get('user_key'),
+        check_english=check_english and not grammar_followup,
+        from_voice=from_voice,
+        code_switch=code_switch,
+        spirit_chat=spirit_chat,
+        grammar_followup=grammar_followup and bool(followup_target),
+        followup_target=followup_target,
+    )
+    await db.register_tutor_message(profile_id)
+    reply, tagged_keys = strip_rule_tags(reply)
+    rule_keys = suggest_rule_keys(
+        user_text=user_text,
+        tutor_reply=reply,
+        tagged_keys=tagged_keys,
     )
     history.append(ChatMessage('assistant', reply))
     context.user_data['tutor_history'] = history[-12:]
-    context.user_data['tts_text'] = reply if _is_english(reply) else None
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    rows = []
-    if _is_english(reply):
-        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
-    if context.user_data.get('lesson_help_return'):
-        rows.append([InlineKeyboardButton('↩️ Вернуться к уроку', callback_data='lesson:resume')])
-    kb = InlineKeyboardMarkup(rows) if rows else None
-    await _send(context, chat_id, f'💬 {reply}', reply_markup=kb)
+    await _send_tutor_reply(context, chat_id, reply, update=update)
+    if check_english and rule_keys and reply_has_substantive_grammar_mistakes(reply) and not code_switch:
+        await _maybe_show_mistake_rule_tablet(
+            update, context, rule_keys, chat_id=chat_id,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -2003,30 +2769,94 @@ async def _handle_tutor_turn(update, context, user_text: str):
 # --------------------------------------------------------------------------- #
 
 async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    price = settings.SUBSCRIPTION_PRICE_RUB
+    from billing_app.plans_catalog import format_subscription_plans_message
+
     days = settings.SUBSCRIPTION_DAYS
+    plans = await db.get_subscription_plans()
+    sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
+    text = format_subscription_plans_message(
+        header='Ты прошёл бесплатные уроки — здорово! 👏\n',
+        sub_plans=sub_plans,
+        days=days,
+    )
     await _send(
         context, _chat_id(update),
-        'Ты прошёл бесплатные уроки — здорово! 👏\n\n'
-        f'Дальше — полный доступ на {days} дней:\n'
-        '• ежедневные уроки под твой уровень;\n'
-        '• словарь с умным повторением;\n'
-        '• диалоги и говорение с проверкой AI;\n'
-        '• история с Emma и новые серии;\n'
-        '• XP, стрики и достижения.\n\n'
-        f'Всего {price} ₽ на {days} дней. Без автопродления.',
-        reply_markup=keyboards.paywall_kb(price),
+        text,
+        reply_markup=keyboards.paywall_kb(sub_plans),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """⭐️ Подписка — status or paywall."""
+    await _ensure_profile(update, context)
+    profile_id = context.user_data['profile_id']
+    limits = await db.get_user_limits(profile_id)
+
+    if limits.get('has_subscription'):
+        text = (
+            f'Тариф: <b>{limits["plan_name"]}</b>\n'
+            f'🎙️ Голос: ~{limits["voice_remaining_minutes"]} мин осталось в этом месяце\n'
+            f'💬 Наставник: ~{limits["tutor_messages_remaining"]} вопросов '
+            f'осталось (пакет на месяц, не сгорает за день)\n\n'
+            'Полная программа: план дня, Emma, словарь, правила.\n'
+            'Можно докупить +100 мин голоса, если пакет закончился.'
+        )
+        await _send(
+            context, _chat_id(update),
+            text,
+            reply_markup=keyboards.subscription_kb(
+                has_subscription=True,
+                voice_remaining=limits.get('voice_remaining_minutes', 0),
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    from billing_app.plans_catalog import format_subscription_plans_message
+
+    days = settings.SUBSCRIPTION_DAYS
+    plans = await db.get_subscription_plans()
+    sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
+    text = format_subscription_plans_message(
+        header='Тарифы English Mentor 👇\n',
+        sub_plans=sub_plans,
+        days=days,
+    )
+    await _send(
+        context, _chat_id(update),
+        text,
+        reply_markup=keyboards.paywall_kb(sub_plans),
+        parse_mode=ParseMode.HTML,
     )
 
 
 async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    price = settings.SUBSCRIPTION_PRICE_RUB
+    from billing_app.plans_catalog import TARIFF_INCLUDES_PLAIN
+
     days = settings.SUBSCRIPTION_DAYS
+    plans = await db.get_subscription_plans()
+    sub_lines = []
+    for plan in plans:
+        if plan.get('plan_kind') == 'subscription':
+            sub_lines.append(
+                f'• {plan["name"]}: {plan["price_rub"]} ₽ / {days} дней — '
+                f'{plan.get("voice_minutes_monthly", 0)} мин голоса наставника/мес'
+            )
+    addon = next((p for p in plans if p.get('code') == 'voice_100'), None)
+    addon_line = ''
+    if addon:
+        addon_line = (
+            f'\n• Докупка голоса: +{addon.get("voice_minutes_in_pack", 100)} мин — '
+            f'{addon["price_rub"]} ₽ (нужна активная подписка).'
+        )
     await _send(
         context, _chat_id(update),
         'Условия подписки:\n\n'
-        f'• Стоимость: {price} ₽ за {days} дней доступа.\n'
-        '• Без автопродления — доступ просто закончится через 30 дней.\n'
+        + '\n'.join(sub_lines)
+        + addon_line
+        + f'\n\n{TARIFF_INCLUDES_PLAIN}'
+        + '\n\n• Без автопродления — доступ заканчивается через 30 дней.\n'
         '• Бесплатно: диагностика уровня и 2 пробных урока.\n'
         '• Оплата через ЮKassa (подключается после модерации магазина).\n'
         '• Вопросы по оплате — в поддержку проекта.',
@@ -2034,24 +2864,60 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def buy_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_subscription(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    plan_code: str = 'basic',
+):
     profile_id = context.user_data['profile_id']
     chat_id = _chat_id(update)
 
-    if await db.has_active_subscription(profile_id):
+    plan = await db.get_plan_by_code(plan_code)
+    if not plan:
+        await _send(context, chat_id, 'Тариф не найден. Попробуй позже.',
+                    reply_markup=keyboards.main_menu())
+        return
+
+    if plan['plan_kind'] == 'voice_addon':
+        if not await db.has_active_subscription(profile_id):
+            await _send(
+                context, chat_id,
+                'Докупка минут доступна только с активной подпиской.\n'
+                'Сначала оформи Basic, Active или Pro.',
+                reply_markup=keyboards.main_menu(),
+            )
+            return
+    elif await db.has_active_subscription(profile_id):
         await _send(context, chat_id, 'У тебя уже есть активная подписка ✅',
                     reply_markup=keyboards.main_menu())
         return
 
     if settings.PAYMENT_MODE == 'mock':
-        result = await db.activate_mock_subscription(profile_id)
-        await _send(
-            context, chat_id,
-            'Тестовая оплата прошла ✅\n\n'
-            f'Подписка активна до {result["expires_at"]}.\n'
-            '(mock-режим — реальную оплату ЮKassa подключим после модерации.)',
-            reply_markup=keyboards.main_menu(),
-        )
+        result = await db.activate_mock_subscription(profile_id, plan_code)
+        if not result.get('ok'):
+            await _send(
+                context, chat_id,
+                'Нужна активная подписка для докупки минут.',
+                reply_markup=keyboards.main_menu(),
+            )
+            return
+        if result.get('kind') == 'voice_addon':
+            await _send(
+                context, chat_id,
+                f'Тестовая оплата прошла ✅\n\n'
+                f'+{result["minutes_added"]} мин голоса.\n'
+                f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
+                reply_markup=keyboards.main_menu(),
+            )
+        else:
+            await _send(
+                context, chat_id,
+                f'Тестовая оплата прошла ✅\n\n'
+                f'Тариф <b>{result["plan_name"]}</b> активен до {result["expires_at"]}.\n'
+                '(mock-режим — реальную оплату ЮKassa подключим после модерации.)',
+                reply_markup=keyboards.main_menu(),
+                parse_mode=ParseMode.HTML,
+            )
         return
 
     if not settings.TELEGRAM_PAYMENT_PROVIDER_TOKEN:
@@ -2060,17 +2926,24 @@ async def buy_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=keyboards.main_menu())
         return
 
-    plan = await db.get_or_create_plan()
-    prices = [LabeledPrice(label=plan['name'], amount=settings.SUBSCRIPTION_PRICE_KOPEKS)]
+    prices = [LabeledPrice(label=plan['name'], amount=plan['price_kopeks'])]
+    if plan['plan_kind'] == 'voice_addon':
+        payload = f'addon:{profile_id}:{plan_code}'
+        title = f'English Mentor — {plan["name"]}'
+        description = plan.get('description') or 'Докупка минут голосового наставника.'
+    else:
+        payload = f'sub:{profile_id}:{plan_code}'
+        title = f'English Mentor — {plan["name"]}'
+        description = plan.get('description') or f'Подписка на {plan["duration_days"]} дней.'
     await context.bot.send_invoice(
         chat_id=chat_id,
-        title='English Mentor — доступ на 30 дней',
-        description='Полный доступ к урокам, словарю и практике на 30 дней.',
-        payload=f'sub:{profile_id}',
+        title=title,
+        description=description,
+        payload=payload,
         provider_token=settings.TELEGRAM_PAYMENT_PROVIDER_TOKEN,
         currency='RUB',
         prices=prices,
-        start_parameter='english-mentor-sub',
+        start_parameter=f'english-mentor-{plan_code}',
     )
 
 
@@ -2080,10 +2953,28 @@ async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _ensure_profile(update, context)
-    result = await db.activate_mock_subscription(context.user_data['profile_id'])
-    await _send(context, _chat_id(update),
-                f'Оплата прошла ✅ Подписка активна до {result["expires_at"]}.',
-                reply_markup=keyboards.main_menu())
+    profile_id = context.user_data['profile_id']
+    payload = (update.message.successful_payment.invoice_payload or '').strip()
+    plan_code = 'basic'
+    if ':' in payload:
+        parts = payload.split(':')
+        if len(parts) >= 3 and parts[0] in ('sub', 'addon'):
+            plan_code = parts[2]
+    result = await db.activate_mock_subscription(profile_id, plan_code)
+    if result.get('kind') == 'voice_addon':
+        await _send(
+            context, _chat_id(update),
+            f'Оплата прошла ✅ +{result["minutes_added"]} мин голоса.\n'
+            f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
+            reply_markup=keyboards.main_menu(),
+        )
+    else:
+        await _send(
+            context, _chat_id(update),
+            f'Оплата прошла ✅ Тариф {result.get("plan_name", "")} '
+            f'активен до {result["expires_at"]}.',
+            reply_markup=keyboards.main_menu(),
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -2098,7 +2989,32 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'diag:start':
         await _begin_diagnostic(update, context)
+    elif data.startswith('diag:claim:'):
+        claimed = data.rsplit(':', 1)[1]
+        await _start_diagnostic_test(update, context, claimed)
+    elif data == 'diag:challenge:yes':
+        await _begin_challenge_round(update, context)
+    elif data == 'diag:challenge:no':
+        await _finish_diagnostic(update, context)
+    elif data.startswith('diag:ans:'):
+        parts = data.split(':')
+        if len(parts) != 4:
+            return
+        item_id = int(parts[2])
+        idx = int(parts[3])
+        diag = context.user_data.get('diag') or {}
+        cur = diag.get('current') or {}
+        if cur.get('id') != item_id:
+            await query.answer(
+                'Это прошлый вопрос — смотри последний выше 🙂',
+                show_alert=True,
+            )
+            return
+        options = cur.get('options', [])
+        if idx < len(options):
+            await _handle_diagnostic_answer(update, context, options[idx])
     elif data.startswith('diag:opt:'):
+        # Legacy buttons from older messages (before diag:ans:id:idx).
         idx = int(data.rsplit(':', 1)[1])
         diag = context.user_data.get('diag') or {}
         item = diag.get('current') or {}
@@ -2108,19 +3024,25 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'tts:step':
         step = context.user_data.get('current_step')
         speak = _speak_text_for_step(step) if step else None
+        if not speak:
+            speak = context.user_data.get('tts_text')
         if speak:
-            await _send_tts(context, _chat_id(update), speak)
+            await _play_tts(context, _chat_id(update), speak)
     elif data == 'tts:dict':
         speak = context.user_data.get('dict_speak')
         if speak:
-            await _send_tts(context, _chat_id(update), speak)
+            await _play_tts(context, _chat_id(update), speak)
     elif data == 'tts:say':
-        speak = context.user_data.get('tts_text')
-        if speak:
-            await _send_tts(context, _chat_id(update), speak)
+        speak = (
+            context.user_data.get('tts_text')
+            or context.user_data.get('last_tutor_tts')
+            or _tts_from_tutor_history(context)
+        )
+        await _play_tts(context, _chat_id(update), speak)
     elif data == 'nav:menu':
         context.user_data['mode'] = None
         context.user_data['expect'] = None
+        _clear_tutor_session(context)
         await _send(context, _chat_id(update), 'Главное меню 👇',
                     reply_markup=keyboards.main_menu())
     elif data == 'lesson:next':
@@ -2186,9 +3108,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'plan:warmup':
         await _show_warmup(update, context)
     elif data == 'plan:warmup:listen':
-        speak = context.user_data.get('tts_text')
-        if speak:
-            await _send_tts(context, _chat_id(update), speak)
+        await _play_tts(context, _chat_id(update), context.user_data.get('tts_text'))
     elif data.startswith('plan:episode:'):
         lesson_id = int(data.rsplit(':', 1)[1])
         plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
@@ -2229,7 +3149,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         topic = topic_keys[idx]
         await show_rules_topic(update, context, topic, topics[topic])
     elif data == 'rules:drill':
-        await start_rule_drill(update, context)
+        await start_rule_training(update, context, rule_key=None)
+    elif data.startswith('rules:train:'):
+        await start_rule_training(update, context, rule_key=data.split(':', 2)[2])
     elif data.startswith('rules:view:'):
         await show_rule_detail(update, context, data.split(':', 2)[2])
     elif data.startswith('rules:listen:'):
@@ -2241,7 +3163,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'examples': (rule or {}).get('examples', []),
         })
         if speak:
-            await _send_tts(context, _chat_id(update), speak)
+            await _play_tts(context, _chat_id(update), speak)
     elif data == 'rules:noop':
         await query.answer()
     elif data == 'notify:yes':
@@ -2254,14 +3176,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'Хорошо. Включить напоминания можно в 👤 Профиль → 🔔',
                     reply_markup=keyboards.main_menu())
     elif data.startswith('notify:time:'):
-        t = data.rsplit(':', 1)[1]
+        t = data.removeprefix('notify:time:')
         await db.set_notifications(
             context.user_data['profile_id'], enabled=True, time_str=t,
         )
         await _send(
             context, _chat_id(update),
-            f'🔔 Готово! Буду напоминать каждый день в {t}.\n'
-            'Пришлю факт дня и ссылку на твой план.',
+            f'🔔 Готово! Буду напоминать каждый день в {t} (Москва).\n'
+            'Пришлю факт дня и план на день.',
             reply_markup=keyboards.main_menu(),
         )
     elif data == 'profile:notify':
@@ -2275,7 +3197,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'dialogue:finish':
         await _finish_dialogue(update, context)
     elif data == 'buy':
-        await buy_subscription(update, context)
+        await buy_subscription(update, context, 'basic')
+    elif data.startswith('buy:'):
+        await buy_subscription(update, context, data.removeprefix('buy:'))
+    elif data == 'paywall:plans':
+        await _show_paywall(update, context)
     elif data == 'terms':
         await show_terms(update, context)
     elif data == 'practice:weak':
@@ -2294,10 +3220,32 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.reset_diagnostic(context.user_data['profile_id'])
         await _begin_diagnostic(update, context)
     elif data.startswith('intr:toggle:'):
-        await db.toggle_interest(context.user_data['profile_id'], int(data.rsplit(':', 1)[1]))
-        await _refresh_interests(update, context)
+        try:
+            item_id = int(data.rsplit(':', 1)[1])
+            await db.toggle_interest(context.user_data['profile_id'], item_id)
+            await _refresh_interests(update, context)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('interest toggle failed: %s', exc)
+            await _send(
+                context, _chat_id(update),
+                'Не получилось сохранить интерес — нажми ещё раз.',
+            )
+    elif data == 'intr:custom':
+        context.user_data['expect'] = 'interest_custom'
+        await _send(
+            context, _chat_id(update),
+            'Напиши свои интересы через запятую ✍️\n'
+            'Например: космос, гитара, вязание, йога',
+        )
     elif data == 'intr:done':
+        if not await db.has_any_interests(context.user_data['profile_id']):
+            await update.callback_query.answer(
+                'Выбери хотя бы один интерес или напиши свои',
+                show_alert=True,
+            )
+            return
         if context.user_data.get('onboarding'):
+            await db.clear_profession(context.user_data['profile_id'])
             await _send(context, _chat_id(update), 'Отлично! И последнее 👇')
             await show_sphere(update, context)
         else:
@@ -2306,31 +3254,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'profile:sphere':
         await show_sphere(update, context)
     elif data.startswith('goal:set:'):
-        await db.set_learning_goal(context.user_data['profile_id'], data.rsplit(':', 1)[1])
-        if context.user_data.get('onboarding'):
-            await _send(context, _chat_id(update), 'Супер! Теперь выбери интересы 👇')
-            await show_interests(update, context)
+        code = data.rsplit(':', 1)[1]
+        if code == 'other':
+            await _prompt_custom_goal(update, context)
         else:
-            await _send(context, _chat_id(update), 'Цель сохранена ✅')
-            await show_profile(update, context)
+            await db.set_learning_goal(context.user_data['profile_id'], code)
+            await _continue_after_goal(update, context)
     elif data.startswith('sph:set:'):
         code = data.rsplit(':', 1)[1]
-        await db.set_profession(context.user_data['profile_id'], code)
-        context.user_data['sphere_en'] = db.SPHERE_EN.get(code, '')
-        if context.user_data.pop('onboarding', False):
-            await _send(
-                context, _chat_id(update),
-                'Всё готово! 🎉 Я собрал персональный план под твой уровень, '
-                'интересы и сферу.\n\n'
-                'Жми «📚 Учиться» — там чеклист на сегодня, без выбора уроков.',
-                reply_markup=keyboards.main_menu(),
-            )
-            notify = await db.get_notification_settings(context.user_data['profile_id'])
-            if not notify.get('setup_done'):
-                await _prompt_notifications(update, context)
+        if code == 'other':
+            await _prompt_custom_sphere(update, context)
         else:
-            await _send(context, _chat_id(update), 'Сфера сохранена ✅')
-            await show_profile(update, context)
+            await db.set_profession(context.user_data['profile_id'], code)
+            await _finish_sphere_selection(update, context)
 
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2344,15 +3280,70 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboards.BTN_WORDS: show_words,
         keyboards.BTN_RULES: show_rules_map,
         keyboards.BTN_TUTOR: start_tutor,
-        keyboards.BTN_SUBSCRIBE: _show_paywall,
+        keyboards.BTN_SUBSCRIBE: show_subscription,
     }
     if text in menu:
         context.user_data['mode'] = None
         context.user_data['expect'] = None
+        if text != keyboards.BTN_TUTOR:
+            _clear_tutor_session(context)
         await menu[text](update, context)
         return
 
+    if context.user_data.get('expect') == 'goal_custom':
+        if len(text) < 3:
+            await _send(
+                context, _chat_id(update),
+                'Напиши чуть подробнее — хотя бы пару слов 🙂',
+            )
+            return
+        await db.set_learning_goal(
+            context.user_data['profile_id'], 'other', text[:200],
+        )
+        context.user_data['expect'] = None
+        await _ensure_profile(update, context)
+        await _continue_after_goal(update, context)
+        return
+
+    if context.user_data.get('expect') == 'interest_custom':
+        parts = [p.strip() for p in text.split(',') if p.strip()]
+        if not parts:
+            await _send(
+                context, _chat_id(update),
+                'Напиши хотя бы один интерес через запятую 🙂',
+            )
+            return
+        await db.set_interests_custom(
+            context.user_data['profile_id'], text[:500],
+        )
+        context.user_data['expect'] = None
+        await _ensure_profile(update, context)
+        preview = ', '.join(parts[:4])
+        if len(parts) > 4:
+            preview += '…'
+        await _send(context, _chat_id(update), f'Записал: {preview} ✅')
+        await show_interests(update, context)
+        return
+
+    if context.user_data.get('expect') == 'sphere_custom':
+        if len(text) < 3:
+            await _send(
+                context, _chat_id(update),
+                'Напиши чуть подробнее — хотя бы пару слов 🙂',
+            )
+            return
+        await db.set_profession(
+            context.user_data['profile_id'], 'other', text[:200],
+        )
+        context.user_data['expect'] = None
+        await _finish_sphere_selection(update, context)
+        return
+
+    _restore_tutor_mode_if_active(context)
     mode = context.user_data.get('mode')
+    if mode == 'rule_drill' and context.user_data.get('expect') == 'rule_text':
+        await _grade_rule_training_answer(update, context, text)
+        return
     if mode == 'diagnostic':
         await _handle_diagnostic_answer(update, context, text)
         return
@@ -2360,7 +3351,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_dialogue_turn(update, context, text)
         return
     if mode == 'tutor':
-        await _handle_tutor_turn(update, context, text)
+        await _handle_tutor_turn(update, context, text, from_voice=False)
         return
     if mode == 'practice' and context.user_data.get('practice_expect') == 'text':
         await _deliver_practice_feedback(update, context, text)
@@ -2381,13 +3372,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _ensure_profile(update, context)
     chat_id = _chat_id(update)
+    _restore_tutor_mode_if_active(context, voice_turn=True)
 
     if not _voice_allowed(context):
         await _send(
             context, chat_id,
-            'Сейчас голос не нужен 🙂\n'
-            'Голос работает: у наставника 💬, в уроках (задания с 🎙️), '
-            'в диалоге с персонажем, в тренировке словаря и на диагностике.',
+            'Сессия наставника прервалась (перезапуск или выход из режима).\n'
+            'Нажми 💬 Наставник — и продолжим разговор 🎙️\n\n'
+            'Голос также работает в уроках (🎙️), диалогах и тренировке словаря.',
         )
         return
 
@@ -2401,15 +3393,45 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if mode == 'tutor' and voice:
+        ok, limit_msg = await db.check_voice_usage(
+            context.user_data['profile_id'], voice.duration,
+        )
+        if not ok:
+            kb = keyboards.subscription_kb(
+                has_subscription=await db.has_active_subscription(
+                    context.user_data['profile_id'],
+                ),
+                voice_remaining=0,
+            )
+            await _send(context, chat_id, limit_msg, reply_markup=kb)
+            return
+
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
     langs = _stt_langs_for_context(context)
     transcript_text = await _transcribe_voice(update, context, langs=langs)
 
+    if transcript_text and is_garbage_transcript(transcript_text):
+        await _send(
+            context, chat_id,
+            'Плохо расслышал 😕\n'
+            'Повтори чуть медленнее — сначала по-русски, потом по-английски.\n'
+            'Или напиши текстом.',
+        )
+        return
+
+    if transcript_text and context.user_data.get('mode') == 'tutor':
+        transcript_text = prepare_tutor_voice_transcript(transcript_text)
+
     if transcript_text:
-        lang_note = ''
-        if context.user_data.get('mode') in ('lesson', 'review', 'dialogue'):
-            lang_note = ' (EN)'
-        await _send(context, chat_id, f'🎙️ Услышал{lang_note}: «{transcript_text}»')
+        if context.user_data.get('mode') == 'tutor':
+            heard = tutor_transcript_label(transcript_text)
+            await _send(context, chat_id, heard)
+        else:
+            lang_note = ' (EN)' if context.user_data.get('mode') in (
+                'lesson', 'review', 'dialogue',
+            ) else ''
+            await _send(context, chat_id, f'🎙️ Услышал{lang_note}: «{transcript_text}»')
     else:
         extra = ''
         if mode == 'review':
@@ -2421,7 +3443,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Не удалось распознать голос 😕\n'
             'Попробуй ещё раз или напиши текстом.'
             + extra
-            + '\n(Если повторяется — проверь YANDEX_SPEECHKIT_API_KEY в .env)',
+            + '\n(Если повторяется — проверь YANDEX_SPEECHKIT_API_KEY или STT_PROVIDER в .env)',
         )
         return
 
@@ -2431,7 +3453,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif mode == 'dialogue':
         await _handle_dialogue_turn(update, context, transcript_text)
     elif mode == 'tutor':
-        await _handle_tutor_turn(update, context, transcript_text)
+        if voice:
+            await db.record_voice_usage(context.user_data['profile_id'], voice.duration)
+        await _handle_tutor_turn(update, context, transcript_text, from_voice=True)
+    elif mode == 'rule_drill' and context.user_data.get('expect') == 'rule_text':
+        await _grade_rule_training_answer(update, context, transcript_text)
     elif mode == 'review':
         await _handle_word_review_answer(update, context, transcript_text)
     elif mode == 'practice':
@@ -2473,7 +3499,7 @@ def build_application():
         ApplicationBuilder()
         .token(token)
         .request(request)
-        .get_updates_read_timeout(60.0)
+        .get_updates_request(request)
     )
     if settings.TELEGRAM_PROXY:
         app_builder = app_builder.proxy(settings.TELEGRAM_PROXY)

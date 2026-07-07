@@ -34,6 +34,9 @@ SPIRIT_MOMENTS: dict[str, _MomentSpec] = {
     'reminder': {'key': 'pause', 'compact': True},
     'goodbye': {'key': 'goodbye', 'compact': True},
     'cliffhanger': {'key': 'surprise', 'compact': True},
+    'diagnostic_start': {'key': 'lets_go', 'compact': True},
+    'diagnostic_done': {'key': 'complete', 'compact': True},
+    'tutor_start': {'key': 'greeting', 'compact': True},
 }
 
 # Files expected under media/spirit/emotions/ (sync + spirit_status).

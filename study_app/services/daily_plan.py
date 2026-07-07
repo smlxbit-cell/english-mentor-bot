@@ -216,12 +216,11 @@ def _structured_plan(items: list[dict]) -> dict:
     total = len(required) or 1
 
     if episode and not episode.get('done'):
-        continue_label = f'Начать: {episode.get("subtitle") or episode.get("title", "эпизод")}'
+        continue_label = 'Продолжить'
     elif bonus_words and not bonus_words.get('done'):
-        continue_label = f'Бонус: слова ({bonus_words.get("count", 0)})'
+        continue_label = 'Продолжить'
     elif warmup and not warmup.get('done'):
-        _, label = warmup_label(warmup.get('kind', 'fact'))
-        continue_label = label
+        continue_label = 'Начать'
     else:
         continue_label = 'Продолжить'
 
@@ -279,3 +278,38 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
         'all_done': bool(items) and all(i['done'] for i in items),
         'has_episode': structured.get('episode') is not None,
     }
+
+
+def format_plan_reminder_summary(plan: dict) -> str:
+    """Short plain-text plan for daily reminder messages."""
+    lines = ['📋 План на день:']
+    step = 1
+    warmup = plan.get('warmup')
+    if warmup:
+        from study_app.daily_facts import warmup_label
+        icon, label = warmup_label(warmup.get('kind', 'fact'))
+        mark = '✅' if warmup.get('done') else f'{step}.'
+        lines.append(f'{mark} {icon} {label} — ~1 мин')
+        step += 1
+    episode = plan.get('episode')
+    if episode:
+        num = episode.get('episode_num')
+        title = episode.get('subtitle') or episode.get('title', 'Эпизод')
+        mins = episode.get('minutes') or 8
+        xp = episode.get('xp_reward') or 0
+        mark = '✅' if episode.get('done') else f'{step}.'
+        meta = f'~{mins} мин'
+        if xp:
+            meta += f' · +{xp} XP'
+        if num:
+            lines.append(f'{mark} 📺 Эпизод {num}: {title} — {meta}')
+        else:
+            lines.append(f'{mark} 📺 {title} — {meta}')
+        step += 1
+    elif not plan.get('has_episode'):
+        lines.append('🎬 Новая глава скоро')
+    bonus = plan.get('bonus_words')
+    if bonus:
+        mark = '✅' if bonus.get('done') else f'{step}.'
+        lines.append(f'{mark} 🗂 Повторить {bonus.get("count", 0)} слов')
+    return '\n'.join(lines)

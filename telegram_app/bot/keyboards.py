@@ -57,14 +57,38 @@ def start_diagnostic_kb() -> InlineKeyboardMarkup:
     )
 
 
-def diagnostic_options_kb(options: list[str], with_listen: bool = False) -> InlineKeyboardMarkup:
-    rows = []
-    if with_listen:
-        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
-    rows += [
-        [InlineKeyboardButton(opt, callback_data=f'diag:opt:{i}')]
+def diagnostic_self_assess_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('A1 — начальный', callback_data='diag:claim:a1'),
+            InlineKeyboardButton('A2 — элементарный', callback_data='diag:claim:a2'),
+        ],
+        [
+            InlineKeyboardButton('B1 — средний', callback_data='diag:claim:b1'),
+            InlineKeyboardButton('B2 — выше среднего', callback_data='diag:claim:b2'),
+        ],
+        [InlineKeyboardButton('🤷 Не уверен(а)', callback_data='diag:claim:unsure')],
+    ])
+
+
+def diagnostic_challenge_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('Да, проверить выше', callback_data='diag:challenge:yes'),
+            InlineKeyboardButton('Нет, достаточно', callback_data='diag:challenge:no'),
+        ],
+    ])
+
+
+def diagnostic_options_kb(
+    options: list[str], *, item_id: int, with_listen: bool = False,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(opt, callback_data=f'diag:ans:{item_id}:{i}')]
         for i, opt in enumerate(options)
     ]
+    if with_listen:
+        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -133,8 +157,15 @@ def exercise_options_kb(
     return InlineKeyboardMarkup(rows)
 
 
-def exercise_text_kb(*, with_hint: bool = False, with_ask: bool = True) -> InlineKeyboardMarkup:
+def exercise_text_kb(
+    *,
+    with_hint: bool = False,
+    with_ask: bool = True,
+    with_listen: bool = False,
+) -> InlineKeyboardMarkup:
     rows = []
+    if with_listen:
+        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
     if with_hint:
         rows.append([InlineKeyboardButton('💡 Подсказка', callback_data='ex:hint')])
     if with_ask:
@@ -159,49 +190,22 @@ def lessons_list_kb(lessons: list[dict]) -> InlineKeyboardMarkup:
 
 
 def daily_plan_kb(plan: dict) -> InlineKeyboardMarkup:
-    """Adventure chapter: one main CTA + optional bonus."""
-    rows = []
-    if not plan.get('all_done'):
-        label = plan.get('continue_label', 'Продолжить')
-        rows.append([InlineKeyboardButton(f'▶️ {label[:55]}', callback_data='plan:continue')])
-
-    warmup = plan.get('warmup')
-    if warmup and not warmup.get('done'):
-        from study_app.daily_facts import warmup_label
-        icon, label = warmup_label(warmup.get('kind', 'fact'))
-        rows.append([InlineKeyboardButton(f'{icon} {label}', callback_data='plan:warmup')])
-
-    episode = plan.get('episode')
-    if episode and not episode.get('done'):
-        rows.append([
-            InlineKeyboardButton(
-                f'📺 {episode.get("title", "Эпизод")[:40]}',
-                callback_data=f'plan:episode:{episode["lesson_id"]}',
-            )
+    """One CTA — the bot leads through the day step by step."""
+    if plan.get('all_done'):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton('🏠 В меню', callback_data='nav:menu')],
         ])
-
-    bonus = plan.get('bonus_words')
-    if bonus and not bonus.get('done'):
-        # Avoid duplicate when main CTA already opens the word bonus.
-        if 'Бонус' not in plan.get('continue_label', ''):
-            rows.append([
-                InlineKeyboardButton(
-                    f'🗂 Бонус: слова ({bonus.get("count", 0)})',
-                    callback_data='plan:words',
-                )
-            ])
-
-    rows.append([InlineKeyboardButton('📖 Карта правил', callback_data='rules:map')])
-    rows.append([InlineKeyboardButton('🏠 В меню', callback_data='nav:menu')])
-    return InlineKeyboardMarkup(rows)
+    cta = 'Продолжить' if plan.get('progress_done', 0) > 0 else 'Начать'
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f'▶️ {cta}', callback_data='plan:continue')],
+    ])
 
 
 def warmup_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton('🔊 Слушать по-английски', callback_data='plan:warmup:listen')],
-            [InlineKeyboardButton('▶️ К эпизоду', callback_data='plan:warmup:next')],
-            [InlineKeyboardButton('↩️ К главе дня', callback_data='plan:back')],
+            [InlineKeyboardButton('🔊 Слушать', callback_data='plan:warmup:listen')],
+            [InlineKeyboardButton('Далее ▶️', callback_data='plan:warmup:next')],
         ]
     )
 
@@ -271,9 +275,27 @@ def rule_detail_kb(rule_key: str, status: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton('✅ Выучил', callback_data=f'rule:learn:{rule_key}'),
             InlineKeyboardButton('👌 Уже знаю', callback_data=f'rule:known:{rule_key}'),
         ],
+        [InlineKeyboardButton('🎯 Тренировать', callback_data=f'rules:train:{rule_key}')],
         [InlineKeyboardButton('◀️ К карте правил', callback_data='rules:map')],
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def mistake_rule_kb(rule_key: str, status: str) -> InlineKeyboardMarkup:
+    """After tutor spots a grammar mistake — tablet + actions."""
+    if status in ('learned', 'known'):
+        save_btn = InlineKeyboardButton(
+            '🔄 Повторить в библиотеке', callback_data=f'rules:view:{rule_key}',
+        )
+    else:
+        save_btn = InlineKeyboardButton(
+            '✅ Добавить в библиотеку', callback_data=f'rule:learn:{rule_key}',
+        )
+    return InlineKeyboardMarkup([
+        [save_btn],
+        [InlineKeyboardButton('🎯 Тренировать', callback_data=f'rules:train:{rule_key}')],
+        [InlineKeyboardButton('📖 Открыть правило', callback_data=f'rules:view:{rule_key}')],
+    ])
 
 
 def notification_ask_kb() -> InlineKeyboardMarkup:
@@ -329,7 +351,12 @@ def profile_kb() -> InlineKeyboardMarkup:
     )
 
 
-def interests_kb(items: list[dict], selected: set[int]) -> InlineKeyboardMarkup:
+def interests_kb(
+    items: list[dict],
+    selected: set[int],
+    *,
+    has_custom: bool = False,
+) -> InlineKeyboardMarkup:
     """items: [{'id','name'}]; selected: ids currently chosen."""
     rows = []
     row: list[InlineKeyboardButton] = []
@@ -343,15 +370,24 @@ def interests_kb(items: list[dict], selected: set[int]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton('✅ Готово', callback_data='intr:done')])
+    custom_mark = '✅ ' if has_custom else ''
+    rows.append([InlineKeyboardButton(
+        f'{custom_mark}✍️ Написать свои интересы',
+        callback_data='intr:custom',
+    )])
+    rows.append([InlineKeyboardButton('Далее →', callback_data='intr:done')])
     return InlineKeyboardMarkup(rows)
 
 
 def sphere_kb(spheres: list[dict], selected: str = '') -> InlineKeyboardMarkup:
-    """spheres: [{'code','label'}]."""
+    """spheres: [{'code','label'}]. Custom sphere always on its own row."""
     rows = []
     row: list[InlineKeyboardButton] = []
+    custom: dict | None = None
     for s in spheres:
+        if s['code'] == 'other':
+            custom = s
+            continue
         mark = '✅ ' if s['code'] == selected else ''
         row.append(InlineKeyboardButton(
             f'{mark}{s["label"]}', callback_data=f'sph:set:{s["code"]}',
@@ -361,14 +397,23 @@ def sphere_kb(spheres: list[dict], selected: str = '') -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    if custom:
+        mark = '✅ ' if custom['code'] == selected else ''
+        rows.append([InlineKeyboardButton(
+            f'{mark}{custom["label"]}', callback_data='sph:set:other',
+        )])
     return InlineKeyboardMarkup(rows)
 
 
 def goal_kb(goals: list[dict], selected: str = '') -> InlineKeyboardMarkup:
-    """goals: [{'code','label'}]."""
+    """goals: [{'code','label'}]. Custom goal always on its own row."""
     rows = []
     row: list[InlineKeyboardButton] = []
+    custom: dict | None = None
     for g in goals:
+        if g['code'] == 'other':
+            custom = g
+            continue
         mark = '✅ ' if g['code'] == selected else ''
         row.append(InlineKeyboardButton(
             f'{mark}{g["label"]}', callback_data=f'goal:set:{g["code"]}',
@@ -378,6 +423,11 @@ def goal_kb(goals: list[dict], selected: str = '') -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    if custom:
+        mark = '✅ ' if custom['code'] == selected else ''
+        rows.append([InlineKeyboardButton(
+            f'{mark}{custom["label"]}', callback_data='goal:set:other',
+        )])
     return InlineKeyboardMarkup(rows)
 
 
@@ -412,10 +462,26 @@ def practice_again_kb() -> InlineKeyboardMarkup:
     )
 
 
-def paywall_kb(price_rub: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton(f'Оформить за {price_rub} ₽', callback_data='buy')],
-            [InlineKeyboardButton('ℹ️ Условия', callback_data='terms')],
-        ]
-    )
+def paywall_kb(plans: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for plan in plans:
+        if plan.get('plan_kind') != 'subscription':
+            continue
+        label = f'{plan["name"]} — {plan["price_rub"]} ₽'
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f'buy:{plan["code"]}'),
+        ])
+    rows.append([InlineKeyboardButton('ℹ️ Условия', callback_data='terms')])
+    return InlineKeyboardMarkup(rows)
+
+
+def subscription_kb(*, has_subscription: bool, voice_remaining: int = 0) -> InlineKeyboardMarkup:
+    rows = []
+    if has_subscription and voice_remaining <= 15:
+        rows.append([
+            InlineKeyboardButton('+100 мин голоса — 290 ₽', callback_data='buy:voice_100'),
+        ])
+    if not has_subscription:
+        rows.append([InlineKeyboardButton('⭐️ Выбрать тариф', callback_data='paywall:plans')])
+    rows.append([InlineKeyboardButton('ℹ️ Условия', callback_data='terms')])
+    return InlineKeyboardMarkup(rows)

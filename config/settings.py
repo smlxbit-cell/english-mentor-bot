@@ -45,7 +45,7 @@ TELEGRAM_PROXY = os.getenv('TELEGRAM_PROXY', '').strip()
 # Subscription / billing (single plan)
 # -------------------------------------------------------------------
 # One plan: 390 RUB for 30 days, no auto-renewal.
-SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 390)
+SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 590)
 SUBSCRIPTION_PRICE_KOPEKS = SUBSCRIPTION_PRICE_RUB * 100
 SUBSCRIPTION_DAYS = env_int('SUBSCRIPTION_DAYS', 30)
 TRIAL_LESSONS_LIMIT = env_int('TRIAL_LESSONS_LIMIT', 2)
@@ -94,20 +94,42 @@ AI_DAILY_CALL_LIMIT_PER_USER = env_int('AI_DAILY_CALL_LIMIT_PER_USER', 40)
 # Text-to-speech (voicing English words / phrases for listening practice)
 # -------------------------------------------------------------------
 TTS_ENABLED = env_bool('TTS_ENABLED', True)
-# 'edge'  -> free Microsoft Edge neural voices (no key, works from Russia)
-# 'openai'-> OpenAI-compatible /audio/speech (uses your OPENAI_* credentials)
-# 'mock'  -> disabled / offline
-TTS_PROVIDER = os.getenv('TTS_PROVIDER', 'edge')
+# 'openai' -> OpenAI-compatible /audio/speech via OPENAI_* (AITUNNEL: gpt-4o-mini-tts)
+# 'edge'   -> free Microsoft Edge neural voices (fallback, no key)
+# 'mock'   -> disabled / offline
+_def_openai = bool(os.getenv('OPENAI_API_KEY', '').strip())
+TTS_PROVIDER = os.getenv(
+    'TTS_PROVIDER',
+    'openai' if _def_openai else 'edge',
+)
 TTS_VOICE = os.getenv('TTS_VOICE', 'en-US-AriaNeural')
 TTS_TIMEOUT_SECONDS = env_int('TTS_TIMEOUT_SECONDS', 30)
-# Used only when TTS_PROVIDER=openai
-OPENAI_TTS_MODEL = os.getenv('OPENAI_TTS_MODEL', 'tts-1')
+# AITUNNEL slug: gpt-4o-mini-tts (~120 ₽/1M chars) | tts-1 | tts-1-hd
+OPENAI_TTS_MODEL = os.getenv('OPENAI_TTS_MODEL', 'gpt-4o-mini-tts')
 OPENAI_TTS_VOICE = os.getenv('OPENAI_TTS_VOICE', 'alloy')
 
 # -------------------------------------------------------------------
-# Speech-to-text (voice answers) — Yandex SpeechKit
+# Speech-to-text (voice answers) — Whisper via OPENAI_* (AITUNNEL) or Yandex fallback
 # -------------------------------------------------------------------
-STT_PROVIDER = os.getenv('STT_PROVIDER', 'yandex' if os.getenv('YANDEX_SPEECHKIT_API_KEY') else 'mock')
+STT_PROVIDER = os.getenv(
+    'STT_PROVIDER',
+    'whisper' if _def_openai else (
+        'yandex' if os.getenv('YANDEX_SPEECHKIT_API_KEY') else 'mock'
+    ),
+)
+# Tutor voice: Whisper via OPENAI_* proxy (e.g. AITUNNEL) when key is set.
+STT_TUTOR_PROVIDER = os.getenv('STT_TUTOR_PROVIDER', 'auto')
+# Use Yandex STT only when Whisper RU pass is weak (off = AITUNNEL-only stack).
+STT_YANDEX_FALLBACK = env_bool('STT_YANDEX_FALLBACK', False)
+OPENAI_WHISPER_MODEL = os.getenv('OPENAI_WHISPER_MODEL', 'whisper-large-v3-turbo')
+OPENAI_WHISPER_FALLBACK_MODELS = os.getenv(
+    'OPENAI_WHISPER_FALLBACK_MODELS',
+    'whisper-large-v3,whisper-1',
+)
+OPENAI_STT_TIMEOUT_SECONDS = env_int('OPENAI_STT_TIMEOUT_SECONDS', 45)
+# Voice mentor limits (see docs/TARIFFS.md)
+VOICE_MAX_DURATION_SECONDS = env_int('VOICE_MAX_DURATION_SECONDS', 120)
+VOICE_MAX_PER_HOUR = env_int('VOICE_MAX_PER_HOUR', 20)
 YANDEX_SPEECHKIT_API_KEY = os.getenv('YANDEX_SPEECHKIT_API_KEY', '')
 YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID', '')
 YANDEX_STT_TIMEOUT_SECONDS = env_int('YANDEX_STT_TIMEOUT_SECONDS', 20)
