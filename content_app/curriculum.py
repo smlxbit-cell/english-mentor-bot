@@ -455,6 +455,263 @@ _HOTEL_STEPS = [
 ]
 
 
+_WORK_STEPS = [
+    {'type': 'hook',
+     'text': '💼 <b>Эпизод 4. First Day at Work</b>\n\n'
+             'Манчестер, утро понедельника. Первый день в онлайн-компании — '
+             'open space, кофемашина, все говорят быстро.\n\n'
+             'Эмма встречает тебя у входа:\n'
+             '🇬🇧 Don\'t worry — everyone is friendly. Let\'s get coffee first.\n'
+             '(Не переживай — все дружелюбные. Сначала возьмём кофе.)\n\n'
+             'Самое время сказать, чем ты занимаешься.'},
+    {'type': 'story', 'with_character': True,
+     'text': '📖 В кухне коллега <b>Mark</b> наливает кофе и улыбается:\n'
+             '🇬🇧 Morning! You must be the new person. I\'m Mark.\n'
+             '(Доброе утро! Ты, наверное, новенький. Я Марк.)\n\n'
+             'Он ждёт ответа — пара фраз, и разговор пошёл.'},
+    {'type': 'vocabulary', 'skill': 'vocabulary',
+     'content': {'words': [
+         {'en': 'colleague', 'ru': 'коллега', 'example': 'My colleague Mark is very helpful.',
+          'example_ru': 'Мой коллега Марк очень помогает.'},
+         {'en': 'team', 'ru': 'команда', 'example': 'I work in a small team.',
+          'example_ru': 'Я работаю в небольшой команде.'},
+         {'en': 'online store', 'ru': 'онлайн-магазин', 'example': 'We run an online store.',
+          'example_ru': 'Мы ведём онлайн-магазин.'},
+         {'en': 'project', 'ru': 'проект', 'example': 'I am on a new project.',
+          'example_ru': 'Я на новом проекте.'},
+         {'en': 'role', 'ru': 'роль', 'example': 'What is your role?',
+          'example_ru': 'Какая у тебя роль?'},
+         {'en': 'nice to meet you', 'ru': 'приятно познакомиться',
+          'example': 'Nice to meet you, Mark!', 'example_ru': 'Приятно познакомиться, Марк!'},
+     ]}},
+    {'type': 'grammar_note', 'skill': 'grammar', 'title': 'О работе: Present Simple',
+     'content': {
+         'rule_ru': 'Чтобы рассказать о работе, используй Present Simple: '
+                    'I work… / I am a… / My role is…',
+         'table': {
+             'headers': ['Вопрос', 'Ответ', 'Перевод'],
+             'rows': [
+                 ['What do you do?', 'I work in e-commerce.', 'Я работаю в e-commerce.'],
+                 ['What is your role?', 'I am a product manager.', 'Я продакт-менеджер.'],
+                 ['Where do you work?', 'I work for an online store.', 'Работаю в онлайн-магазине.'],
+             ],
+         },
+         'examples': [
+             {'en': 'I work with product listings.', 'ru': 'Я работаю с карточками товаров.'},
+             {'en': 'My team handles customer orders.', 'ru': 'Моя команда обрабатывает заказы.'},
+         ],
+         'tip_ru': 'Do you work…? — вежливый вопрос о работе. Не бойся короткого ответа.',
+         'rule_key': 'work-small-talk',
+     }},
+    {'type': 'dialogue', 'skill': 'listening',
+     'text': '💬 Послушай разговор у кофемашины:',
+     'content': {'lines': [
+         {'speaker': 'Mark', 'text': 'So, what do you do here?',
+          'ru': 'Итак, чем ты здесь занимаешься?'},
+         {'speaker': 'You', 'text': 'I work on the product team. Nice to meet you!',
+          'ru': 'Я в продуктовой команде. Приятно познакомиться!'},
+         {'speaker': 'Mark', 'text': 'Great! We work on the same floor.',
+          'ru': 'Отлично! Мы на одном этаже.'},
+         {'speaker': 'You', 'text': 'Perfect. I am excited to start.',
+          'ru': 'Здорово. Рад(а) начать.'},
+     ]}},
+    {'type': 'exercise', 'skill': 'listening',
+     'text': '🎧 Проверим понимание диалога:\n\nО чём договорились Mark и новый коллега?',
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'level_variants': {
+             'a2': {
+                 'options': [
+                     'They work on the same floor',
+                     'They go to lunch now',
+                     'Mark leaves the company',
+                 ],
+                 'correct': ['They work on the same floor'],
+                 'explanation': 'Mark сказал: «We work on the same floor.»',
+             },
+             'b1': {
+                 'options': [
+                     'They are on the same product floor and the newcomer is excited',
+                     'Mark is the new manager',
+                     'They discuss salary',
+                 ],
+                 'correct': [
+                     'They are on the same product floor and the newcomer is excited',
+                 ],
+                 'explanation': 'Коллега в продуктовой команде, оба на одном этаже, настрой позитивный.',
+             },
+             'b2': {
+                 'options': [
+                     'They establish rapport; same floor, product team, positive start',
+                     'Mark assigns a urgent deadline',
+                     'They reschedule a client call',
+                 ],
+                 'correct': [
+                     'They establish rapport; same floor, product team, positive start',
+                 ],
+                 'explanation': 'Small talk: знакомство, команда, общий этаж — без рабочих задач.',
+             },
+         },
+         'options': ['They work on the same floor', 'They go to lunch now', 'Mark leaves the company'],
+         'correct': ['They work on the same floor'],
+     }},
+    {'type': 'exercise', 'skill': 'grammar',
+     'text': 'Mark: «What do you do here?»\n\nВыбери естественный ответ:',
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'level_variants': {
+             'a2': {
+                 'options': [
+                     'I work on the product team.',
+                     'I working product.',
+                     'Product I am do.',
+                 ],
+                 'correct': ['I work on the product team.'],
+             },
+             'b1': {
+                 'options': [
+                     'I work on the product team — mostly listings and analytics.',
+                     'I am work on products team.',
+                     'Doing product since yesterday only.',
+                 ],
+                 'correct': ['I work on the product team — mostly listings and analytics.'],
+             },
+         },
+         'options': ['I work on the product team.', 'I working product.', 'Product I am do.'],
+         'correct': ['I work on the product team.'],
+         'explanation': 'Present Simple: I work… / I work on…',
+         'rule_key': 'work-small-talk',
+     }},
+    {'type': 'speaking', 'skill': 'speaking',
+     'text': '🎙️ Mark спрашивает: «What do you do?»\n\n'
+             'Ответь вслух или текстом — 1–2 предложения о своей работе.',
+     'content': {'target': 'I work in e-commerce. I am on the product team.'}},
+    {'type': 'exercise', 'skill': 'vocabulary',
+     'text': 'Практика из твоей сферы — задание подстроится под тебя:',
+     'content': {'personalize': True, 'skill': 'vocabulary'}},
+    {'type': 'ai_dialogue', 'skill': 'speaking', 'with_character': True,
+     'content': {
+         'opening': 'Morning! I am Mark from the product team. What do you do here?',
+         'situation': 'first-day small talk by the office coffee machine',
+         'turns': 4,
+     }},
+    {'type': 'reflection',
+     'text': '🧠 <b>Совет:</b> на первом рабочем дне не нужен длинный монолог. '
+             'Достаточно: кто ты → команда → «nice to meet you». '
+             'Страх говорить нормален — короткая фраза уже победа.'},
+    {'type': 'reward',
+     'text': '💼🎉 <b>Эпизод пройден!</b>\n\n'
+             'Ты познакомился с коллегой и рассказал о работе! '
+             'Правило «О работе» — в библиотеке.'},
+    {'type': 'cliffhanger',
+     'text': '📧 Во вторник утром — письмо от тимлида: нужен короткий update по проекту. '
+             'Как написать по-английски профессионально?\n\n'
+             'Продолжение — в <b>эпизоде 5</b>…'},
+]
+
+
+_B1_UPDATE_STEPS = [
+    {'type': 'hook',
+     'text': '📧 <b>Эпизод 5. Quick Team Update</b>\n\n'
+             'Вторник, 9:15. В Slack сообщение от тимлида Sophie:\n'
+             '🇬🇧 Can you send a short update before the stand-up?\n'
+             '(Можешь прислать короткий апдейт до стендапа?)\n\n'
+             'Нужно 3–4 предложения: что сделано, что дальше, есть ли блокеры.'},
+    {'type': 'story', 'with_character': True,
+     'text': '📖 Sophie обычно пишет коротко и по делу. Твой update увидят вся команда — '
+             'лучше ясно и без паники.\n\n'
+             'Эмма советовала шаблон: <i>Done → Next → Blockers</i>.'},
+    {'type': 'vocabulary', 'skill': 'vocabulary',
+     'content': {'words': [
+         {'en': 'update', 'ru': 'апдейт, отчёт', 'example': 'Here is my quick update.',
+          'example_ru': 'Вот мой короткий апдейт.'},
+         {'en': 'deadline', 'ru': 'дедлайн', 'example': 'The deadline is Friday.',
+          'example_ru': 'Дедлайн — пятница.'},
+         {'en': 'blocker', 'ru': 'блокер, препятствие', 'example': 'No blockers for now.',
+          'example_ru': 'Пока без блокеров.'},
+         {'en': 'stand-up', 'ru': 'стендап (короткая встреча)', 'example': 'We have a stand-up at ten.',
+          'example_ru': 'Стендап в десять.'},
+         {'en': 'on track', 'ru': 'по плану', 'example': 'The project is on track.',
+          'example_ru': 'Проект по плану.'},
+         {'en': 'feedback', 'ru': 'обратная связь', 'example': 'I need feedback on the draft.',
+          'example_ru': 'Мне нужен фидбек по черновику.'},
+     ]}},
+    {'type': 'grammar_note', 'skill': 'grammar', 'title': 'Короткий рабочий update',
+     'content': {
+         'rule_ru': 'Шаблон: Yesterday/Today I… + Next I will… + Blockers: … / No blockers.',
+         'table': {
+             'headers': ['Блок', 'Фраза', 'Перевод'],
+             'rows': [
+                 ['Сделано', 'Yesterday I finished the product page.', 'Вчера закончил страницу товара.'],
+                 ['Дальше', 'Today I will check the analytics.', 'Сегодня проверю аналитику.'],
+                 ['Блокеры', 'No blockers for now.', 'Пока без блокеров.'],
+             ],
+         },
+         'examples': [
+             {'en': 'Quick update: listings are done. Next: QA review.', 'ru': 'Кратко: листинги готовы. Дальше: QA.'},
+             {'en': 'One blocker: waiting for design assets.', 'ru': 'Блокер: жду материалы от дизайна.'},
+         ],
+         'tip_ru': 'В чате команды короче = лучше. 3 предложения часто достаточно.',
+         'rule_key': 'work-updates',
+     }},
+    {'type': 'dialogue', 'skill': 'listening',
+     'text': '💬 Пример устного update на стендапе:',
+     'content': {'lines': [
+         {'speaker': 'Sophie', 'text': 'Quick round — any updates?',
+          'ru': 'Коротко — есть апдейты?'},
+         {'speaker': 'You', 'text': 'Yesterday I updated twenty product listings.',
+          'ru': 'Вчера обновил двадцать карточек товаров.'},
+         {'speaker': 'You', 'text': 'Today I will run a QA check. No blockers.',
+          'ru': 'Сегодня сделаю QA-проверку. Блокеров нет.'},
+         {'speaker': 'Sophie', 'text': 'Great, thanks!',
+          'ru': 'Отлично, спасибо!'},
+     ]}},
+    {'type': 'exercise', 'skill': 'listening',
+     'text': '🎧 Что человек сделает сегодня?',
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'options': ['Run a QA check', 'Book a flight', 'Write a novel'],
+         'correct': ['Run a QA check'],
+         'explanation': 'Today I will run a QA check.',
+     }},
+    {'type': 'exercise', 'skill': 'writing',
+     'text': 'Собери рабочий update из частей:',
+     'content': {
+         'exercise_type': 'word_order',
+         'level_variants': {
+             'b1': {
+                 'correct': ['yesterday i updated listings today i will run qa no blockers'],
+             },
+             'b2': {
+                 'correct': [
+                     'quick update yesterday i updated twenty listings today qa check no blockers',
+                 ],
+             },
+         },
+         'correct': ['yesterday i updated listings today i will run qa no blockers'],
+         'explanation': 'Done → Next → Blockers.',
+     }},
+    {'type': 'exercise', 'skill': 'writing',
+     'text': 'Напиши 2–3 предложения: что сделал(а), что дальше, есть ли блокеры.',
+     'content': {
+         'exercise_type': 'writing',
+         'ai_check_prompt': 'B1 workplace stand-up update. Be encouraging; suggest one concrete improvement.',
+     }},
+    {'type': 'speaking', 'skill': 'speaking',
+     'text': '🎙️ Прочитай вслух свой update для стендапа (можно по шаблону выше).',
+     'content': {'target': 'Yesterday I updated the listings. Today I will run QA. No blockers.'}},
+    {'type': 'exercise', 'skill': 'vocabulary',
+     'text': 'Практика из твоей сферы:',
+     'content': {'personalize': True, 'skill': 'writing'}},
+    {'type': 'reward',
+     'text': '📧🎉 <b>Эпизод пройден!</b>\n\n'
+             'Ты написал рабочий update — это пригодится каждую неделю.'},
+    {'type': 'cliffhanger',
+     'text': '📚 На этой неделе тимлид пришлёт статью на английском — нужно быстро понять суть. '
+             'Разберём чтение научных и рабочих текстов в <b>следующих главах</b>…'},
+]
+
+
 # --------------------------------------------------------------------------- #
 # Curriculum: units grouping lessons per level.
 # --------------------------------------------------------------------------- #
@@ -495,6 +752,30 @@ CURRICULUM = [
              'intro': '▶️ Эпизод 3 — Hotel Check-in',
              'xp': 90, 'minutes': 12,
              'tags': ['travel', 'work'], 'steps': _HOTEL_STEPS},
+        ],
+    },
+    {
+        'unit': {'slug': 'a2-manchester-work', 'title': 'Манчестер: работа',
+                 'level': 'a2', 'order': 3,
+                 'description': 'Первый день, small talk с коллегами, о своей работе.'},
+        'lessons': [
+            {'title': 'First Day at Work', 'order': 1, 'is_trial': False,
+             'subtitle': 'Small talk с коллегой',
+             'intro': '▶️ Эпизод 4 — First Day at Work',
+             'xp': 95, 'minutes': 12,
+             'tags': ['work and career', 'business'], 'steps': _WORK_STEPS},
+        ],
+    },
+    {
+        'unit': {'slug': 'b1-office-updates', 'title': 'Офис: коммуникация',
+                 'level': 'b1', 'order': 1,
+                 'description': 'Короткие апдейты, стендап, рабочая переписка.'},
+        'lessons': [
+            {'title': 'Quick Team Update', 'order': 1, 'is_trial': False,
+             'subtitle': 'Апдейт для команды',
+             'intro': '▶️ Эпизод 5 — Quick Team Update',
+             'xp': 100, 'minutes': 14,
+             'tags': ['work and career', 'business'], 'steps': _B1_UPDATE_STEPS},
         ],
     },
 ]
@@ -550,4 +831,6 @@ def seed_curriculum():
             char = emma
             if lesson_data['title'] == 'Hotel Check-in':
                 char = james
+            elif lesson_data['title'] in ('First Day at Work', 'Quick Team Update'):
+                char = emma
             _build_lesson(unit, char, u['level'], lesson_data)

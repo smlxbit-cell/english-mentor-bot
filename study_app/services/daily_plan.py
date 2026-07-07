@@ -278,7 +278,8 @@ def _build_initial_blocks(
         order += 1
 
     if _include_listening(profile, minutes_budget) and not _block_exists(session, 'listening'):
-        bite = pick_listening_bite(profile.id, day)
+        level = (profile.cefr_level or 'a2').lower()
+        bite = pick_listening_bite(profile.id, day, user_level=level)
         DailySessionBlock.objects.create(
             session=session,
             order=order,

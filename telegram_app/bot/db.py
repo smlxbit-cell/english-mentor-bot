@@ -14,6 +14,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from billing_app.models import Payment, Subscription, SubscriptionPlan
+from content_app.level_variants import apply_level_variants
 from content_app.models import DiagnosticItem, Lesson, LessonStep
 from gamification_app.models import Achievement, UserAchievement, UserStats
 from users_app.models import Interest, UserInterest, UserProfile
@@ -701,11 +702,19 @@ def get_available_lessons(profile_id: int) -> dict:
 
 
 @sync_to_async
-def get_lesson_flow(lesson_id: int) -> dict | None:
+def get_lesson_flow(lesson_id: int, *, profile_id: int | None = None) -> dict | None:
     try:
         lesson = Lesson.objects.select_related('character').get(id=lesson_id)
     except Lesson.DoesNotExist:
         return None
+
+    user_level = lesson.level
+    if profile_id:
+        profile = UserProfile.objects.filter(id=profile_id).values_list(
+            'cefr_level', flat=True,
+        ).first()
+        if profile:
+            user_level = profile.lower()
 
     character = None
     if lesson.character:
@@ -740,6 +749,8 @@ def get_lesson_flow(lesson_id: int) -> dict | None:
             'media': _media_dict(step.media),
             'character': step_char,
         })
+
+    steps = apply_level_variants(steps, user_level)
 
     return {
         'id': lesson.id,

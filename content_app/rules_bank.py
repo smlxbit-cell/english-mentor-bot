@@ -351,4 +351,48 @@ RULES_BANK: list[dict] = [
         ],
         'tip_ru': 'Under Smith = «на имя Смит» (фамилия в брони).',
     },
+    # ── A2 · Работа ───────────────────────────────────────────────────
+    {
+        'key': 'work-small-talk',
+        'level': 'a2',
+        'topic': 'Работа',
+        'title': 'О работе: small talk',
+        'order': 1,
+        'summary_ru': 'Present Simple: I work… / I am a… — коротко о роли и команде.',
+        'table': {
+            'headers': ['Вопрос', 'Ответ', 'Перевод'],
+            'rows': [
+                ['What do you do?', 'I work in e-commerce.', 'Я в e-commerce.'],
+                ['What is your role?', 'I am on the product team.', 'Я в продуктовой команде.'],
+                ['Nice to meet you', 'Nice to meet you too!', 'Мне тоже приятно!'],
+            ],
+        },
+        'examples': [
+            {'en': 'I work with online stores.', 'ru': 'Я работаю с онлайн-магазинами.'},
+            {'en': 'My team handles product listings.', 'ru': 'Команда ведёт карточки товаров.'},
+        ],
+        'tip_ru': 'На первом рабочем дне достаточно 1–2 фраз — не нужен длинный рассказ.',
+    },
+    # ── B1 · Работа ───────────────────────────────────────────────────
+    {
+        'key': 'work-updates',
+        'level': 'b1',
+        'topic': 'Работа',
+        'title': 'Короткий рабочий update',
+        'order': 1,
+        'summary_ru': 'Шаблон стендапа: что сделано → что дальше → блокеры.',
+        'table': {
+            'headers': ['Блок', 'Фраза', 'Перевод'],
+            'rows': [
+                ['Сделано', 'Yesterday I finished the draft.', 'Вчера закончил черновик.'],
+                ['Дальше', 'Today I will run QA.', 'Сегодня сделаю QA.'],
+                ['Блокеры', 'No blockers for now.', 'Пока без блокеров.'],
+            ],
+        },
+        'examples': [
+            {'en': 'Quick update: listings done. Next: analytics.', 'ru': 'Кратко: листинги готовы. Дальше: аналитика.'},
+            {'en': 'One blocker: waiting for design.', 'ru': 'Блокер: жду дизайн.'},
+        ],
+        'tip_ru': 'В Slack/Teams три коротких предложения часто лучше абзаца.',
+    },
 ]

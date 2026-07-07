@@ -1869,7 +1869,7 @@ async def open_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson
         await _show_paywall(update, context)
         return
 
-    flow = await db.get_lesson_flow(lesson_id)
+    flow = await db.get_lesson_flow(lesson_id, profile_id=profile_id)
     if not flow or not flow['steps']:
         await _send(context, chat_id, 'Этот урок ещё не наполнен.',
                     reply_markup=keyboards.main_menu())
