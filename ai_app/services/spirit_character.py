@@ -53,7 +53,9 @@ do not invent Russian glosses for non-words.
 """.strip()
 
 
-def build_spirit_persona_block(*, chat_mode: bool = False) -> str:
+def build_spirit_persona_block(
+    *, chat_mode: bool = False, fulfillment_kind: str | None = None,
+) -> str:
     """System-prompt block: Spirit identity + optional conversation emphasis."""
     block = (
         f'\n\nCHARACTER — {SPIRIT_NAME_EN} ({SPIRIT_NAME_RU}):\n'
@@ -70,6 +72,25 @@ def build_spirit_persona_block(*, chat_mode: bool = False) -> str:
             '- «Tell me about yourself» / «how are you» → brief Spirit intro or daily adventure.\n'
             '- Chat never cancels grammar help — checking their English is ALWAYS step 1.\n'
             '- Still pair every English phrase with Russian translation (TRANSLATION RULE).\n'
+        )
+    if fulfillment_kind:
+        labels = {
+            'story': 'a STORY',
+            'advice': 'ADVICE',
+            'recipe': 'a simple RECIPE',
+            'quote': 'a QUOTE or proverb',
+            'explain': 'an EXPLANATION',
+        }
+        label = labels.get(fulfillment_kind, 'what they asked for')
+        block += (
+            f'\nFULFILLMENT MODE — learner asked you to deliver {label}:\n'
+            '- Grammar steps stay mandatory when they used English.\n'
+            '- Then YOU deliver the content — you are the storyteller / guide, NOT an interviewer.\n'
+            '- FORBIDDEN: deflecting with only «do you have…?» / «tell me yours» without giving '
+            'what they asked first.\n'
+            '- Stories: 4–8 sentences, Spirit voice, positivity + realism + a touch of magic.\n'
+            '- Pull useful English phrases from your answer into 🇬🇧 with Russian glosses.\n'
+            '- At most ONE short question at the very end — optional, never the main reply.\n'
         )
     return block
 
@@ -90,3 +111,51 @@ def is_spirit_chat_turn(text: str) -> bool:
         'поддержи разговор', 'поговори со мной',
     )
     return any(m in low for m in markers)
+
+
+_FULFILLMENT_STORY = (
+    'tell me a story', 'tell me some story', 'tell a story',
+    'share a story', 'give me a story', 'want you to tell', 'want you to share',
+    'i want a story', 'make up a story', 'invent a story', 'story about',
+    'расскажи историю', 'расскажи сказку', 'расскажи что-нибудь', 'расскажи что-то',
+    'хочу историю', 'придумай историю',
+)
+_FULFILLMENT_ADVICE = (
+    'give me advice', 'piece of advice', 'some advice', 'your advice',
+    'what should i do', 'how can i', 'how do i',
+    'дай совет', 'подскажи', 'посоветуй', 'что мне делать', 'как мне',
+)
+_FULFILLMENT_RECIPE = (
+    'give me a recipe', 'recipe for', 'how to cook', 'how to make',
+    'рецепт', 'как приготовить', 'как сделать',
+)
+_FULFILLMENT_QUOTE = (
+    'give me a quote', 'share a quote', 'inspiring quote', 'motivational quote',
+    'цитат', 'крылатое выражение', 'поговорк',
+)
+
+
+def spirit_fulfillment_kind(text: str) -> str | None:
+    """What the learner wants Spirit to create (story, advice, …) or None."""
+    low = (text or '').lower()
+    if any(m in low for m in ('tell me about yourself', 'about yourself', 'who are you', 'расскажи о себе')):
+        return None
+    if any(m in low for m in _FULFILLMENT_STORY):
+        return 'story'
+    if any(m in low for m in _FULFILLMENT_RECIPE):
+        return 'recipe'
+    if any(m in low for m in _FULFILLMENT_QUOTE):
+        return 'quote'
+    if any(m in low for m in _FULFILLMENT_ADVICE):
+        return 'advice'
+    if any(m in low for m in (
+        'explain to me', 'teach me about', 'tell me about',
+        'расскажи мне о', 'объясни мне', 'расскажи про',
+    )):
+        return 'explain'
+    return None
+
+
+def is_spirit_fulfillment_turn(text: str) -> bool:
+    """True when the learner asks Spirit to produce content (story, advice, …)."""
+    return spirit_fulfillment_kind(text) is not None

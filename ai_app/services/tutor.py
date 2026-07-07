@@ -32,11 +32,14 @@ class EnglishTutor:
         spirit_chat: bool = False,
         grammar_followup: bool = False,
         followup_target: str = '',
+        spirit_fulfillment: bool = False,
+        fulfillment_kind: str = '',
     ) -> str:
         system = build_tutor_system(
             level=level, check_english=check_english, from_voice=from_voice,
             code_switch=code_switch, spirit_chat=spirit_chat,
             grammar_followup=grammar_followup, followup_target=followup_target,
+            spirit_fulfillment=spirit_fulfillment, fulfillment_kind=fulfillment_kind,
         )
         window = list(history)[-settings.AI_HISTORY_MESSAGES:]
         if grammar_followup and followup_target and window and window[-1].role == 'user':
@@ -58,6 +61,8 @@ class EnglishTutor:
         messages = [system, *window]
         if spirit_chat:
             cap = 800
+        elif spirit_fulfillment:
+            cap = 1100
         elif grammar_followup:
             cap = 900
         elif check_english:
@@ -67,10 +72,11 @@ class EnglishTutor:
         max_tokens = min(settings.AI_MAX_OUTPUT_TOKENS, cap)
 
         try:
+            temp = 0.62 if spirit_fulfillment else 0.5
             chat = await self.provider.chat(
                 messages,
                 max_tokens=max_tokens,
-                temperature=0.5,
+                temperature=temp,
             )
         except Exception:  # noqa: BLE001
             return (

@@ -376,6 +376,22 @@ class BilingualSTTTests(TestCase):
         self.assertTrue(is_spirit_chat_turn('расскажи о себе'))
         self.assertFalse(is_spirit_chat_turn('what is present simple'))
 
+    def test_spirit_fulfillment_detection(self):
+        from ai_app.services.spirit_character import (
+            is_spirit_fulfillment_turn,
+            spirit_fulfillment_kind,
+        )
+
+        text = (
+            "I don't have any favorite story about law. "
+            'I want you to tell me some story about law in English.'
+        )
+        self.assertTrue(is_spirit_fulfillment_turn(text))
+        self.assertEqual(spirit_fulfillment_kind(text), 'story')
+        self.assertEqual(spirit_fulfillment_kind('дай совет по работе'), 'advice')
+        self.assertEqual(spirit_fulfillment_kind('рецепт блинов'), 'recipe')
+        self.assertFalse(is_spirit_fulfillment_turn('what is present simple'))
+
     def test_grammar_followup_detection_and_target(self):
         from ai_app.services.tutor_context import (
             extract_grammar_followup_target,

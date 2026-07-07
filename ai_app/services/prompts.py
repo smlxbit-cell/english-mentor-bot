@@ -58,6 +58,7 @@ def build_tutor_system(
     *, level: str, check_english: bool = False, from_voice: bool = False,
     code_switch: bool = False, spirit_chat: bool = False,
     grammar_followup: bool = False, followup_target: str = '',
+    spirit_fulfillment: bool = False, fulfillment_kind: str = '',
 ) -> ChatMessage:
     level_name = LEVEL_NAMES.get(level, level.upper())
     content = (
@@ -87,7 +88,10 @@ def build_tutor_system(
         'helpful explanation with 1–2 examples (not a one-liner).\n'
         '- Be encouraging and practical.'
     )
-    content += build_spirit_persona_block(chat_mode=spirit_chat)
+    content += build_spirit_persona_block(
+        chat_mode=spirit_chat,
+        fulfillment_kind=fulfillment_kind if spirit_fulfillment else None,
+    )
     if grammar_followup and followup_target:
         content += (
             '\n\nGRAMMAR FOLLOW-UP (learner asks about a PREVIOUS sentence in this chat):\n'
@@ -124,8 +128,11 @@ def build_tutor_system(
             '4. <b>Слово:</b> ONLY if they likely did not know a word — EN + Russian meaning. '
             'Skip if clear. NEVER call it «ошибка».\n'
             '5. <b>Ещё можно сказать:</b> one natural English sentence — «—» Russian translation.\n'
-            '6. Answer their question AS Spirit — story, chat, question back (if they asked one).\n'
-            '7. Any example questions: English — Russian translation for EACH.\n\n'
+            '6. <b>Ответ Спирита:</b> FULFILL their request (story / advice / recipe / quote / '
+            'explanation) — YOU deliver it; do NOT bounce the question back without content.\n'
+            '   If they asked for a story → tell one (4–8 sentences) about their topic.\n'
+            '   Structure: «Твоя просьба» (1 line) → the content → optional 1 short question at end.\n'
+            '7. Any example phrases: English — Russian translation for EACH.\n\n'
             'FORBIDDEN in voice mode:\n'
             '- Skipping steps 1–5 when the learner spoke English\n'
             '- Quoting or grading only the FIRST clause of a long sentence\n'
@@ -171,11 +178,13 @@ def build_tutor_system(
             '3. <b>Ещё можно сказать:</b> 1–2 natural alternative phrasings '
             'each with Russian translation '
             '(skip only for a single word like «Great!»).\n'
-            '4. Then answer their actual question AS Spirit if they asked one.\n'
+            '4. <b>Ответ Спирита:</b> if they asked for content (story, advice, recipe, quote, '
+            'explanation) — DELIVER it substantively; do not only ask them a question back.\n'
+            '5. Then answer any other question they had.\n'
             'If they ask «What should I do…?» / «How can I…?» and the question is fine — '
             'answer it with practical advice; do NOT ❌ the question or push a Wh- rule.\n'
             'Never skip steps 1–3. Do not only chat — you are a tutor, not just a chatbot.\n'
-            '5. If a mistake matches a grammar library topic, add ONE hidden last line:\n'
+            '6. If a mistake matches a grammar library topic, add ONE hidden last line:\n'
             '   [RULE:rule-key] — ONLY when the ❌→✅ fix is directly about that topic.\n'
             '   Examples: want→would like → polite-requests; wrong Can/Can\'t → modal-can; '
             'wrong a/an → articles-a-an.\n'
@@ -187,6 +196,24 @@ def build_tutor_system(
             'present-simple-questions, wh-questions-basics, navigation-where, '
             'navigation-directions, prepositions-place, modal-can, modal-could-polite, '
             'hotel-check-in. Omit [RULE:…] if grammar was fully correct or no topic fits.'
+        )
+    if spirit_fulfillment and fulfillment_kind:
+        kind_ru = {
+            'story': 'историю',
+            'advice': 'совет',
+            'recipe': 'рецепт',
+            'quote': 'цитату или мудрость',
+            'explain': 'объяснение по теме',
+        }.get(fulfillment_kind, 'то, о чём они просили')
+        content += (
+            f'\n\nSPIRIT FULFILLMENT — learner wants {fulfillment_kind.upper()} ({kind_ru}):\n'
+            '- Keep ALL grammar/tutor steps above when they used English.\n'
+            '- Then give REAL content in 🇷🇺 (Spirit voice): positive, realistic, a little magic, '
+            'motivating for English learning.\n'
+            '- Stories: set the scene, characters, mini-plot, gentle moral — 4–8 sentences minimum.\n'
+            '- Use your general knowledge; invent in-character stories freely.\n'
+            '- FORBIDDEN as the main reply: «Есть ли у тебя…?» / «Do you have…?» without telling yours first.\n'
+            '- 🇬🇧 section: 2–5 useful English phrases FROM your answer, each with Russian gloss.\n'
         )
     if spirit_chat and not check_english:
         content += (

@@ -53,7 +53,11 @@ from ai_app.services.rule_hints import (
     strip_rule_tags,
     suggest_rule_keys,
 )
-from ai_app.services.spirit_character import is_spirit_chat_turn
+from ai_app.services.spirit_character import (
+    is_spirit_chat_turn,
+    is_spirit_fulfillment_turn,
+    spirit_fulfillment_kind,
+)
 from ai_app.services.tutor_context import (
     extract_grammar_followup_target,
     is_grammar_followup_turn,
@@ -2824,7 +2828,8 @@ TUTOR_INTRO = (
     '• поболтать — спроси «как дела?», «что ты делал сегодня?» — расскажу историю\n'
     '• говорить или писать по-английски, по-русски или вперемешку 🎙️\n'
     '• забыл слово — скажи по-русски, подскажу по-английски\n'
-    '• пришли фразу — мягко поправлю; полезное — в 📖 библиотеку правил\n\n'
+    '• пришли фразу — мягко поправлю; полезное — в 📖 библиотеку правил\n'
+    '• попроси историю, совет, рецепт, цитату — расскажу по-своему 🌟\n\n'
     'Ошибаться нормально. Я рядом — спрашивай текстом или голосом 👇'
 )
 
@@ -2917,7 +2922,11 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         return
 
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
-    spirit_chat = is_spirit_chat_turn(user_text) and not grammar_followup
+    fulfillment_kind = spirit_fulfillment_kind(user_text) or ''
+    spirit_fulfillment = bool(fulfillment_kind) and not grammar_followup
+    spirit_chat = (
+        (is_spirit_chat_turn(user_text) or spirit_fulfillment) and not grammar_followup
+    )
     reply = await tutor.reply(
         history=history,
         level=context.user_data.get('tutor_level', 'a2'),
@@ -2927,6 +2936,8 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         spirit_chat=spirit_chat,
         grammar_followup=grammar_followup and bool(followup_target),
         followup_target=followup_target,
+        spirit_fulfillment=spirit_fulfillment,
+        fulfillment_kind=fulfillment_kind,
     )
     await db.register_tutor_message(profile_id)
     reply, tagged_keys = strip_rule_tags(reply)
