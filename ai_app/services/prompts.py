@@ -59,6 +59,7 @@ def build_tutor_system(
     code_switch: bool = False, spirit_chat: bool = False,
     grammar_followup: bool = False, followup_target: str = '',
     spirit_fulfillment: bool = False, fulfillment_kind: str = '',
+    phrase_practice: bool = False, practice_phrase: str = '',
 ) -> ChatMessage:
     level_name = LEVEL_NAMES.get(level, level.upper())
     content = (
@@ -196,6 +197,17 @@ def build_tutor_system(
             'present-simple-questions, wh-questions-basics, navigation-where, '
             'navigation-directions, prepositions-place, modal-can, modal-could-polite, '
             'hotel-check-in. Omit [RULE:…] if grammar was fully correct or no topic fits.'
+        )
+    if phrase_practice and practice_phrase:
+        content += (
+            f'\n\nPHRASE PRACTICE — learner wants exercises on: «{practice_phrase}»\n'
+            '- Keep grammar steps 1–3 if they wrote English; then give MINI-DRILL.\n'
+            '- In 🇷🇺 after tutor steps, add <b>Практика по фразе:</b>\n'
+            '  1. MC — one question, 3 options (mark correct with ✅ in key line)\n'
+            '  2. Gap — sentence with ___ to fill\n'
+            '  3. RU→EN — short translation prompt\n'
+            '- Explain each answer in 1 RU line. Warm Spirit tone.\n'
+            '- 🇬🇧 section: the target phrase + variations with RU glosses.\n'
         )
     if spirit_fulfillment and fulfillment_kind:
         kind_ru = {

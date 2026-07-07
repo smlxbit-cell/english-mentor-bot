@@ -53,6 +53,10 @@ from ai_app.services.rule_hints import (
     strip_rule_tags,
     suggest_rule_keys,
 )
+from ai_app.services.phrase_practice import (
+    extract_practice_phrase,
+    is_phrase_practice_request,
+)
 from ai_app.services.spirit_character import (
     is_spirit_chat_turn,
     is_spirit_fulfillment_turn,
@@ -2619,6 +2623,8 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'💼 Сфера: {d.get("sphere") or "не выбрана"}\n'
         f'❤️ Интересы: {interests}\n'
         f'⏱ План: {d.get("daily_minutes", 20)} мин · {d.get("study_days_per_week", 5)} дн/нед\n'
+        f'🎯 Цель уровня: {d.get("target_cefr_level") or "не выбрана"}\n'
+        f'💪 Фокус: {", ".join(d.get("skill_focus_ru") or []) or "не выбран"}\n'
         f'📉 Над чем работаем: {weak}\n\n'
         f'⭐️ XP: {d["xp"]} (до уровня {d["user_level"] + 1} осталось {d["xp_to_next"]})\n'
         f'🎮 Игровой уровень: {d["user_level"]}\n'
@@ -2819,6 +2825,35 @@ async def show_schedule_settings(update: Update, context: ContextTypes.DEFAULT_T
     )
 
 
+async def show_target_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current = await db.get_target_cefr_level(context.user_data['profile_id'])
+    profile = await _ensure_profile(update, context)
+    cur = (profile.get('cefr_level') or '').upper() or '—'
+    await _send(
+        context, _chat_id(update),
+        f'🎯 <b>Цель уровня</b>\n\n'
+        f'Сейчас по диагностике: <b>{cur}</b>\n'
+        f'К какому уровню идёшь? От этого строится карта пути и срок в месяцах.\n\n'
+        f'Выбрано: <b>{current or "ещё не выбрано"}</b>',
+        reply_markup=keyboards.target_level_kb(current),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def show_skill_focus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile_id = context.user_data['profile_id']
+    selected = set(await db.get_skill_focus(profile_id))
+    await _send(
+        context, _chat_id(update),
+        '💪 <b>Фокус практики</b>\n\n'
+        'Что важнее всего сейчас? Например, говорение — если страшно говорить, '
+        'или аудирование — если мало практики на слух.\n\n'
+        'Выбери один или несколько 👇',
+        reply_markup=keyboards.skill_focus_kb(selected),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Ask the tutor (free-form AI help)
 # --------------------------------------------------------------------------- #
@@ -2927,13 +2962,18 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
     fulfillment_kind = spirit_fulfillment_kind(user_text) or ''
     spirit_fulfillment = bool(fulfillment_kind) and not grammar_followup
+    phrase_practice = is_phrase_practice_request(user_text) and not grammar_followup
+    practice_phrase = extract_practice_phrase(user_text, history) if phrase_practice else ''
+    if phrase_practice and not practice_phrase:
+        phrase_practice = False
     spirit_chat = (
         (is_spirit_chat_turn(user_text) or spirit_fulfillment) and not grammar_followup
+        and not phrase_practice
     )
     reply = await tutor.reply(
         history=history,
         level=context.user_data.get('tutor_level', 'a2'),
-        check_english=check_english and not grammar_followup,
+        check_english=check_english and not grammar_followup and not phrase_practice,
         from_voice=from_voice,
         code_switch=code_switch,
         spirit_chat=spirit_chat,
@@ -2941,6 +2981,8 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         followup_target=followup_target,
         spirit_fulfillment=spirit_fulfillment,
         fulfillment_kind=fulfillment_kind,
+        phrase_practice=phrase_practice,
+        practice_phrase=practice_phrase,
     )
     await db.register_tutor_message(profile_id)
     reply, tagged_keys = strip_rule_tags(reply)
@@ -3485,6 +3527,21 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_schedule_days(update, context)
     elif data == 'profile:back':
         await show_profile(update, context)
+    elif data == 'profile:roadmap':
+        await show_progress(update, context)
+    elif data == 'profile:target':
+        await show_target_level(update, context)
+    elif data == 'profile:focus':
+        await show_skill_focus(update, context)
+    elif data.startswith('target:set:'):
+        code = data.rsplit(':', 1)[1]
+        await db.set_target_cefr_level(context.user_data['profile_id'], code)
+        await _send(context, _chat_id(update), f'Цель: {code} ✅ Карта пути обновлена.')
+        await show_progress(update, context)
+    elif data.startswith('focus:toggle:'):
+        skill = data.rsplit(':', 1)[1]
+        await db.toggle_skill_focus(context.user_data['profile_id'], skill)
+        await show_skill_focus(update, context)
     elif data.startswith('schedule:min:'):
         minutes = int(data.rsplit(':', 1)[1])
         if context.user_data.get('onboarding'):

@@ -204,7 +204,41 @@ def daily_plan_kb(plan: dict) -> InlineKeyboardMarkup:
 def progress_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('📚 Учиться сегодня', callback_data='plan:menu')],
+        [InlineKeyboardButton('🎯 Изменить цель', callback_data='profile:target')],
     ])
+
+
+def target_level_kb(current: str = '') -> InlineKeyboardMarkup:
+    rows = []
+    for code, label in (
+        ('B1', 'B1'), ('B2', 'B2'), ('C1', 'C1'), ('C2', 'C2'),
+    ):
+        mark = '✓ ' if current == code else ''
+        rows.append([
+            InlineKeyboardButton(f'{mark}{label}', callback_data=f'target:set:{code}'),
+        ])
+    rows.append([InlineKeyboardButton('◀️ Назад', callback_data='profile:back')])
+    return InlineKeyboardMarkup(rows)
+
+
+def skill_focus_kb(selected: set[str] | None = None) -> InlineKeyboardMarkup:
+    selected = selected or set()
+    labels = {
+        'speaking': '🎙️ Говорение',
+        'listening': '👂 Аудирование',
+        'reading': '📖 Чтение',
+        'writing': '✍️ Письмо',
+        'grammar': '📐 Грамматика',
+        'vocabulary': '🗂 Слова',
+    }
+    rows = []
+    for skill, label in labels.items():
+        mark = '✓ ' if skill in selected else ''
+        rows.append([
+            InlineKeyboardButton(f'{mark}{label}', callback_data=f'focus:toggle:{skill}'),
+        ])
+    rows.append([InlineKeyboardButton('✅ Готово', callback_data='profile:back')])
+    return InlineKeyboardMarkup(rows)
 
 
 def warmup_kb(quiz: dict | None = None) -> InlineKeyboardMarkup:
@@ -389,6 +423,9 @@ def profile_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton('🎓 Цель обучения', callback_data='profile:goal')],
             [InlineKeyboardButton('💼 Моя сфера', callback_data='profile:sphere')],
             [InlineKeyboardButton('⏱ План на день', callback_data='profile:schedule')],
+            [InlineKeyboardButton('🎯 Цель уровня', callback_data='profile:target')],
+            [InlineKeyboardButton('💪 Фокус практики', callback_data='profile:focus')],
+            [InlineKeyboardButton('🗺 Карта пути', callback_data='profile:roadmap')],
             [InlineKeyboardButton('🔔 Напоминания', callback_data='profile:notify')],
             [InlineKeyboardButton('🔁 Пройти диагностику заново', callback_data='profile:rediag')],
         ]

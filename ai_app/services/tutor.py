@@ -34,12 +34,15 @@ class EnglishTutor:
         followup_target: str = '',
         spirit_fulfillment: bool = False,
         fulfillment_kind: str = '',
+        phrase_practice: bool = False,
+        practice_phrase: str = '',
     ) -> str:
         system = build_tutor_system(
             level=level, check_english=check_english, from_voice=from_voice,
             code_switch=code_switch, spirit_chat=spirit_chat,
             grammar_followup=grammar_followup, followup_target=followup_target,
             spirit_fulfillment=spirit_fulfillment, fulfillment_kind=fulfillment_kind,
+            phrase_practice=phrase_practice, practice_phrase=practice_phrase,
         )
         window = list(history)[-settings.AI_HISTORY_MESSAGES:]
         if grammar_followup and followup_target and window and window[-1].role == 'user':
@@ -63,16 +66,18 @@ class EnglishTutor:
             cap = 800
         elif spirit_fulfillment:
             cap = 1100
+        elif phrase_practice:
+            cap = 1000
         elif grammar_followup:
             cap = 900
         elif check_english:
             cap = 700
         else:
             cap = 450
-        max_tokens = min(settings.AI_MAX_OUTPUT_TOKENS, cap)
+        max_tokens = cap  # tutor budget — do not clamp to global AI_MAX_OUTPUT_TOKENS
 
         try:
-            temp = 0.62 if spirit_fulfillment else 0.5
+            temp = 0.62 if (spirit_fulfillment or phrase_practice) else 0.5
             chat = await self.provider.chat(
                 messages,
                 max_tokens=max_tokens,

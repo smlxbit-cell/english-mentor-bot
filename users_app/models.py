@@ -65,6 +65,26 @@ class UserProfile(models.Model):
         blank=True,
     )
 
+    target_cefr_level = models.CharField(
+        max_length=2,
+        choices=[
+            ('A1', 'A1'),
+            ('A2', 'A2'),
+            ('B1', 'B1'),
+            ('B2', 'B2'),
+            ('C1', 'C1'),
+            ('C2', 'C2'),
+        ],
+        blank=True,
+        help_text='Goal CEFR level for the motivation roadmap.',
+    )
+
+    skill_focus = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Skills to emphasise: speaking, listening, reading, writing, grammar, vocabulary.',
+    )
+
     learning_goal = models.CharField(
         max_length=30,
         choices=LearningGoal.choices,

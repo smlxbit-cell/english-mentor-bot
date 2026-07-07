@@ -392,6 +392,20 @@ class BilingualSTTTests(TestCase):
         self.assertEqual(spirit_fulfillment_kind('рецепт блинов'), 'recipe')
         self.assertFalse(is_spirit_fulfillment_turn('what is present simple'))
 
+    def test_phrase_practice_detection(self):
+        from ai_app.services.phrase_practice import (
+            extract_practice_phrase,
+            is_phrase_practice_request,
+        )
+        from ai_app.services.types import ChatMessage
+
+        self.assertTrue(is_phrase_practice_request('хочу потренировать эту фразу'))
+        history = [
+            ChatMessage('assistant', 'Ещё можно сказать: «When I have a real need, I focus better.»'),
+        ]
+        phrase = extract_practice_phrase('потренируй «When I have a real need»', history)
+        self.assertIn('need', phrase.lower())
+
     def test_grammar_followup_detection_and_target(self):
         from ai_app.services.tutor_context import (
             extract_grammar_followup_target,

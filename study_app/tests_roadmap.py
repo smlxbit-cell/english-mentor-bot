@@ -41,10 +41,19 @@ class RoadmapTests(TestCase):
     def test_roadmap_shows_eta_range(self):
         data = build_roadmap(self.profile)
         self.assertEqual(data['current_level'], 'A1')
-        self.assertEqual(data['target_level'], 'A2')
-        self.assertEqual(data['lessons_total'], 2)
-        self.assertIsNotNone(data['weeks_low'])
-        self.assertGreater(data['weeks_high'], data['weeks_low'])
+        self.assertEqual(data['goal_level'], 'A2')
+        self.assertGreaterEqual(data['lessons_total'], 2)
+        self.assertIsNotNone(data['goal_weeks_low'])
+        self.assertGreater(data['goal_months_high'], data['goal_months_low'])
+
+    def test_roadmap_with_target_c1(self):
+        self.profile.cefr_level = 'B2'
+        self.profile.target_cefr_level = 'C1'
+        self.profile.save()
+        data = build_roadmap(self.profile)
+        self.assertEqual(data['goal_level'], 'C1')
+        self.assertIn('C1', data['journey_map'])
+        self.assertGreater(data['goal_months_low'], 0)
 
     def test_format_includes_map_and_disclaimer(self):
         data = build_roadmap(self.profile)
@@ -52,7 +61,7 @@ class RoadmapTests(TestCase):
         self.assertIn('Карта пути', text)
         self.assertIn('A1', text)
         self.assertIn('A2', text)
-        self.assertIn('недель', text)
+        self.assertIn('месяц', text)
         self.assertIn('не гарантия', text)
 
     def test_progress_increases_when_lesson_completed(self):
@@ -65,4 +74,4 @@ class RoadmapTests(TestCase):
         )
         data = build_roadmap(self.profile)
         self.assertEqual(data['lessons_done'], 1)
-        self.assertGreater(data['overall_percent'], 0)
+        self.assertGreater(data['step_percent'], 0)

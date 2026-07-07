@@ -191,6 +191,8 @@ def _profile_dict(profile: UserProfile) -> dict:
         'study_days_per_week': profile.study_days_per_week or 5,
         'rest_weekday': profile.rest_weekday if profile.rest_weekday is not None else 6,
         'study_schedule_set': profile.study_schedule_set,
+        'target_cefr_level': profile.target_cefr_level or '',
+        'skill_focus': profile.skill_focus or [],
         'personalization_topic': personalization_topic(
             profile.learning_goal or '',
             profile.learning_goal_custom or '',
@@ -312,6 +314,8 @@ def get_profile_detail(profile_id: int) -> dict:
         'tutor_messages_remaining': limits['tutor_messages_remaining'],
         'daily_minutes': profile.daily_minutes or 20,
         'study_days_per_week': profile.study_days_per_week or 5,
+        'target_cefr_level': profile.target_cefr_level or '',
+        'skill_focus_ru': [SKILL_RU.get(s, s) for s in (profile.skill_focus or [])],
         'achievements': achievements,
     }
 
@@ -345,6 +349,46 @@ def complete_onboarding(profile_id: int) -> None:
     UserProfile.objects.filter(id=profile_id).update(
         onboarding_status=UserProfile.OnboardingStatus.COMPLETED,
     )
+
+
+@sync_to_async
+def set_target_cefr_level(profile_id: int, level_code: str) -> None:
+    allowed = {'A1', 'A2', 'B1', 'B2', 'C1', 'C2'}
+    code = (level_code or '').upper()
+    if code in allowed:
+        UserProfile.objects.filter(id=profile_id).update(target_cefr_level=code)
+
+
+@sync_to_async
+def get_target_cefr_level(profile_id: int) -> str:
+    return UserProfile.objects.filter(id=profile_id).values_list(
+        'target_cefr_level', flat=True,
+    ).first() or ''
+
+
+FOCUS_SKILLS = ['speaking', 'listening', 'reading', 'writing', 'grammar', 'vocabulary']
+
+
+@sync_to_async
+def toggle_skill_focus(profile_id: int, skill: str) -> list[str]:
+    if skill not in FOCUS_SKILLS:
+        return []
+    profile = UserProfile.objects.get(id=profile_id)
+    focus = list(profile.skill_focus or [])
+    if skill in focus:
+        focus.remove(skill)
+    else:
+        focus.append(skill)
+    profile.skill_focus = focus[:6]
+    profile.save(update_fields=['skill_focus', 'updated_at'])
+    return profile.skill_focus
+
+
+@sync_to_async
+def get_skill_focus(profile_id: int) -> list[str]:
+    return list(UserProfile.objects.filter(id=profile_id).values_list(
+        'skill_focus', flat=True,
+    ).first() or [])
 
 
 @sync_to_async

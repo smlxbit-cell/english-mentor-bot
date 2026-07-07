@@ -213,6 +213,30 @@ class Command(BaseCommand):
                  prompt='«Я согласен»\n\nКак сказать по-английски?',
                  keywords=['agree', 'i agree'],
                  explanation_ru='I agree = я согласен.'),
+            dict(level='a2', skill='listening', item_type='listening', order=7,
+                 prompt=(
+                     '🎧 Listen: «I would like a table for two, please.»\n\n'
+                     'Что хочет человек?'
+                 ),
+                 options=['A table for two', 'A coffee to go', 'A hotel room'],
+                 correct=['A table for two', 'a table for two'],
+                 explanation_ru='Table for two = столик на двоих.'),
+            dict(level='b1', skill='listening', item_type='listening', order=7,
+                 prompt=(
+                     '🎧 Listen: «Could you send me the report by Friday?»\n\n'
+                     'О чём просьба?'
+                 ),
+                 options=['Send a report by Friday', 'Meet on Friday', 'Call on Friday'],
+                 correct=['Send a report by Friday', 'send me the report by friday'],
+                 explanation_ru='Send the report by Friday = прислать отчёт к пятнице.'),
+            dict(level='b2', skill='listening', item_type='listening', order=7,
+                 prompt=(
+                     '🎧 Listen: «Despite the rain, we enjoyed the walk.»\n\n'
+                     'Как прошла прогулка?'
+                 ),
+                 options=['They enjoyed it despite rain', 'They stayed home', 'It was cancelled'],
+                 correct=['They enjoyed it despite rain', 'they enjoyed the walk'],
+                 explanation_ru='Despite the rain = несмотря на дождь — всё равно понравилось.'),
         ]
         active_keys = {(d['level'], d['order'], d['skill']) for d in items}
         for data in items:
