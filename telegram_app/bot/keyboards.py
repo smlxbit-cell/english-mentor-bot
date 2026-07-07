@@ -208,7 +208,7 @@ def progress_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def target_level_kb(current: str = '') -> InlineKeyboardMarkup:
+def target_level_kb(current: str = '', *, onboarding: bool = False) -> InlineKeyboardMarkup:
     rows = []
     for code, label in (
         ('B1', 'B1'), ('B2', 'B2'), ('C1', 'C1'), ('C2', 'C2'),
@@ -217,11 +217,12 @@ def target_level_kb(current: str = '') -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(f'{mark}{label}', callback_data=f'target:set:{code}'),
         ])
-    rows.append([InlineKeyboardButton('◀️ Назад', callback_data='profile:back')])
+    if not onboarding:
+        rows.append([InlineKeyboardButton('◀️ Назад', callback_data='profile:back')])
     return InlineKeyboardMarkup(rows)
 
 
-def skill_focus_kb(selected: set[str] | None = None) -> InlineKeyboardMarkup:
+def skill_focus_kb(selected: set[str] | None = None, *, onboarding: bool = False) -> InlineKeyboardMarkup:
     selected = selected or set()
     labels = {
         'speaking': '🎙️ Говорение',
@@ -237,8 +238,17 @@ def skill_focus_kb(selected: set[str] | None = None) -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(f'{mark}{label}', callback_data=f'focus:toggle:{skill}'),
         ])
-    rows.append([InlineKeyboardButton('✅ Готово', callback_data='profile:back')])
+    done_cb = 'focus:done' if onboarding else 'profile:back'
+    rows.append([InlineKeyboardButton('✅ Готово', callback_data=done_cb)])
     return InlineKeyboardMarkup(rows)
+
+
+def speaking_anxiety_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('😰 Да, мне сложно говорить', callback_data='anxiety:set:high')],
+        [InlineKeyboardButton('😅 Немного волнуюсь', callback_data='anxiety:set:mild')],
+        [InlineKeyboardButton('😊 Нет, всё ок', callback_data='anxiety:set:none')],
+    ])
 
 
 def warmup_kb(quiz: dict | None = None) -> InlineKeyboardMarkup:
@@ -285,6 +295,13 @@ def listening_kb(options: list[str]) -> InlineKeyboardMarkup:
         label = opt if len(opt) <= 42 else opt[:39] + '…'
         rows.append([InlineKeyboardButton(label, callback_data=f'plan:listening:ans:{i}')])
     return InlineKeyboardMarkup(rows)
+
+
+def speaking_bite_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('🔊 Пример ответа', callback_data='plan:speaking:listen')],
+        [InlineKeyboardButton('⏭ Пропустить', callback_data='plan:speaking:skip')],
+    ])
 
 
 def grammar_rule_kb(rule_key: str) -> InlineKeyboardMarkup:

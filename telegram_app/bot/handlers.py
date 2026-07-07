@@ -122,6 +122,8 @@ _ONBOARDING_PROMPTS = {
     'goal': 'Осталось настроить профиль. Сначала — зачем тебе английский 👇',
     'interests': 'Теперь интересы — от них зависят темы уроков и историй 👇',
     'sphere': 'И последнее — твоя сфера работы или учёбы 👇',
+    'target_level': 'К какому уровню английского хочешь прийти? От этого строится карта пути 👇',
+    'skill_focus': 'Что важнее всего прокачать? Выбери один или несколько 👇',
     'schedule': 'Сколько времени готов уделять английскому в день? 👇',
 }
 
@@ -145,6 +147,10 @@ async def _resume_onboarding_if_needed(
         await show_interests(update, context)
     elif step == 'sphere':
         await show_sphere(update, context)
+    elif step == 'target_level':
+        await show_target_level(update, context, onboarding=True)
+    elif step == 'skill_focus':
+        await show_skill_focus(update, context, onboarding=True)
     elif step == 'schedule':
         await show_schedule_minutes(update, context, onboarding=True)
     return True
@@ -507,7 +513,7 @@ def _voice_allowed(context) -> bool:
     if context.user_data.get('tutor_history'):
         if mode not in ('lesson', 'diagnostic', 'dialogue', 'review'):
             return True
-    if mode in ('diagnostic', 'dialogue', 'tutor', 'review'):
+    if mode in ('diagnostic', 'dialogue', 'tutor', 'review', 'plan_speaking'):
         return True
     if context.user_data.get('lesson_help_return'):
         return True
@@ -934,15 +940,23 @@ async def _start_diagnostic_test(
 
 
 def _pick_diagnostic_item(diag: dict):
+    qnum = _diag_progress(diag) + 1
+    prefer = diag_flow.prefer_skill_for_question(
+        qnum,
+        listening_count=diag.get('listening_count', 0),
+    )
     item = diag_flow.pick_item(
         diag['group'],
         set(diag['asked']),
         diag['band'],
         diag['level_idx'],
         used_skills=diag.get('skills_used') or set(),
+        prefer_skill=prefer,
     )
     if item:
         diag.setdefault('skills_used', set()).add(item['skill'])
+        if item.get('skill') == 'listening':
+            diag['listening_count'] = diag.get('listening_count', 0) + 1
     return item
 
 
@@ -1151,12 +1165,41 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
     body = diag_flow.result_message(claimed, level_code, diag) + weak_text
     await _send(
         context, chat_id,
-        body + '\n\nЕщё пара вопросов, чтобы подобрать уроки именно под тебя 👇',
+        body + '\n\nОдин вопрос про говорение — это поможет подобрать практику 👇',
         parse_mode=ParseMode.HTML,
-        reply_markup=keyboards.main_menu(),
     )
     context.user_data['onboarding'] = True
     await db.clear_learning_goal(profile_id)
+    await _ask_speaking_anxiety(update, context)
+
+
+async def _ask_speaking_anxiety(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _send(
+        context, _chat_id(update),
+        '🎙️ <b>Говорение</b>\n\n'
+        'Бывает, что тест показывает хороший уровень, но говорить всё равно страшно.\n\n'
+        'Как у тебя с этим?',
+        reply_markup=keyboards.speaking_anxiety_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_speaking_anxiety(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
+):
+    profile_id = context.user_data['profile_id']
+    await db.set_speaking_anxiety(profile_id, level)
+    if level == 'high':
+        note = 'Понял — добавлю больше безопасной практики говорения в план 🎙️'
+    elif level == 'mild':
+        note = 'Ок — будем потихоньку разогревать говорение 💪'
+    else:
+        note = 'Отлично — сбалансируем все навыки 👍'
+    await _send(context, _chat_id(update), note)
+    await _send(
+        context, _chat_id(update),
+        'Ещё пара вопросов, чтобы подобрать уроки именно под тебя 👇',
+    )
     await show_goal(update, context)
 
 
@@ -1224,6 +1267,12 @@ def _format_daily_plan_text(plan: dict) -> str:
         mark = '✅' if listening.get('done') else '○'
         lm = listening.get('target_minutes') or listening.get('minutes') or 4
         steps.append(f'{mark} 🎧 {_esc(listening.get("title", "Аудирование"))} — ~{lm} мин')
+
+    speaking = plan.get('speaking')
+    if speaking:
+        mark = '✅' if speaking.get('done') else '○'
+        sm = speaking.get('target_minutes') or speaking.get('minutes') or 4
+        steps.append(f'{mark} 🎙️ {_esc(speaking.get("title", "Говорение"))} — ~{sm} мин')
 
     bonus = plan.get('bonus_words')
     if bonus:
@@ -1369,6 +1418,62 @@ async def _show_listening(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _show_speaking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+        context.user_data['profile_id'],
+    )
+    chat_id = _chat_id(update)
+    speaking = plan.get('speaking')
+    if not speaking:
+        await _plan_continue(update, context)
+        return
+
+    context.user_data['daily_plan'] = plan
+    context.user_data['mode'] = 'plan_speaking'
+    context.user_data['plan_speaking'] = speaking
+    context.user_data['tts_text'] = speaking.get('model_answer', '')
+
+    text = (
+        f'🎙️ <b>{_esc(speaking.get("title", "Говорение"))}</b>\n\n'
+        f'{_esc(speaking.get("prompt_ru", ""))}\n\n'
+        f'🇬🇧 <i>{_esc(speaking.get("prompt_en", ""))}</i>\n\n'
+        'Ответь текстом или голосовым — можно простыми словами. '
+        'Ошибаться нормально 💪'
+    )
+    await _send(
+        context, chat_id, text,
+        reply_markup=keyboards.speaking_bite_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_plan_speaking_answer(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, answer_text: str,
+):
+    speaking = context.user_data.get('plan_speaking') or {}
+    model = speaking.get('model_answer', '')
+    result = score_speaking(answer_text, model)
+    chat_id = _chat_id(update)
+    if result.is_correct:
+        await _send(context, chat_id, '✅ Отлично! Смысл передан — так держать 🎉')
+    else:
+        await _send(
+            context, chat_id,
+            f'Почти! Пример: 🇬🇧 {_esc(model)}\n\n'
+            'Главное — ты попробовал(а). Это уже прогресс 💪',
+            parse_mode=ParseMode.HTML,
+        )
+    plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+        context.user_data['profile_id'],
+    )
+    await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'speaking')
+    context.user_data['mode'] = None
+    context.user_data.pop('plan_speaking', None)
+    plan = await db.get_daily_plan(context.user_data['profile_id'])
+    context.user_data['daily_plan'] = plan
+    await _plan_continue(update, context)
+
+
 async def _plan_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     plan = await db.get_daily_plan(profile['id'])
@@ -1394,6 +1499,11 @@ async def _plan_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     listening = plan.get('listening')
     if listening and not listening.get('done'):
         await _show_listening(update, context)
+        return
+
+    speaking = plan.get('speaking')
+    if speaking and not speaking.get('done'):
+        await _show_speaking(update, context)
         return
 
     bonus = plan.get('bonus_words')
@@ -2737,7 +2847,7 @@ async def _finish_sphere_selection(update: Update, context: ContextTypes.DEFAULT
     context.user_data['sphere_en'] = profile.get('sphere_en', '')
     context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
     if context.user_data.get('onboarding'):
-        await show_schedule_minutes(update, context, onboarding=True)
+        await show_target_level(update, context, onboarding=True)
     else:
         await _send(context, _chat_id(update), 'Сфера сохранена ✅')
         await show_profile(update, context)
@@ -2825,31 +2935,45 @@ async def show_schedule_settings(update: Update, context: ContextTypes.DEFAULT_T
     )
 
 
-async def show_target_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_target_level(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, *, onboarding: bool = False,
+):
     current = await db.get_target_cefr_level(context.user_data['profile_id'])
     profile = await _ensure_profile(update, context)
     cur = (profile.get('cefr_level') or '').upper() or '—'
-    await _send(
-        context, _chat_id(update),
+    onboarding = onboarding or context.user_data.get('onboarding', False)
+    text = (
         f'🎯 <b>Цель уровня</b>\n\n'
         f'Сейчас по диагностике: <b>{cur}</b>\n'
         f'К какому уровню идёшь? От этого строится карта пути и срок в месяцах.\n\n'
-        f'Выбрано: <b>{current or "ещё не выбрано"}</b>',
-        reply_markup=keyboards.target_level_kb(current),
+        f'Выбрано: <b>{current or "ещё не выбрано"}</b>'
+    )
+    if onboarding:
+        text = (
+            '🎯 <b>Куда идём?</b>\n\n'
+            f'Диагностика показала <b>{cur}</b>. Какой уровень — твоя цель?\n\n'
+            'Например, B2 → C1, если хочешь уверенно читать научные статьи и говорить свободнее.'
+        )
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.target_level_kb(current, onboarding=onboarding),
         parse_mode=ParseMode.HTML,
     )
 
 
-async def show_skill_focus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_skill_focus(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, *, onboarding: bool = False,
+):
     profile_id = context.user_data['profile_id']
     selected = set(await db.get_skill_focus(profile_id))
+    onboarding = onboarding or context.user_data.get('onboarding', False)
     await _send(
         context, _chat_id(update),
         '💪 <b>Фокус практики</b>\n\n'
         'Что важнее всего сейчас? Например, говорение — если страшно говорить, '
         'или аудирование — если мало практики на слух.\n\n'
         'Выбери один или несколько 👇',
-        reply_markup=keyboards.skill_focus_kb(selected),
+        reply_markup=keyboards.skill_focus_kb(selected, onboarding=onboarding),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3371,6 +3495,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer('Попробуй ещё раз')
             await _show_listening(update, context)
+    elif data == 'plan:speaking:listen':
+        await _play_tts(context, _chat_id(update), context.user_data.get('tts_text'))
+    elif data == 'plan:speaking:skip':
+        plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+            context.user_data['profile_id'],
+        )
+        await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'speaking')
+        context.user_data['mode'] = None
+        context.user_data.pop('plan_speaking', None)
+        plan = await db.get_daily_plan(context.user_data['profile_id'])
+        context.user_data['daily_plan'] = plan
+        await query.answer('Пропущено')
+        await _plan_continue(update, context)
     elif data.startswith('plan:episode:'):
         lesson_id = int(data.rsplit(':', 1)[1])
         plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
@@ -3536,12 +3673,28 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('target:set:'):
         code = data.rsplit(':', 1)[1]
         await db.set_target_cefr_level(context.user_data['profile_id'], code)
-        await _send(context, _chat_id(update), f'Цель: {code} ✅ Карта пути обновлена.')
-        await show_progress(update, context)
+        if context.user_data.get('onboarding'):
+            await _send(context, _chat_id(update), f'Цель: {code} ✅')
+            await show_skill_focus(update, context, onboarding=True)
+        else:
+            await _send(context, _chat_id(update), f'Цель: {code} ✅ Карта пути обновлена.')
+            await show_progress(update, context)
+    elif data == 'focus:done':
+        await db.confirm_skill_focus(context.user_data['profile_id'])
+        if context.user_data.get('onboarding'):
+            await show_schedule_minutes(update, context, onboarding=True)
+        else:
+            await show_profile(update, context)
     elif data.startswith('focus:toggle:'):
         skill = data.rsplit(':', 1)[1]
         await db.toggle_skill_focus(context.user_data['profile_id'], skill)
-        await show_skill_focus(update, context)
+        await show_skill_focus(
+            update, context,
+            onboarding=context.user_data.get('onboarding', False),
+        )
+    elif data.startswith('anxiety:set:'):
+        level = data.rsplit(':', 1)[1]
+        await _handle_speaking_anxiety(update, context, level)
     elif data.startswith('schedule:min:'):
         minutes = int(data.rsplit(':', 1)[1])
         if context.user_data.get('onboarding'):
@@ -3681,6 +3834,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'review':
         await _handle_word_review_answer(update, context, text)
         return
+    if mode == 'plan_speaking':
+        await _handle_plan_speaking_answer(update, context, text)
+        return
     if mode == 'lesson' and context.user_data.get('expect') in (
         'ex_text', 'ex_voice', 'ex_text_or_voice',
     ):
@@ -3782,6 +3938,8 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _grade_rule_training_answer(update, context, transcript_text)
     elif mode == 'review':
         await _handle_word_review_answer(update, context, transcript_text)
+    elif mode == 'plan_speaking':
+        await _handle_plan_speaking_answer(update, context, transcript_text)
     elif mode == 'practice':
         await _deliver_practice_feedback(update, context, transcript_text)
     else:

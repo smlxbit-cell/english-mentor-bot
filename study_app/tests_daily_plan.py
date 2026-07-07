@@ -71,6 +71,28 @@ class DailyPlanV2Tests(TestCase):
         plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 9))
         self.assertIsNone(plan.get('listening'))
 
+    def test_plan_20_min_speaking_when_focus(self):
+        self.profile.daily_minutes = 20
+        self.profile.skill_focus = ['speaking']
+        self.profile.save()
+        plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 11))
+        self.assertIsNotNone(plan.get('speaking'))
+        self.assertIsNone(plan.get('listening'))
+
+    def test_plan_20_min_listening_when_focus(self):
+        self.profile.daily_minutes = 20
+        self.profile.skill_focus = ['listening']
+        self.profile.save()
+        plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 14))
+        self.assertIsNotNone(plan.get('listening'))
+
+    def test_plan_speaking_when_anxiety(self):
+        self.profile.daily_minutes = 20
+        self.profile.speaking_anxiety = 'high'
+        self.profile.save()
+        plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 13))
+        self.assertIsNotNone(plan.get('speaking'))
+
     def test_rest_day_sunday(self):
         self.profile.rest_weekday = 6
         self.profile.save()

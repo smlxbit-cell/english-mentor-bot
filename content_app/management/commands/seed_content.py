@@ -181,6 +181,14 @@ class Command(BaseCommand):
                  correct=['hello', 'hi', 'hello!'],
                  keywords=['hello'],
                  explanation_ru='Hello / Hi = привет.'),
+            dict(level='a1', skill='listening', item_type='listening', order=6,
+                 prompt=(
+                     '🎧 Listen: «My name is Tom. I am a student.»\n\n'
+                     'Кто говорит?'
+                 ),
+                 options=['A student named Tom', 'A teacher', 'A doctor'],
+                 correct=['A student named Tom', 'a student named tom'],
+                 explanation_ru='Student = студент.'),
             dict(level='a2', skill='vocabulary', item_type='translation_ru_en', order=5,
                  prompt='Переведи на английский:\n\n«Мне нравится чай»',
                  correct=['i like tea', 'i like the tea'],
@@ -229,6 +237,14 @@ class Command(BaseCommand):
                  options=['Send a report by Friday', 'Meet on Friday', 'Call on Friday'],
                  correct=['Send a report by Friday', 'send me the report by friday'],
                  explanation_ru='Send the report by Friday = прислать отчёт к пятнице.'),
+            dict(level='b1', skill='listening', item_type='listening', order=8,
+                 prompt=(
+                     '🎧 Listen: «The meeting starts at ten.»\n\n'
+                     'Когда встреча?'
+                 ),
+                 options=['At ten', 'At two', 'Tomorrow'],
+                 correct=['At ten', 'at ten', 'at 10'],
+                 explanation_ru='At ten = в десять.'),
             dict(level='b2', skill='listening', item_type='listening', order=7,
                  prompt=(
                      '🎧 Listen: «Despite the rain, we enjoyed the walk.»\n\n'

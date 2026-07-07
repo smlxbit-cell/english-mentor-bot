@@ -53,8 +53,14 @@ def pick_item(
     focus_idx: int,
     *,
     used_skills: set[str] | None = None,
+    prefer_skill: str | None = None,
 ):
     used_skills = used_skills or set()
+    if prefer_skill:
+        preferred = _pick_by_skill(group, asked, band, focus_idx, prefer_skill)
+        if preferred:
+            return preferred
+
     min_i, max_i = band
     focus_idx = max(min_i, min(max_i, focus_idx))
     order = [focus_idx]
@@ -75,6 +81,40 @@ def pick_item(
             if fallback is None:
                 fallback = it
     return fallback
+
+
+def _pick_by_skill(
+    group: dict[str, list],
+    asked: set[int],
+    band: tuple[int, int],
+    focus_idx: int,
+    skill: str,
+):
+    min_i, max_i = band
+    focus_idx = max(min_i, min(max_i, focus_idx))
+    order = [focus_idx]
+    for d in range(1, 4):
+        if focus_idx - d >= min_i:
+            order.append(focus_idx - d)
+        if focus_idx + d <= max_i:
+            order.append(focus_idx + d)
+    for idx in order:
+        level = LEVELS[idx]
+        for it in group.get(level, []):
+            if it['id'] in asked:
+                continue
+            if it.get('skill') == skill:
+                return it
+    return None
+
+
+def prefer_skill_for_question(question_number: int, *, listening_count: int = 0) -> str | None:
+    """Rotate listening/speaking into the 8-question primary diagnostic."""
+    if question_number in (3, 6) and listening_count < 2:
+        return 'listening'
+    if question_number == 5:
+        return 'speaking'
+    return None
 
 
 def accuracy(correct: int, total: int) -> float:

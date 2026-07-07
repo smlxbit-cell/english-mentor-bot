@@ -85,6 +85,24 @@ class UserProfile(models.Model):
         help_text='Skills to emphasise: speaking, listening, reading, writing, grammar, vocabulary.',
     )
 
+    class SpeakingAnxiety(models.TextChoices):
+        HIGH = 'high', 'High — afraid to speak'
+        MILD = 'mild', 'Mild — some nervousness'
+        NONE = 'none', 'None'
+
+    speaking_anxiety = models.CharField(
+        max_length=10,
+        choices=SpeakingAnxiety.choices,
+        blank=True,
+        default='',
+        help_text='Self-reported speaking barrier after diagnostic.',
+    )
+
+    skill_focus_confirmed = models.BooleanField(
+        default=False,
+        help_text='User confirmed skill focus step in onboarding.',
+    )
+
     learning_goal = models.CharField(
         max_length=30,
         choices=LearningGoal.choices,

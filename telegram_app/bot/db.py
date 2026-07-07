@@ -128,6 +128,10 @@ def onboarding_state(profile: UserProfile) -> dict:
     if profile.profession == 'other' and not (profile.profession_custom or '').strip():
         return {'complete': False, 'step': 'sphere'}
     if not profile.study_schedule_set:
+        if not profile.target_cefr_level:
+            return {'complete': False, 'step': 'target_level'}
+        if not profile.skill_focus_confirmed:
+            return {'complete': False, 'step': 'skill_focus'}
         return {'complete': False, 'step': 'schedule'}
     return {'complete': True, 'step': 'done'}
 
@@ -367,6 +371,40 @@ def get_target_cefr_level(profile_id: int) -> str:
 
 
 FOCUS_SKILLS = ['speaking', 'listening', 'reading', 'writing', 'grammar', 'vocabulary']
+
+
+@sync_to_async
+def confirm_skill_focus(profile_id: int) -> None:
+    UserProfile.objects.filter(id=profile_id).update(skill_focus_confirmed=True)
+
+
+@sync_to_async
+def set_speaking_anxiety(profile_id: int, level: str) -> None:
+    allowed = {'high', 'mild', 'none'}
+    code = (level or '').lower()
+    if code not in allowed:
+        return
+    profile = UserProfile.objects.get(id=profile_id)
+    profile.speaking_anxiety = code
+    profile.save(update_fields=['speaking_anxiety', 'updated_at'])
+    if code in ('high', 'mild'):
+        focus = list(profile.skill_focus or [])
+        if 'speaking' not in focus:
+            focus.insert(0, 'speaking')
+            profile.skill_focus = focus[:6]
+            profile.save(update_fields=['skill_focus', 'updated_at'])
+
+
+@sync_to_async
+def ensure_skill_in_focus(profile_id: int, skill: str) -> None:
+    if skill not in FOCUS_SKILLS:
+        return
+    profile = UserProfile.objects.get(id=profile_id)
+    focus = list(profile.skill_focus or [])
+    if skill not in focus:
+        focus.append(skill)
+        profile.skill_focus = focus[:6]
+        profile.save(update_fields=['skill_focus', 'updated_at'])
 
 
 @sync_to_async

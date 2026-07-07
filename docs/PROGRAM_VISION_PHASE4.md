@@ -16,16 +16,19 @@ App scope: **A1 → C1** (stretch C2). One serial story; personalization via pla
 | Full journey map + **months to goal** | 📊 Прогресс or 👤 → 🗺 Карта пути |
 | Spirit truncation fix | tutor uses full token budget |
 | Phrase practice from chat | «потренировать эту фразу» in 💬 Наставник |
-| Diagnostic listening items | seed_content (A2, B1, B2) |
+| Diagnostic listening items | seed_content (A1–B2) |
+| **Onboarding: target + focus** | after sphere, before schedule |
+| **Speaking anxiety question** | after diagnostic |
+| **Daily plan skill bias** | speaking/listening at 20 min when focused |
+| **Speaking bite in daily plan** | 🎙️ block after episode |
 
 ## Still to build (Phase 4 content + accuracy)
 
 1. **More episodes** per level (A1–C1) — curriculum.py
 2. **Level variants** inside same episode
-3. **Listening blocks** in daily plan (partially started)
-4. **Diagnostic v2** — more listening + speaking anxiety questions after test
-5. **Onboarding** — ask goal level + skill focus (not only profile edit)
-6. **Daily plan** weights more speaking when `skill_focus` includes speaking
+3. **More listening blocks** in curriculum (not only bites)
+4. **More diagnostic listening** audio files (TTS attachment)
+5. **Daily plan** weights grammar/reading when those are focus skills
 
 ## Learner types we support
 

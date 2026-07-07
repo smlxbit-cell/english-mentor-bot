@@ -1,0 +1,26 @@
+---
+description: Locked product rules — voice, TTS, STT, tutor, lessons. Do not break.
+alwaysApply: true
+---
+
+# Product invariants (do not break)
+
+Full reference: `docs/PRODUCT_INVARIANTS.md` — read before voice/tutor/lesson/STT/TTS changes.
+
+## Meta-rule
+Fixing one thing must not break another. Re-check invariants before shipping.
+
+## Must always work
+
+1. **🔊 TTS** — Every English text in lessons, exercises, diagnostic, rules, dictionary, tutor has **🔊 Слушать**. Mixed RU+EN steps: extract via `_english_text_for_tts()` / `_speak_text_for_step()` (🇬🇧 lines), not `_is_english(whole_step)`.
+
+2. **STT** — Tutor: dual-pass RU+EN Whisper. Model default `whisper-large-v3-turbo`. Fallback chain: tier model → `OPENAI_WHISPER_MODEL` → env fallbacks. No `gpt-4o-mini-transcribe` unless key allows it.
+
+3. **Tutor** — Grammar block always (Услышал → Грамматика → …). Every EN phrase has 🇷🇺 translation. Spirit persona, warm tone, no harsh ❌ on STT noise.
+
+4. **TTS provider** — `from ai_app.tts import get_tts_provider`; try AITUNNEL when key allows, **always fall back to edge**. Lessons auto-send voiceover + 🔊 replay button.
+
+5. **Deploy** — Production server only; restart `english-mentor-bot` after deploy; don't run local bot while server is up.
+
+## Before merge
+Run `LessonTTSTests`, `WhisperSTTTests`, `BilingualSTTTests`. Verify 🔊 on a lesson hook and tutor voice round-trip.

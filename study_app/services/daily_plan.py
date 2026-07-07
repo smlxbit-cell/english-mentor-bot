@@ -11,6 +11,7 @@ from django.utils import timezone
 from content_app.models import Lesson
 from study_app.daily_facts import DAILY_FACTS, GREETING_VARIANTS, warmup_label
 from study_app.listening_bites import pick_listening_bite
+from study_app.speaking_bites import pick_speaking_bite
 from study_app.models import DailySession, DailySessionBlock, LessonProgress
 from study_app.warmup_quiz import build_quiz_for_fact
 from users_app.models import UserInterest, UserProfile
@@ -19,6 +20,8 @@ LEVEL_ORDER = ['a1', 'a2', 'b1', 'b2']
 
 WARMUP_MINUTES = 3
 RULE_DRILL_MINUTES = 5
+SPEAKING_MINUTES = 4
+LISTENING_MINUTES = 4
 WEEKDAY_NAMES = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
 
 
@@ -161,6 +164,24 @@ def _block_exists(session: DailySession, item_type: str) -> bool:
     )
 
 
+def _skill_focus_set(profile: UserProfile) -> set[str]:
+    return set(profile.skill_focus or [])
+
+
+def _include_listening(profile: UserProfile, minutes_budget: int) -> bool:
+    if 'listening' in _skill_focus_set(profile):
+        return minutes_budget >= 20
+    return minutes_budget >= 30
+
+
+def _include_speaking(profile: UserProfile, minutes_budget: int) -> bool:
+    if profile.speaking_anxiety in ('high', 'mild'):
+        return minutes_budget >= 20
+    if 'speaking' in _skill_focus_set(profile):
+        return minutes_budget >= 20
+    return False
+
+
 def _target_minutes_for_item(item: dict) -> int:
     item_type = item.get('type')
     if item_type == 'warmup':
@@ -168,7 +189,9 @@ def _target_minutes_for_item(item: dict) -> int:
     if item_type == 'episode':
         return int(item.get('minutes') or 8)
     if item_type == 'listening':
-        return int(item.get('minutes') or 4)
+        return int(item.get('minutes') or LISTENING_MINUTES)
+    if item_type == 'speaking':
+        return int(item.get('minutes') or SPEAKING_MINUTES)
     if item_type == 'words':
         count = int(item.get('count') or 0)
         return max(2, min(count, 8))
@@ -235,7 +258,26 @@ def _build_initial_blocks(
         )
         order += 1
 
-    if minutes_budget >= 30 and not _block_exists(session, 'listening'):
+    if _include_speaking(profile, minutes_budget) and not _block_exists(session, 'speaking'):
+        bite = pick_speaking_bite(profile.id, day)
+        DailySessionBlock.objects.create(
+            session=session,
+            order=order,
+            block_type=DailySessionBlock.BlockType.DIALOGUE,
+            title=f'🎙️ {bite["title"]}',
+            content={
+                'item_type': 'speaking',
+                'title': bite['title'],
+                'prompt_ru': bite['prompt_ru'],
+                'prompt_en': bite['prompt_en'],
+                'model_answer': bite['model_answer'],
+                'keywords': bite.get('keywords', []),
+                'minutes': bite.get('minutes', SPEAKING_MINUTES),
+            },
+        )
+        order += 1
+
+    if _include_listening(profile, minutes_budget) and not _block_exists(session, 'listening'):
         bite = pick_listening_bite(profile.id, day)
         DailySessionBlock.objects.create(
             session=session,
@@ -314,6 +356,10 @@ def _items_from_session(session: DailySession) -> list[dict]:
             'question_ru': content.get('question_ru', ''),
             'options': content.get('options'),
             'correct_index': content.get('correct_index'),
+            'prompt_ru': content.get('prompt_ru', ''),
+            'prompt_en': content.get('prompt_en', ''),
+            'model_answer': content.get('model_answer', ''),
+            'keywords': content.get('keywords', []),
             'rest_day': content.get('rest_day', False),
         }
         item['target_minutes'] = _target_minutes_for_item(item)
@@ -325,10 +371,11 @@ def _structured_plan(items: list[dict], *, daily_minutes: int) -> dict:
     warmup = next((i for i in items if i['type'] == 'warmup'), None)
     episode = next((i for i in items if i['type'] == 'episode'), None)
     listening = next((i for i in items if i['type'] == 'listening'), None)
+    speaking = next((i for i in items if i['type'] == 'speaking'), None)
     bonus_words = next((i for i in items if i['type'] == 'words'), None)
     rule_drill = next((i for i in items if i['type'] == 'rule_drill'), None)
 
-    route = [i for i in (warmup, episode, listening, bonus_words, rule_drill) if i]
+    route = [i for i in (warmup, episode, speaking, listening, bonus_words, rule_drill) if i]
     done_count = sum(1 for i in route if i.get('done'))
     total_count = len(route) or 1
 
@@ -345,6 +392,7 @@ def _structured_plan(items: list[dict], *, daily_minutes: int) -> dict:
         'warmup': warmup,
         'episode': episode,
         'listening': listening,
+        'speaking': speaking,
         'bonus_words': bonus_words,
         'rule_drill': rule_drill,
         'progress_done': done_count,
@@ -443,6 +491,11 @@ def format_plan_reminder_summary(plan: dict) -> str:
     if listening:
         mark = '✅' if listening.get('done') else f'{step}.'
         lines.append(f'{mark} 🎧 {listening.get("title", "Аудирование")} — ~{listening.get("target_minutes", 4)} мин')
+        step += 1
+    speaking = plan.get('speaking')
+    if speaking:
+        mark = '✅' if speaking.get('done') else f'{step}.'
+        lines.append(f'{mark} 🎙️ {speaking.get("title", "Говорение")} — ~{speaking.get("target_minutes", 4)} мин')
         step += 1
     bonus = plan.get('bonus_words')
     if bonus:
