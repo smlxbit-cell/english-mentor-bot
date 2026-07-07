@@ -90,7 +90,25 @@ class UserProfile(models.Model):
         help_text='Free-text sphere when profession is «other».',
     )
 
-    daily_minutes = models.PositiveSmallIntegerField(default=10)
+    daily_minutes = models.PositiveSmallIntegerField(
+        default=20,
+        help_text='Daily training budget: 20, 30, or 60 minutes.',
+    )
+
+    study_days_per_week = models.PositiveSmallIntegerField(
+        default=5,
+        help_text='Target training days per week (3–7).',
+    )
+
+    rest_weekday = models.PositiveSmallIntegerField(
+        default=6,
+        help_text='Weekday for light rest (0=Mon … 6=Sun). Default Sunday.',
+    )
+
+    study_schedule_set = models.BooleanField(
+        default=False,
+        help_text='User chose daily minutes and weekly schedule in onboarding.',
+    )
 
     onboarding_status = models.CharField(
         max_length=30,

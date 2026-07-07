@@ -201,13 +201,50 @@ def daily_plan_kb(plan: dict) -> InlineKeyboardMarkup:
     ])
 
 
-def warmup_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton('🔊 Слушать', callback_data='plan:warmup:listen')],
-            [InlineKeyboardButton('Далее ▶️', callback_data='plan:warmup:next')],
-        ]
-    )
+def warmup_kb(quiz: dict | None = None) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton('🔊 Слушать', callback_data='plan:warmup:listen')]]
+    if quiz and quiz.get('options'):
+        for i, opt in enumerate(quiz['options'][:4]):
+            label = opt if len(opt) <= 42 else opt[:39] + '…'
+            rows.append([InlineKeyboardButton(label, callback_data=f'plan:warmup:ans:{i}')])
+    return InlineKeyboardMarkup(rows)
+
+
+def schedule_minutes_kb(selected: int = 0) -> InlineKeyboardMarkup:
+    choices = [20, 30, 60]
+    rows = []
+    for m in choices:
+        mark = '✓ ' if m == selected else ''
+        rows.append([
+            InlineKeyboardButton(f'{mark}{m} мин / день', callback_data=f'schedule:min:{m}'),
+        ])
+    return InlineKeyboardMarkup(rows)
+
+
+def schedule_days_kb(selected: int = 0) -> InlineKeyboardMarkup:
+    rows = []
+    for d in (3, 4, 5, 6, 7):
+        mark = '✓ ' if d == selected else ''
+        rows.append([
+            InlineKeyboardButton(f'{mark}{d} дней в неделю', callback_data=f'schedule:days:{d}'),
+        ])
+    return InlineKeyboardMarkup(rows)
+
+
+def schedule_edit_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('⏱ Время в день', callback_data='profile:schedule:min')],
+        [InlineKeyboardButton('📅 Дней в неделю', callback_data='profile:schedule:days')],
+        [InlineKeyboardButton('◀️ Назад', callback_data='profile:back')],
+    ])
+
+
+def listening_kb(options: list[str]) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton('🔊 Слушать диалог', callback_data='plan:listening:listen')]]
+    for i, opt in enumerate(options[:4]):
+        label = opt if len(opt) <= 42 else opt[:39] + '…'
+        rows.append([InlineKeyboardButton(label, callback_data=f'plan:listening:ans:{i}')])
+    return InlineKeyboardMarkup(rows)
 
 
 def grammar_rule_kb(rule_key: str) -> InlineKeyboardMarkup:
@@ -345,6 +382,7 @@ def profile_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton('🎯 Мои интересы', callback_data='profile:interests')],
             [InlineKeyboardButton('🎓 Цель обучения', callback_data='profile:goal')],
             [InlineKeyboardButton('💼 Моя сфера', callback_data='profile:sphere')],
+            [InlineKeyboardButton('⏱ План на день', callback_data='profile:schedule')],
             [InlineKeyboardButton('🔔 Напоминания', callback_data='profile:notify')],
             [InlineKeyboardButton('🔁 Пройти диагностику заново', callback_data='profile:rediag')],
         ]

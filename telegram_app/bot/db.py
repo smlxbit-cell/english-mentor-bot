@@ -127,6 +127,8 @@ def onboarding_state(profile: UserProfile) -> dict:
         return {'complete': False, 'step': 'sphere'}
     if profile.profession == 'other' and not (profile.profession_custom or '').strip():
         return {'complete': False, 'step': 'sphere'}
+    if not profile.study_schedule_set:
+        return {'complete': False, 'step': 'schedule'}
     return {'complete': True, 'step': 'done'}
 
 
@@ -185,6 +187,10 @@ def _profile_dict(profile: UserProfile) -> dict:
         'interests_custom': profile.interests_custom or '',
         'onboarding_complete': onboarding['complete'],
         'onboarding_step': onboarding['step'],
+        'daily_minutes': profile.daily_minutes or 20,
+        'study_days_per_week': profile.study_days_per_week or 5,
+        'rest_weekday': profile.rest_weekday if profile.rest_weekday is not None else 6,
+        'study_schedule_set': profile.study_schedule_set,
         'personalization_topic': personalization_topic(
             profile.learning_goal or '',
             profile.learning_goal_custom or '',
@@ -304,6 +310,8 @@ def get_profile_detail(profile_id: int) -> dict:
         'voice_minutes_monthly': limits['voice_minutes_monthly'],
         'tutor_ai_monthly_limit': limits['tutor_ai_monthly_limit'],
         'tutor_messages_remaining': limits['tutor_messages_remaining'],
+        'daily_minutes': profile.daily_minutes or 20,
+        'study_days_per_week': profile.study_days_per_week or 5,
         'achievements': achievements,
     }
 
@@ -337,6 +345,36 @@ def complete_onboarding(profile_id: int) -> None:
     UserProfile.objects.filter(id=profile_id).update(
         onboarding_status=UserProfile.OnboardingStatus.COMPLETED,
     )
+
+
+@sync_to_async
+def set_study_schedule(
+    profile_id: int,
+    *,
+    daily_minutes: int,
+    study_days_per_week: int,
+    rest_weekday: int = 6,
+) -> None:
+    minutes = daily_minutes if daily_minutes in (20, 30, 60) else 20
+    days = max(3, min(7, study_days_per_week))
+    rest = max(0, min(6, rest_weekday))
+    UserProfile.objects.filter(id=profile_id).update(
+        daily_minutes=minutes,
+        study_days_per_week=days,
+        rest_weekday=rest,
+        study_schedule_set=True,
+    )
+
+
+@sync_to_async
+def get_study_schedule(profile_id: int) -> dict:
+    profile = UserProfile.objects.get(id=profile_id)
+    return {
+        'daily_minutes': profile.daily_minutes or 20,
+        'study_days_per_week': profile.study_days_per_week or 5,
+        'rest_weekday': profile.rest_weekday if profile.rest_weekday is not None else 6,
+        'study_schedule_set': profile.study_schedule_set,
+    }
 
 
 @sync_to_async
@@ -1355,6 +1393,10 @@ def users_due_reminder(hour: int, minute: int = 0) -> list[dict]:
     )
     result = []
     for profile in qs:
+        from study_app.services.daily_plan import is_rest_day
+
+        if is_rest_day(profile, timezone.localdate()):
+            continue
         plan = build_or_get_daily_plan(profile)
         result.append({
             'telegram_id': profile.telegram_id,

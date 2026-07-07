@@ -114,6 +114,7 @@ _ONBOARDING_PROMPTS = {
     'goal': 'Осталось настроить профиль. Сначала — зачем тебе английский 👇',
     'interests': 'Теперь интересы — от них зависят темы уроков и историй 👇',
     'sphere': 'И последнее — твоя сфера работы или учёбы 👇',
+    'schedule': 'Сколько времени готов уделять английскому в день? 👇',
 }
 
 
@@ -136,6 +137,8 @@ async def _resume_onboarding_if_needed(
         await show_interests(update, context)
     elif step == 'sphere':
         await show_sphere(update, context)
+    elif step == 'schedule':
+        await show_schedule_minutes(update, context, onboarding=True)
     return True
 
 
@@ -1160,17 +1163,31 @@ def _progress_bar(done: int, total: int) -> str:
     return '●' * filled + '○' * (6 - filled)
 
 
+def _progress_bar_percent(percent: int) -> str:
+    pct = max(0, min(100, percent))
+    filled = round(pct / 100 * 12)
+    return '━' * filled + '░' * (12 - filled)
+
+
 def _format_daily_plan_text(plan: dict) -> str:
     episode = plan.get('episode')
     ep_num = (episode or {}).get('episode_num', 0)
-    header = '📖 <b>Глава дня</b>'
-    if ep_num:
-        header += f' · Эпизод {ep_num}'
+    if plan.get('is_rest_day'):
+        header = '🌿 <b>День отдыха</b>'
+    else:
+        header = '📖 <b>Глава дня</b>'
+        if ep_num:
+            header += f' · Эпизод {ep_num}'
 
     lines = [header, _esc(plan.get('greeting', '')), '']
 
+    if plan.get('is_rest_day'):
+        lines.append('Сегодня без нового эпизода — только лёгкая разминка (~5 мин).')
+        lines.append('Стрик сохранится 🔥')
+        lines.append('')
+
     steps: list[str] = []
-    total_mins = 0
+    total_mins = plan.get('progress_minutes_total', 0)
     total_xp = 0
 
     warmup = plan.get('warmup')
@@ -1178,8 +1195,7 @@ def _format_daily_plan_text(plan: dict) -> str:
         from study_app.daily_facts import warmup_label
         icon, label = warmup_label(warmup.get('kind', 'fact'))
         mark = '✅' if warmup.get('done') else '○'
-        steps.append(f'{mark} {icon} {label} — ~1 мин')
-        total_mins += 1
+        steps.append(f'{mark} {icon} {label} — ~3 мин')
 
     if episode:
         mark = '✅' if episode.get('done') else '○'
@@ -1190,19 +1206,28 @@ def _format_daily_plan_text(plan: dict) -> str:
         if xp:
             meta += f' · +{xp} XP'
             total_xp += xp
-        total_mins += mins
         steps.append(f'{mark} 📺 {_esc(title)} — {meta}')
-    elif not plan.get('has_episode'):
+    elif not plan.get('has_episode') and not plan.get('is_rest_day'):
         lines.append('🎬 Все эпизоды пройдены — скоро новая глава!')
         lines.append('')
+
+    listening = plan.get('listening')
+    if listening:
+        mark = '✅' if listening.get('done') else '○'
+        lm = listening.get('target_minutes') or listening.get('minutes') or 4
+        steps.append(f'{mark} 🎧 {_esc(listening.get("title", "Аудирование"))} — ~{lm} мин')
 
     bonus = plan.get('bonus_words')
     if bonus:
         mark = '✅' if bonus.get('done') else '○'
         cnt = bonus.get('count', 0)
-        est = max(2, min(cnt, 5))
+        est = bonus.get('target_minutes') or max(2, min(cnt, 8))
         steps.append(f'{mark} 🗂 Повторить {cnt} слов — ~{est} мин')
-        total_mins += est
+
+    drill = plan.get('rule_drill')
+    if drill:
+        mark = '✅' if drill.get('done') else '○'
+        steps.append(f'{mark} 📖 Тренировка правил — ~5 мин')
 
     if steps:
         summary = f'<b>Маршрут на сегодня</b> (~{total_mins} мин'
@@ -1215,17 +1240,23 @@ def _format_daily_plan_text(plan: dict) -> str:
             lines.append(f'{i}. {step}')
         lines.append('')
 
-    done = plan.get('progress_done', 0)
-    total = plan.get('progress_total', 1)
-    if total > 0:
-        bar = _progress_bar(done, total)
-        lines.append(f'Прогресс: {bar} {done}/{total}')
+    pct = plan.get('progress_percent', 0)
+    done_m = plan.get('progress_minutes_done', 0)
+    total_m = plan.get('progress_minutes_total', 1)
+    if total_m > 0:
+        bar = _progress_bar_percent(pct)
+        lines.append(f'{bar}  {pct}%  ·  ~{done_m} из {total_m} мин')
         lines.append('')
 
     if plan.get('all_done'):
-        lines.append('🎉 Глава дня закрыта! Завтра — новое приключение.')
+        if plan.get('is_rest_day'):
+            lines.append('🌿 Отдых засчитан! Завтра — новая глава.')
+        else:
+            lines.append('🎉 Глава дня закрыта! Завтра — новое приключение.')
     else:
-        cta = 'Продолжить' if plan.get('progress_done', 0) > 0 else 'Начать'
+        cta = plan.get('continue_label') or (
+            'Продолжить' if plan.get('progress_done', 0) > 0 else 'Начать'
+        )
         lines.append(f'Нажми <b>▶️ {cta}</b> — поведу по шагам, без выбора.')
 
     if not plan.get('premium'):
@@ -1269,16 +1300,65 @@ async def _show_warmup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_daily_plan(update, context)
         return
 
+    context.user_data['daily_plan'] = plan
     context.user_data['tts_text'] = warmup.get('fact_en', '')
     from study_app.daily_facts import warmup_label
     icon, label = warmup_label(warmup.get('kind', 'fact'))
+    quiz = warmup.get('quiz') or {}
+    if not quiz:
+        from study_app.warmup_quiz import build_quiz_for_fact
+        from django.utils import timezone as tz
+        quiz = build_quiz_for_fact(
+            {
+                'fact_ru': warmup.get('fact_ru', ''),
+                'fact_en': warmup.get('fact_en', ''),
+                'kind': warmup.get('kind', 'fact'),
+            },
+            context.user_data['profile_id'],
+            tz.localdate(),
+        )
+        warmup['quiz'] = quiz
     text = (
         f'{icon} <b>{label}</b>\n\n'
         f'{_esc(warmup.get("fact_ru", ""))}\n\n'
-        f'🇬🇧 {_esc(warmup.get("fact_en", ""))}'
+        f'🇬🇧 {_esc(warmup.get("fact_en", ""))}\n\n'
+        f'<b>Проверим понимание 👇</b>\n'
+        f'{_esc(quiz.get("question_ru", "Выбери правильный вариант:"))}'
     )
-    await _send(context, chat_id, text, reply_markup=keyboards.warmup_kb(),
-                parse_mode=ParseMode.HTML)
+    await _send(
+        context, chat_id, text,
+        reply_markup=keyboards.warmup_kb(quiz),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_listening(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+        context.user_data['profile_id'],
+    )
+    chat_id = _chat_id(update)
+    listening = plan.get('listening')
+    if not listening:
+        await _plan_continue(update, context)
+        return
+
+    context.user_data['daily_plan'] = plan
+    lines = listening.get('lines') or []
+    en_lines = [ln.get('en', '') for ln in lines if ln.get('en')]
+    context.user_data['tts_text'] = ' '.join(en_lines)
+
+    body = [f'🎧 <b>{_esc(listening.get("title", "Аудирование"))}</b>\n']
+    for ln in lines:
+        body.append(f'🇬🇧 {_esc(ln.get("en", ""))}')
+        if ln.get('ru'):
+            body.append(f'🇷🇺 {_esc(ln["ru"])}')
+        body.append('')
+    body.append(f'<b>{_esc(listening.get("question_ru", ""))}</b>')
+    await _send(
+        context, chat_id, '\n'.join(body),
+        reply_markup=keyboards.listening_kb(listening.get('options') or []),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def _plan_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1291,6 +1371,10 @@ async def _plan_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_warmup(update, context)
         return
 
+    if plan.get('is_rest_day'):
+        await show_daily_plan(update, context)
+        return
+
     episode = plan.get('episode')
     if episode and not episode.get('done'):
         await open_lesson(
@@ -1299,9 +1383,20 @@ async def _plan_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    listening = plan.get('listening')
+    if listening and not listening.get('done'):
+        await _show_listening(update, context)
+        return
+
     bonus = plan.get('bonus_words')
     if bonus and not bonus.get('done'):
         await start_word_review(update, context, from_plan=True)
+        return
+
+    drill = plan.get('rule_drill')
+    if drill and not drill.get('done'):
+        context.user_data['plan_rule_drill_block'] = drill.get('block_id')
+        await start_rule_drill(update, context)
         return
 
     await show_daily_plan(update, context)
@@ -1553,6 +1648,18 @@ async def _finish_rule_training(update, context):
     context.user_data['mode'] = None
     context.user_data['expect'] = None
     context.user_data.pop('rule_training', None)
+    block_id = context.user_data.pop('plan_rule_drill_block', None)
+    if block_id:
+        await db.mark_plan_block_done(context.user_data['profile_id'], block_id)
+        plan = await db.get_daily_plan(context.user_data['profile_id'])
+        context.user_data['daily_plan'] = plan
+        if plan.get('all_done'):
+            await _send(context, chat_id, msg + '\n\n🎉 Глава дня закрыта!')
+            await show_daily_plan(update, context)
+            return
+        await _send(context, chat_id, msg)
+        await _plan_continue(update, context)
+        return
     await _send(context, chat_id, msg, reply_markup=keyboards.main_menu())
 
 
@@ -2504,6 +2611,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'🎓 Цель: {d["goal"] or "не выбрана"}\n'
         f'💼 Сфера: {d.get("sphere") or "не выбрана"}\n'
         f'❤️ Интересы: {interests}\n'
+        f'⏱ План: {d.get("daily_minutes", 20)} мин · {d.get("study_days_per_week", 5)} дн/нед\n'
         f'📉 Над чем работаем: {weak}\n\n'
         f'⭐️ XP: {d["xp"]} (до уровня {d["user_level"] + 1} осталось {d["xp_to_next"]})\n'
         f'🎮 Игровой уровень: {d["user_level"]}\n'
@@ -2615,21 +2723,93 @@ async def _finish_sphere_selection(update: Update, context: ContextTypes.DEFAULT
     profile = await _ensure_profile(update, context)
     context.user_data['sphere_en'] = profile.get('sphere_en', '')
     context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
-    if context.user_data.pop('onboarding', False):
-        await db.complete_onboarding(context.user_data['profile_id'])
-        await _send(
-            context, _chat_id(update),
-            'Всё готово! 🎉 Я собрал персональный план под твой уровень, '
-            'интересы и сферу.\n\n'
-            'Жми «📚 Учиться» — там чеклист на сегодня, без выбора уроков.',
-            reply_markup=keyboards.main_menu(),
-        )
-        notify = await db.get_notification_settings(context.user_data['profile_id'])
-        if not notify.get('setup_done'):
-            await _prompt_notifications(update, context)
+    if context.user_data.get('onboarding'):
+        await show_schedule_minutes(update, context, onboarding=True)
     else:
         await _send(context, _chat_id(update), 'Сфера сохранена ✅')
         await show_profile(update, context)
+
+
+async def show_schedule_minutes(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, *, onboarding: bool = False,
+):
+    context.user_data['schedule_edit'] = not onboarding
+    schedule = await db.get_study_schedule(context.user_data['profile_id'])
+    selected = schedule.get('daily_minutes', 20)
+    text = (
+        'Сколько минут в день готов уделять английскому?\n\n'
+        'От этого зависит, сколько практики будет в плане.'
+    )
+    if onboarding:
+        text = (
+            'Отлично! Теперь подберём нагрузку.\n\n'
+            + text
+        )
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.schedule_minutes_kb(selected),
+    )
+
+
+async def show_schedule_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    schedule = await db.get_study_schedule(context.user_data['profile_id'])
+    selected = schedule.get('study_days_per_week', 5)
+    await _send(
+        context, _chat_id(update),
+        'Сколько дней в неделю планируешь заниматься?\n\n'
+        '🌿 Воскресенье — лёгкий день отдыха (стрик сохранится).',
+        reply_markup=keyboards.schedule_days_kb(selected),
+    )
+
+
+async def _save_schedule_and_finish(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    daily_minutes: int,
+    study_days_per_week: int,
+):
+    profile_id = context.user_data['profile_id']
+    await db.set_study_schedule(
+        profile_id,
+        daily_minutes=daily_minutes,
+        study_days_per_week=study_days_per_week,
+        rest_weekday=6,
+    )
+    if context.user_data.pop('onboarding', False):
+        await db.complete_onboarding(profile_id)
+        await _send(
+            context, _chat_id(update),
+            f'Всё готово! 🎉 План: <b>{daily_minutes} мин</b> · '
+            f'<b>{study_days_per_week} дн/нед</b> · воскресенье — отдых.\n\n'
+            'Жми «📚 Учиться» — там твой маршрут на сегодня.',
+            reply_markup=keyboards.main_menu(),
+            parse_mode=ParseMode.HTML,
+        )
+        notify = await db.get_notification_settings(profile_id)
+        if not notify.get('setup_done'):
+            await _prompt_notifications(update, context)
+    else:
+        await _send(
+            context, _chat_id(update),
+            f'План обновлён: {daily_minutes} мин · {study_days_per_week} дн/нед ✅',
+        )
+        await show_profile(update, context)
+
+
+async def show_schedule_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    schedule = await db.get_study_schedule(context.user_data['profile_id'])
+    mins = schedule.get('daily_minutes', 20)
+    days = schedule.get('study_days_per_week', 5)
+    await _send(
+        context, _chat_id(update),
+        f'⏱ <b>План на день</b>\n\n'
+        f'• Время: <b>{mins} мин</b> в день\n'
+        f'• Частота: <b>{days} дней</b> в неделю\n'
+        f'• Воскресенье — лёгкий день отдыха 🌿',
+        reply_markup=keyboards.schedule_edit_kb(),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -3081,34 +3261,60 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await _handle_exercise_choice(update, context, idx)
     elif data == 'plan:back':
-        plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
-            context.user_data['profile_id'],
-        )
-        await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'warmup')
         await show_daily_plan(update, context)
     elif data == 'plan:continue':
         await _plan_continue(update, context)
-    elif data == 'plan:warmup:next':
+    elif data.startswith('plan:warmup:ans:'):
+        idx = int(data.rsplit(':', 1)[1])
         plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
             context.user_data['profile_id'],
         )
-        await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'warmup')
-        plan = await db.get_daily_plan(context.user_data['profile_id'])
-        context.user_data['daily_plan'] = plan
-        episode = plan.get('episode')
-        if episode and not episode.get('done'):
-            await open_lesson(
-                update, context, episode['lesson_id'],
-                plan_block_id=episode['block_id'],
-            )
+        warmup = plan.get('warmup') or {}
+        quiz = warmup.get('quiz') or {}
+        correct = quiz.get('correct_index', -1)
+        if idx == correct:
+            await query.answer('✅ Верно!')
+            await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'warmup')
+            plan = await db.get_daily_plan(context.user_data['profile_id'])
+            context.user_data['daily_plan'] = plan
+            await _plan_continue(update, context)
         else:
-            await show_daily_plan(update, context)
+            await query.answer('Почти — попробуй ещё раз')
+            hint = quiz.get('hint_ru', '')
+            if hint:
+                await _send(
+                    context, _chat_id(update),
+                    f'Не совсем. Подсказка: {_esc(hint)}',
+                    reply_markup=keyboards.warmup_kb(quiz),
+                    parse_mode=ParseMode.HTML,
+                )
+    elif data == 'plan:warmup:next':
+        await query.answer('Сначала ответь на вопрос 👇')
+        await _show_warmup(update, context)
     elif data == 'plan:menu':
         await show_daily_plan(update, context)
     elif data == 'plan:warmup':
         await _show_warmup(update, context)
     elif data == 'plan:warmup:listen':
         await _play_tts(context, _chat_id(update), context.user_data.get('tts_text'))
+    elif data == 'plan:listening:listen':
+        await _play_tts(context, _chat_id(update), context.user_data.get('tts_text'))
+    elif data.startswith('plan:listening:ans:'):
+        idx = int(data.rsplit(':', 1)[1])
+        plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+            context.user_data['profile_id'],
+        )
+        listening = plan.get('listening') or {}
+        correct = listening.get('correct_index', -1)
+        if idx == correct:
+            await query.answer('✅ Верно!')
+            await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'listening')
+            plan = await db.get_daily_plan(context.user_data['profile_id'])
+            context.user_data['daily_plan'] = plan
+            await _plan_continue(update, context)
+        else:
+            await query.answer('Попробуй ещё раз')
+            await _show_listening(update, context)
     elif data.startswith('plan:episode:'):
         lesson_id = int(data.rsplit(':', 1)[1])
         plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
@@ -3253,6 +3459,51 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await show_profile(update, context)
     elif data == 'profile:sphere':
         await show_sphere(update, context)
+    elif data == 'profile:schedule':
+        await show_schedule_settings(update, context)
+    elif data == 'profile:schedule:min':
+        context.user_data['schedule_edit'] = True
+        context.user_data.pop('onboarding', None)
+        await show_schedule_minutes(update, context, onboarding=False)
+    elif data == 'profile:schedule:days':
+        context.user_data['schedule_edit'] = True
+        context.user_data.pop('onboarding', None)
+        await show_schedule_days(update, context)
+    elif data == 'profile:back':
+        await show_profile(update, context)
+    elif data.startswith('schedule:min:'):
+        minutes = int(data.rsplit(':', 1)[1])
+        if context.user_data.get('onboarding'):
+            context.user_data['pending_schedule_minutes'] = minutes
+            await show_schedule_days(update, context)
+        elif context.user_data.get('schedule_edit'):
+            sched = await db.get_study_schedule(context.user_data['profile_id'])
+            await db.set_study_schedule(
+                context.user_data['profile_id'],
+                daily_minutes=minutes,
+                study_days_per_week=sched.get('study_days_per_week', 5),
+            )
+            await show_schedule_settings(update, context)
+        else:
+            context.user_data['pending_schedule_minutes'] = minutes
+            await show_schedule_days(update, context)
+    elif data.startswith('schedule:days:'):
+        days = int(data.rsplit(':', 1)[1])
+        if context.user_data.get('onboarding') or context.user_data.get('pending_schedule_minutes'):
+            minutes = context.user_data.pop('pending_schedule_minutes', 20)
+            await _save_schedule_and_finish(
+                update, context,
+                daily_minutes=minutes,
+                study_days_per_week=days,
+            )
+        else:
+            sched = await db.get_study_schedule(context.user_data['profile_id'])
+            await db.set_study_schedule(
+                context.user_data['profile_id'],
+                daily_minutes=sched.get('daily_minutes', 20),
+                study_days_per_week=days,
+            )
+            await show_schedule_settings(update, context)
     elif data.startswith('goal:set:'):
         code = data.rsplit(':', 1)[1]
         if code == 'other':
