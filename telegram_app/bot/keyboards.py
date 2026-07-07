@@ -142,6 +142,7 @@ def exercise_options_kb(
     with_listen: bool = False,
     with_ask: bool = False,
     with_hint: bool = False,
+    with_skip: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = []
     if with_listen:
@@ -154,6 +155,8 @@ def exercise_options_kb(
         [InlineKeyboardButton(opt, callback_data=f'ex:opt:{i}')]
         for i, opt in enumerate(options)
     ]
+    if with_skip:
+        rows.append([InlineKeyboardButton('⏭ Слишком просто', callback_data='lesson:skip')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -162,6 +165,7 @@ def exercise_text_kb(
     with_hint: bool = False,
     with_ask: bool = True,
     with_listen: bool = False,
+    with_skip: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = []
     if with_listen:
@@ -170,7 +174,20 @@ def exercise_text_kb(
         rows.append([InlineKeyboardButton('💡 Подсказка', callback_data='ex:hint')])
     if with_ask:
         rows.append([InlineKeyboardButton('💬 Спросить', callback_data='lesson:ask')])
+    if with_skip:
+        rows.append([InlineKeyboardButton('⏭ Слишком просто', callback_data='lesson:skip')])
     return InlineKeyboardMarkup(rows) if rows else None
+
+
+def grammar_rule_compact_kb(rule_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('🔊 Слушать примеры', callback_data='tts:step')],
+        [
+            InlineKeyboardButton('✅ Выучил', callback_data=f'rule:learn:{rule_key}'),
+            InlineKeyboardButton('👌 Уже знаю', callback_data=f'rule:known:{rule_key}'),
+        ],
+        [InlineKeyboardButton('➡️ Далее', callback_data='lesson:next')],
+    ])
 
 
 def lessons_list_kb(lessons: list[dict]) -> InlineKeyboardMarkup:

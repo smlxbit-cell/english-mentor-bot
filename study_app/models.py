@@ -179,6 +179,7 @@ class LessonProgress(models.Model):
     class Status(models.TextChoices):
         IN_PROGRESS = 'in_progress', 'In progress'
         COMPLETED = 'completed', 'Completed'
+        SKIPPED = 'skipped', 'Skipped (placement)'
 
     user = models.ForeignKey(
         'users_app.UserProfile',

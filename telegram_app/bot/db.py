@@ -142,11 +142,9 @@ def onboarding_state(profile: UserProfile) -> dict:
 # --------------------------------------------------------------------------- #
 
 def _has_active_subscription(profile_id: int) -> bool:
-    return Subscription.objects.filter(
-        user_id=profile_id,
-        status=Subscription.Status.ACTIVE,
-        expires_at__gt=timezone.now(),
-    ).exists()
+    from billing_app.trial_access import has_premium_access
+    profile = UserProfile.objects.get(id=profile_id)
+    return has_premium_access(profile)
 
 
 def _media_dict(media) -> dict | None:
@@ -766,11 +764,30 @@ def get_lesson_flow(lesson_id: int, *, profile_id: int | None = None) -> dict | 
     }
 
 
+def placement_note_for_profile(profile_id: int) -> str | None:
+    from study_app.services.daily_plan import get_next_episode_lesson
+    from study_app.services.episode_routing import placement_episode_title, placement_message
+
+    profile = UserProfile.objects.get(id=profile_id)
+    title = placement_episode_title(profile)
+    if not title:
+        return None
+    nxt = get_next_episode_lesson(profile)
+    if nxt and nxt.title == title:
+        return placement_message(title, profile.cefr_level or 'B2')
+    return None
+
+
+placement_note_for_profile = sync_to_async(placement_note_for_profile)
+
+
 @sync_to_async
 def can_start_lesson(profile_id: int, lesson_id: int) -> dict:
+    from billing_app.trial_access import has_premium_access
+
     profile = UserProfile.objects.get(id=profile_id)
     lesson = Lesson.objects.get(id=lesson_id)
-    premium = _has_active_subscription(profile.id)
+    premium = has_premium_access(profile)
 
     from study_app.models import LessonProgress
 

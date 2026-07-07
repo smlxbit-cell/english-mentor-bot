@@ -1336,6 +1336,11 @@ async def show_daily_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await _resume_onboarding_if_needed(update, context, profile):
         return
 
+    note = await db.placement_note_for_profile(profile['id'])
+    if note and not context.user_data.get('placement_explained'):
+        context.user_data['placement_explained'] = True
+        await _send(context, chat_id, note, parse_mode=ParseMode.HTML)
+
     plan = await db.get_daily_plan(profile['id'])
     context.user_data['daily_plan'] = plan
 
@@ -1886,6 +1891,7 @@ async def open_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson
         'index': step_idx,
         'character': flow.get('character'),
         'level': flow['level'],
+        'user_level': profile.get('level_code', 'a2'),
         'title': flow['title'],
     }
     context.user_data['spirit_after_wrong'] = False
@@ -1913,6 +1919,30 @@ async def _advance(update, context):
         context.user_data['profile_id'], state['lesson_id'], state['index'],
     )
     await _render_step(update, context)
+
+
+LEVEL_IDX = ['a0', 'a1', 'a2', 'b1', 'b2', 'c1', 'c2']
+
+
+def _level_idx(level: str) -> int:
+    try:
+        return LEVEL_IDX.index((level or 'a2').lower())
+    except ValueError:
+        return 1
+
+
+def _step_progress_header(state: dict) -> str:
+    idx = state.get('index', 0) + 1
+    total = len(state.get('steps') or [])
+    if total <= 1:
+        return ''
+    return f'📍 <b>Шаг {idx} из {total}</b>\n\n'
+
+
+def _exercise_parse_mode(step: dict, extra_html: str = '') -> str | None:
+    if _step_uses_html(step) or '<' in (extra_html or ''):
+        return ParseMode.HTML
+    return None
 
 
 def _compose_step_text(step: dict) -> str:
@@ -2033,15 +2063,20 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             english_opts = [o for o in content['options'] if _is_english(o)]
             context.user_data['tts_text'] = '. '.join(english_opts) or None
             has_hint = _exercise_has_hint(content)
+            user_lv = context.user_data.get('tutor_level') or state.get('user_level', 'a2')
+            lesson_lv = state.get('level') or 'a1'
+            allow_skip = _level_idx(user_lv) >= _level_idx('b1') and _level_idx(lesson_lv) <= _level_idx('a2')
+            prompt = _step_progress_header(state) + prompt
             await _send(
                 context, chat_id, prompt,
                 reply_markup=keyboards.exercise_options_kb(
                     content['options'],
                     with_listen=bool(english_opts),
-                    with_ask=True,
+                    with_ask=False,
                     with_hint=has_hint,
+                    with_skip=allow_skip,
                 ),
-                parse_mode=ParseMode.HTML if _step_uses_html(step) else None,
+                parse_mode=_exercise_parse_mode(step),
             )
         else:
             voice_ok = _exercise_accepts_voice(content, etype)
@@ -2055,15 +2090,20 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt_speak = _english_text_for_tts(prompt)
             if prompt_speak:
                 context.user_data['tts_text'] = prompt_speak
+            user_lv = (context.user_data.get('tutor_level') or state.get('level') or 'a2').lower()
+            lesson_lv = (state.get('level') or 'a1').lower()
+            allow_skip = _level_idx(user_lv) >= _level_idx('b1') and _level_idx(lesson_lv) <= _level_idx('a2')
             kb = keyboards.exercise_text_kb(
                 with_hint=has_hint,
-                with_ask=True,
+                with_ask=False,
                 with_listen=bool(prompt_speak),
+                with_skip=allow_skip,
             )
+            prompt = _step_progress_header(state) + prompt
             await _send(
                 context, chat_id, prompt + hint,
                 reply_markup=kb,
-                parse_mode=ParseMode.HTML if _step_uses_html(step) else None,
+                parse_mode=_exercise_parse_mode(step, hint),
             )
         return
 
@@ -2092,7 +2132,7 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content = step.get('content') or {}
         rule_key = content.get('rule_key', '')
         if rule_key:
-            kb = keyboards.grammar_rule_kb(rule_key)
+            kb = keyboards.grammar_rule_compact_kb(rule_key)
         elif speak_text:
             kb = keyboards.lesson_help_kb()
         else:
@@ -2108,10 +2148,12 @@ async def _render_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if speak_text:
         context.user_data['tts_text'] = speak_text
 
-    text = _compose_step_text(step)
+    text = _step_progress_header(state) + _compose_step_text(step)
     label = '🎉 Забрать награду' if stype == 'reward' else '➡️ Далее'
-    if speak_text and stype not in ('reward', 'cliffhanger'):
-        kb = keyboards.lesson_help_kb(label)
+    if stype == 'vocabulary':
+        kb = keyboards.continue_with_listen_kb(label)
+    elif speak_text and stype not in ('reward', 'cliffhanger'):
+        kb = keyboards.continue_with_listen_kb(label)
     elif speak_text:
         kb = keyboards.continue_with_listen_kb(label)
     else:
@@ -3406,6 +3448,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send(context, _chat_id(update), 'Главное меню 👇',
                     reply_markup=keyboards.main_menu())
     elif data == 'lesson:next':
+        await _advance(update, context)
+    elif data == 'lesson:skip':
+        await query.answer('Пропускаем 👍')
         await _advance(update, context)
     elif data == 'lesson:ask':
         step = context.user_data.get('current_step') or {}

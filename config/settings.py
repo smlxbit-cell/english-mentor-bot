@@ -49,6 +49,7 @@ SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 590)
 SUBSCRIPTION_PRICE_KOPEKS = SUBSCRIPTION_PRICE_RUB * 100
 SUBSCRIPTION_DAYS = env_int('SUBSCRIPTION_DAYS', 30)
 TRIAL_LESSONS_LIMIT = env_int('TRIAL_LESSONS_LIMIT', 2)
+TRIAL_DAYS = env_int('TRIAL_DAYS', 2)
 
 # 'mock'  -> instant activation for development / YooKassa screenshots
 # 'live'  -> real payment via YooKassa (enable after store moderation)

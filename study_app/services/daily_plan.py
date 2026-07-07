@@ -13,6 +13,7 @@ from study_app.daily_facts import DAILY_FACTS, GREETING_VARIANTS, warmup_label
 from study_app.listening_bites import pick_listening_bite
 from study_app.speaking_bites import pick_speaking_bite
 from study_app.models import DailySession, DailySessionBlock, LessonProgress
+from study_app.services.episode_routing import apply_story_placement, entry_level
 from study_app.warmup_quiz import build_quiz_for_fact
 from users_app.models import UserInterest, UserProfile
 
@@ -61,13 +62,8 @@ def _pick_greeting(name: str, user_id: int, day: date, *, rest: bool = False) ->
 
 
 def _has_active_subscription(profile: UserProfile) -> bool:
-    from billing_app.models import Subscription
-
-    return Subscription.objects.filter(
-        user=profile,
-        status=Subscription.Status.ACTIVE,
-        expires_at__gt=timezone.now(),
-    ).exists()
+    from billing_app.trial_access import has_premium_access
+    return has_premium_access(profile)
 
 
 def _completed_lesson_ids(profile_id: int) -> set[int]:
@@ -79,12 +75,28 @@ def _completed_lesson_ids(profile_id: int) -> set[int]:
     )
 
 
+def _active_lesson_ids(profile_id: int) -> set[int]:
+    """Lessons done or placement-skipped — not offered again in the serial queue."""
+    return set(
+        LessonProgress.objects.filter(
+            user_id=profile_id,
+            status__in=(
+                LessonProgress.Status.COMPLETED,
+                LessonProgress.Status.SKIPPED,
+            ),
+        ).values_list('lesson_id', flat=True)
+    )
+
+
 def _lesson_queryset(profile: UserProfile, premium: bool):
     if premium:
         level = (profile.cefr_level or 'A1').lower()
         if level not in LEVEL_ORDER:
             level = 'a1'
-        allowed = LEVEL_ORDER[: LEVEL_ORDER.index(level) + 1]
+        start = entry_level(profile)
+        start_idx = LEVEL_ORDER.index(start) if start in LEVEL_ORDER else 0
+        end_idx = LEVEL_ORDER.index(level) if level in LEVEL_ORDER else start_idx
+        allowed = LEVEL_ORDER[start_idx: end_idx + 1]
         return (
             Lesson.objects.filter(is_published=True, level__in=allowed)
             .select_related('unit')
@@ -98,10 +110,11 @@ def _lesson_queryset(profile: UserProfile, premium: bool):
 
 
 def get_next_episode_lesson(profile: UserProfile) -> Lesson | None:
+    apply_story_placement(profile)
     premium = _has_active_subscription(profile)
-    completed = _completed_lesson_ids(profile.id)
+    done = _active_lesson_ids(profile.id)
     for lesson in _lesson_queryset(profile, premium):
-        if lesson.id not in completed:
+        if lesson.id not in done:
             return lesson
     return None
 

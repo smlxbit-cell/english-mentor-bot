@@ -17,7 +17,7 @@ def _level_index(level: str) -> int:
 
 
 def apply_level_variants(steps: list[dict], user_level: str) -> list[dict]:
-    """Filter steps by min_level and merge the best matching level_variants block."""
+    """Filter steps by min_level/complexity and merge level_variants."""
     user_idx = _level_index(user_level)
     resolved: list[dict] = []
 
@@ -27,6 +27,18 @@ def apply_level_variants(steps: list[dict], user_level: str) -> list[dict]:
 
         min_level = content.pop('min_level', None)
         if min_level and user_idx < _level_index(min_level):
+            continue
+
+        complexity = content.pop('complexity', None) or step.get('complexity')
+        if complexity and user_idx - _level_index(complexity) >= 2:
+            continue
+
+        # B2+ learners skip bare A1 vocabulary drills in low-level episodes.
+        if (
+            step.get('step_type') == 'vocabulary'
+            and complexity == 'a1'
+            and user_idx >= _level_index('b1')
+        ):
             continue
 
         variants = content.pop('level_variants', None)

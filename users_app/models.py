@@ -103,6 +103,17 @@ class UserProfile(models.Model):
         help_text='User confirmed skill focus step in onboarding.',
     )
 
+    story_placement_applied = models.BooleanField(
+        default=False,
+        help_text='Serial episodes below level were auto-skipped.',
+    )
+
+    trial_started_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the 2-day full app trial began.',
+    )
+
     learning_goal = models.CharField(
         max_length=30,
         choices=LearningGoal.choices,
