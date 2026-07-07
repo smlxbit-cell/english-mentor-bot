@@ -201,6 +201,12 @@ def daily_plan_kb(plan: dict) -> InlineKeyboardMarkup:
     ])
 
 
+def progress_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('📚 Учиться сегодня', callback_data='plan:menu')],
+    ])
+
+
 def warmup_kb(quiz: dict | None = None) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton('🔊 Слушать', callback_data='plan:warmup:listen')]]
     if quiz and quiz.get('options'):

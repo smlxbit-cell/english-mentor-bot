@@ -903,6 +903,14 @@ def unlock_achievement(profile_id: int, code: str) -> dict | None:
 # --------------------------------------------------------------------------- #
 
 @sync_to_async
+def get_roadmap(profile_id: int) -> dict:
+    from study_app.services.roadmap import build_roadmap
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return build_roadmap(profile)
+
+
+@sync_to_async
 def get_progress_summary(profile_id: int) -> dict:
     from study_app.models import LessonProgress
 

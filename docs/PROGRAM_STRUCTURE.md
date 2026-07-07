@@ -177,7 +177,7 @@ Level (A1 | A2 | B1 | B2)
 |-------|--------|--------|
 | **1** | Weighted progress bar, interactive warmup quiz | 🔜 next |
 | **2** | Onboarding 20/30/60 min, days/week, rest Sunday; plan sizing in `daily_plan.py` | 🔜 with Phase 1 |
-| **3** | Roadmap screen — realistic timeline to next CEFR | planned |
+| **3** | Roadmap screen — realistic timeline to next CEFR | ✅ shipped |
 | **4** | Listening blocks, level variants, rule drill bank | ongoing content |
 
 **Today vs target**

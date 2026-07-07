@@ -2424,19 +2424,22 @@ async def _handle_practice_choice(update, context, option_index: int):
 
 async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    data = await db.get_progress_summary(profile['id'])
-    sub = (f'Активна до {data["subscription_until"]}'
-           if data['subscription_until'] else 'нет активной подписки')
+    roadmap = await db.get_roadmap(profile['id'])
+    from study_app.services.roadmap import format_roadmap_message
+
+    summary = await db.get_progress_summary(profile['id'])
+    sub = (f'Активна до {summary["subscription_until"]}'
+           if summary['subscription_until'] else 'нет активной подписки')
+
+    text = format_roadmap_message(roadmap)
+    text += f'\n\n💳 Подписка: {sub}'
+    text += f'\n🎟 Пробные эпизоды: {summary["trial_used"]}/{summary["trial_limit"]}'
+
     await _send(
         context, _chat_id(update),
-        '📊 Твой прогресс\n\n'
-        f'Уровень английского: {data["level"]}\n'
-        f'XP: {data["xp"]}  •  Игровой уровень: {data["user_level"]}\n'
-        f'🔥 Стрик: {data["streak"]} дн. (рекорд {data["longest_streak"]})\n'
-        f'Пройдено уроков: {data["completed_lessons"]}\n'
-        f'Пробные уроки: {data["trial_used"]}/{data["trial_limit"]}\n'
-        f'Подписка: {sub}',
-        reply_markup=keyboards.main_menu(),
+        text,
+        reply_markup=keyboards.progress_kb(),
+        parse_mode=ParseMode.HTML,
     )
 
 
