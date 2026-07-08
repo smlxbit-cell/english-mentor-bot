@@ -378,6 +378,13 @@ def confirm_skill_focus(profile_id: int) -> None:
 
 
 @sync_to_async
+def set_skill_focus_list(profile_id: int, skills: list[str]) -> None:
+    """Replace the skill-focus list (e.g. from the deep skill-assessment)."""
+    clean = [s for s in (skills or []) if s in FOCUS_SKILLS][:6]
+    UserProfile.objects.filter(id=profile_id).update(skill_focus=clean)
+
+
+@sync_to_async
 def set_speaking_anxiety(profile_id: int, level: str) -> None:
     allowed = {'high', 'mild', 'none'}
     code = (level or '').lower()

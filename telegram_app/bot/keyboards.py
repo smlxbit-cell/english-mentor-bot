@@ -102,6 +102,31 @@ def diagnostic_options_kb(
     return InlineKeyboardMarkup(rows)
 
 
+def skill_test_offer_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('🧪 Пройти тест (~5 мин)', callback_data='skilltest:start')],
+        [InlineKeyboardButton('Пропустить — выберу сам', callback_data='skilltest:skip')],
+    ])
+
+
+def skill_test_options_kb(
+    options: list[str], *, with_listen: bool = False,
+) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(opt, callback_data=f'skilltest:ans:{i}')]
+        for i, opt in enumerate(options)
+    ]
+    if with_listen:
+        rows.append([InlineKeyboardButton('🔊 Слушать ещё раз', callback_data='tts:say')])
+    return InlineKeyboardMarkup(rows)
+
+
+def skill_test_result_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('👉 Настроить фокус практики', callback_data='skilltest:focus')],
+    ])
+
+
 # --------------------------------------------------------------------------- #
 # Lesson flow
 # --------------------------------------------------------------------------- #

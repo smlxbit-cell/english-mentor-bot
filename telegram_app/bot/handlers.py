@@ -140,6 +140,10 @@ async def _resume_onboarding_if_needed(
     if step == 'diagnostic':
         return False
     context.user_data['onboarding'] = True
+    if step == 'skill_focus':
+        # Offer the in-depth skill test first; it leads into focus selection.
+        await _offer_skill_test(update, context)
+        return True
     prompt = _ONBOARDING_PROMPTS.get(step, 'Давай донастроим профиль 👇')
     await _send(context, _chat_id(update), prompt)
     if step == 'goal':
@@ -150,8 +154,6 @@ async def _resume_onboarding_if_needed(
         await show_sphere(update, context)
     elif step == 'target_level':
         await show_target_level(update, context, onboarding=True)
-    elif step == 'skill_focus':
-        await show_skill_focus(update, context, onboarding=True)
     elif step == 'schedule':
         await show_schedule_minutes(update, context, onboarding=True)
     return True
@@ -518,7 +520,7 @@ def _voice_allowed(context) -> bool:
     if context.user_data.get('tutor_history'):
         if mode not in ('lesson', 'diagnostic', 'dialogue', 'review'):
             return True
-    if mode in ('diagnostic', 'dialogue', 'tutor', 'review', 'plan_speaking'):
+    if mode in ('diagnostic', 'dialogue', 'tutor', 'review', 'plan_speaking', 'skill_test'):
         return True
     if context.user_data.get('lesson_help_return'):
         return True
@@ -1247,6 +1249,166 @@ async def _handle_speaking_anxiety(
         'Ещё пара вопросов, чтобы подобрать уроки именно под тебя 👇',
     )
     await show_goal(update, context)
+
+
+# --------------------------------------------------------------------------- #
+# In-depth skill assessment (after level, before choosing practice focus)
+# --------------------------------------------------------------------------- #
+
+async def _offer_skill_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _send(
+        context, _chat_id(update),
+        '🧪 <b>Тест по навыкам</b>\n\n'
+        'Уровень мы определили. Теперь быстро проверим сильные и слабые стороны '
+        'по 6 навыкам: грамматика, слова, чтение, аудирование, письмо и '
+        'говорение (~5 минут).\n\n'
+        'По результату предложу, на чём сделать упор — решать всё равно тебе.',
+        reply_markup=keyboards.skill_test_offer_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _start_skill_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from content_app import skill_assessment
+    profile = await _ensure_profile(update, context)
+    level = (profile.get('cefr_level') or 'a2').lower()
+    context.user_data['mode'] = 'skill_test'
+    context.user_data['skill_test'] = {
+        'queue': skill_assessment.build_test(level),
+        'idx': 0,
+        'scores': {},
+        'current': None,
+    }
+    await _send(
+        context, _chat_id(update),
+        'Поехали! Отвечай как можешь — это не экзамен, а настройка плана 💪',
+    )
+    await _ask_skill_test_item(update, context)
+
+
+async def _ask_skill_test_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from content_app import skill_assessment
+    st = context.user_data.get('skill_test') or {}
+    queue = st.get('queue', [])
+    idx = st.get('idx', 0)
+    chat_id = _chat_id(update)
+    if idx >= len(queue):
+        await _finish_skill_test(update, context)
+        return
+
+    item = queue[idx]
+    st['current'] = item
+    skill_ru = skill_assessment.SKILL_LABELS_RU.get(item['skill'], item['skill'])
+    header = f'🧩 {skill_ru} · {idx + 1}/{len(queue)}'
+    itype = item['type']
+
+    if itype == 'mc':
+        await _send(
+            context, chat_id, f'{header}\n\n{_esc(item["prompt"])}',
+            reply_markup=keyboards.skill_test_options_kb(item['options']),
+            parse_mode=ParseMode.HTML,
+        )
+    elif itype == 'listening':
+        audio = item.get('audio_en', '')
+        context.user_data['tts_text'] = audio or None
+        await _send(context, chat_id, '🎧 Слушай (текст скрыт):')
+        if audio:
+            await _send_tts(context, chat_id, audio)
+        body = f'{header}\n\n{_esc(item["prompt"])}'
+        if audio:
+            body += f'\n\n🙈 <tg-spoiler>{html.escape(audio)}</tg-spoiler>'
+        await _send(
+            context, chat_id, body,
+            reply_markup=keyboards.skill_test_options_kb(
+                item['options'], with_listen=bool(audio)),
+            parse_mode=ParseMode.HTML,
+        )
+    elif itype == 'writing':
+        context.user_data['tts_text'] = None
+        await _send(
+            context, chat_id,
+            f'{header}\n\n{_esc(item["prompt"])}\n\n✍️ Напиши ответ текстом.',
+            parse_mode=ParseMode.HTML,
+        )
+    elif itype == 'speaking':
+        context.user_data['tts_text'] = item.get('model') or None
+        await _send(
+            context, chat_id,
+            f'{header}\n\n{_esc(item["prompt"])}\n\n🎙️ Ответь голосовым или текстом.',
+            parse_mode=ParseMode.HTML,
+        )
+
+
+def _record_skill_answer(context: ContextTypes.DEFAULT_TYPE, correct: bool) -> None:
+    st = context.user_data.get('skill_test') or {}
+    item = st.get('current') or {}
+    skill = item.get('skill')
+    scores = st.setdefault('scores', {})
+    if skill:
+        c, t = scores.get(skill, (0, 0))
+        scores[skill] = (c + (1 if correct else 0), t + 1)
+    st['idx'] = st.get('idx', 0) + 1
+
+
+async def _handle_skill_test_choice(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, opt_idx: int,
+):
+    st = context.user_data.get('skill_test') or {}
+    item = st.get('current') or {}
+    options = item.get('options') or []
+    correct_list = [c.lower().strip() for c in (item.get('correct') or [])]
+    chosen = options[opt_idx] if 0 <= opt_idx < len(options) else ''
+    is_correct = chosen.lower().strip() in correct_list
+    await _clear_diagnostic_buttons(update)
+    _record_skill_answer(context, is_correct)
+    await _ask_skill_test_item(update, context)
+
+
+async def _handle_skill_test_answer(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str,
+):
+    """Handle text/voice answers for writing & speaking items."""
+    st = context.user_data.get('skill_test') or {}
+    item = st.get('current') or {}
+    itype = item.get('type')
+    if itype not in ('writing', 'speaking'):
+        await _send(context, _chat_id(update), 'Выбери вариант кнопкой 👆')
+        return
+    if itype == 'writing':
+        correct_list = [normalize(c) for c in (item.get('correct') or [])]
+        norm = normalize(text)
+        ok = any(norm == c or (c and c in norm) for c in correct_list)
+    else:
+        target = item.get('model') or ' '.join(item.get('keywords') or [])
+        ok = score_speaking(text, target).is_correct
+    _record_skill_answer(context, ok)
+    await _ask_skill_test_item(update, context)
+
+
+async def _finish_skill_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from content_app import skill_assessment
+    st = context.user_data.get('skill_test') or {}
+    scores = st.get('scores', {})
+    context.user_data['mode'] = None
+    context.user_data['skill_test'] = None
+
+    weak = skill_assessment.recommend(scores)
+    profile_id = context.user_data['profile_id']
+    await db.set_skill_focus_list(profile_id, weak)
+
+    summary = skill_assessment.score_summary(scores) or 'Недостаточно данных.'
+    weak_ru = ', '.join(
+        skill_assessment.SKILL_LABELS_RU[s].lower() for s in weak
+    ) or 'всё выглядит ровно'
+    await _send(
+        context, _chat_id(update),
+        '📊 <b>Результат по навыкам</b>\n\n'
+        f'{summary}\n\n'
+        f'<b>Рекомендую упор на:</b> {weak_ru}.\n\n'
+        'Я уже отметил их на следующем шаге — можешь поменять и подтвердить.',
+        reply_markup=keyboards.skill_test_result_kb(),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -3810,10 +3972,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.set_target_cefr_level(context.user_data['profile_id'], code)
         if context.user_data.get('onboarding'):
             await _send(context, _chat_id(update), f'Цель: {code} ✅')
-            await show_skill_focus(update, context, onboarding=True)
+            await _offer_skill_test(update, context)
         else:
             await _send(context, _chat_id(update), f'Цель: {code} ✅ Карта пути обновлена.')
             await show_progress(update, context)
+    elif data == 'skilltest:start':
+        await _start_skill_test(update, context)
+    elif data == 'skilltest:skip':
+        await _send(context, _chat_id(update),
+                    'Ок! Выбери фокус практики сам 👇')
+        await show_skill_focus(update, context, onboarding=True)
+    elif data == 'skilltest:focus':
+        await show_skill_focus(update, context, onboarding=True)
+    elif data.startswith('skilltest:ans:'):
+        try:
+            opt_idx = int(data.rsplit(':', 1)[1])
+        except ValueError:
+            opt_idx = -1
+        await _handle_skill_test_choice(update, context, opt_idx)
     elif data == 'focus:done':
         await db.confirm_skill_focus(context.user_data['profile_id'])
         if context.user_data.get('onboarding'):
@@ -4016,6 +4192,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'diagnostic':
         await _handle_diagnostic_answer(update, context, text)
         return
+    if mode == 'skill_test':
+        await _handle_skill_test_answer(update, context, text)
+        return
     if mode == 'dialogue':
         await _handle_dialogue_turn(update, context, text)
         return
@@ -4122,6 +4301,8 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode')
     if mode == 'diagnostic':
         await _handle_diagnostic_answer(update, context, transcript_text)
+    elif mode == 'skill_test':
+        await _handle_skill_test_answer(update, context, transcript_text)
     elif mode == 'dialogue':
         await _handle_dialogue_turn(update, context, transcript_text)
     elif mode == 'tutor':
