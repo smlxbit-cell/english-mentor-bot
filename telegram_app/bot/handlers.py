@@ -943,6 +943,25 @@ async def _start_diagnostic_test(
         'challenge_count': 0,
         'challenge_correct': 0,
     }
+
+    if claimed == 'unsure':
+        lead = 'Без проблем — сейчас аккуратно определим уровень.'
+    else:
+        lead = (
+            f'Отметил: <b>{claimed.upper()}</b>. Давай проверим — я не спорю, '
+            'просто откалибрую точнее 😉'
+        )
+    total = diag_flow.PRIMARY_QUESTIONS
+    await _send(
+        context, chat_id,
+        f'📝 <b>Короткий тест уровня</b>\n\n'
+        f'{lead}\n\n'
+        f'Будет ~{total} коротких заданий: грамматика, слова, немного чтения и '
+        'аудирования. Отвечай как можешь — где-то будет легко, где-то с запасом '
+        'на вырост. Это не экзамен, ошибаться нормально 🙂\n\n'
+        'Поехали 👇',
+        parse_mode=ParseMode.HTML,
+    )
     await _ask_next_diagnostic(update, context)
 
 
