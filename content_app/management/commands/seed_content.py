@@ -253,6 +253,52 @@ class Command(BaseCommand):
                  options=['They enjoyed it despite rain', 'They stayed home', 'It was cancelled'],
                  correct=['They enjoyed it despite rain', 'they enjoyed the walk'],
                  explanation_ru='Despite the rain = несмотря на дождь — всё равно понравилось.'),
+            # ---- C1: advanced grammar, nuance, listening ----
+            dict(level='c1', skill='grammar', item_type='multiple_choice', order=1,
+                 prompt=(
+                     'Choose the most natural option:\n\n'
+                     '«Had I known about the deadline, I ___ the report sooner.»'
+                 ),
+                 options=['would have finished', 'will finish', 'finished', 'would finish'],
+                 correct=['would have finished'],
+                 explanation_ru='Инверсия третьего условного: Had I known… → would have finished.'),
+            dict(level='c1', skill='vocabulary', item_type='multiple_choice', order=2,
+                 prompt=(
+                     'Pick the best word:\n\n'
+                     'The findings ___ our initial hypothesis rather than contradicting it.'
+                 ),
+                 options=['corroborate', 'confuse', 'consist', 'complain'],
+                 correct=['corroborate'],
+                 explanation_ru='Corroborate = подтверждать (научный/формальный стиль).'),
+            dict(level='c1', skill='reading', item_type='multiple_choice', order=3,
+                 prompt=(
+                     'What does the writer imply?\n\n'
+                     '«The proposal, while ambitious, glosses over the practical hurdles.»'
+                 ),
+                 options=[
+                     'It ignores the real difficulties',
+                     'It solves every problem',
+                     'It is not ambitious enough',
+                 ],
+                 correct=['It ignores the real difficulties'],
+                 explanation_ru='Gloss over = обходить стороной, замалчивать трудности.'),
+            dict(level='c1', skill='listening', item_type='listening', order=4,
+                 prompt=(
+                     '🎧 Listen: «We should have looped in the client before signing off.»\n\n'
+                     'В чём суть претензии?'
+                 ),
+                 options=[
+                     'The client should have been involved earlier',
+                     'The client signed the contract',
+                     'The client was on the call',
+                 ],
+                 correct=['The client should have been involved earlier'],
+                 explanation_ru='Loop in = подключить/проинформировать; should have = сожаление о прошлом.'),
+            dict(level='c1', skill='writing', item_type='fill_gap', order=5,
+                 prompt='Complete formally:\n\n«I am writing to ___ my concern about the delay.»',
+                 correct=['express', 'raise', 'voice'],
+                 keywords=['express'],
+                 explanation_ru='Express/raise/voice concern = выразить обеспокоенность.'),
         ]
         active_keys = {(d['level'], d['order'], d['skill']) for d in items}
         for data in items:

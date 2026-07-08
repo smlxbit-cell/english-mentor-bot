@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-LEVELS = ['a1', 'a2', 'b1', 'b2']
+LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1']
 LEVEL_LABELS = {
     'a1': 'A1 (начальный)',
     'a2': 'A2 (элементарный)',
     'b1': 'B1 (средний)',
     'b2': 'B2 (выше среднего)',
+    'c1': 'C1 (продвинутый)',
     'unsure': 'Не уверен(а)',
 }
+
+MAX_LEVEL_IDX = len(LEVELS) - 1  # c1
 
 PRIMARY_QUESTIONS = 8
 CHALLENGE_QUESTIONS = 3
@@ -37,12 +40,14 @@ def test_band(claimed: str) -> tuple[int, int, int]:
         return 0, 2, 1
     if idx == 2:  # B1
         return 1, 3, 2
-    return 2, 3, 3  # B2
+    if idx == 3:  # B2 — allow reaching C1
+        return 2, 4, 3
+    return 3, 4, 4  # C1
 
 
 def challenge_band(claimed_idx: int, result_idx: int) -> tuple[int, int]:
     """Questions one CEFR step above the primary result."""
-    target = min(3, max(result_idx, claimed_idx) + 1)
+    target = min(MAX_LEVEL_IDX, max(result_idx, claimed_idx) + 1)
     return target, target
 
 
@@ -149,7 +154,7 @@ def should_offer_challenge(diag: dict) -> bool:
         return False
     result_idx = diag.get('level_idx', 0)
     ceiling = diag['band'][1]
-    return result_idx >= ceiling and ceiling < 3
+    return result_idx >= ceiling and ceiling < MAX_LEVEL_IDX
 
 
 def finalize_level(diag: dict) -> str:
@@ -158,8 +163,8 @@ def finalize_level(diag: dict) -> str:
     else:
         idx = max(diag['band'][0], min(diag['band'][1], diag.get('level_idx', 1)))
     if diag.get('phase') == 'challenge_done' and diag.get('challenge_correct', 0) >= 3:
-        idx = min(3, idx + 1)
-    return LEVELS[idx]
+        idx = min(MAX_LEVEL_IDX, idx + 1)
+    return LEVELS[min(idx, MAX_LEVEL_IDX)]
 
 
 def result_message(claimed: str, level_code: str, diag: dict) -> str:
@@ -167,6 +172,12 @@ def result_message(claimed: str, level_code: str, diag: dict) -> str:
     acc = accuracy(diag.get('correct', 0), max(diag.get('count', 1), 1))
     lvl = level_code.upper()
 
+    if level_code == 'c1':
+        return (
+            f'Сильный результат! Твой уровень — <b>{lvl}</b> 🎯\n\n'
+            'Дальше — уверенный C1: сложные тексты, нюансы, свободная речь. '
+            'Сфокусируемся на том, что для тебя важнее всего.'
+        )
     if claimed == 'b2' and level_code == 'b2' and acc >= 0.8:
         return (
             f'Отлично! Твой уровень — <b>{lvl}</b> 🎯\n\n'

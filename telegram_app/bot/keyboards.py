@@ -17,6 +17,15 @@ BTN_RULES = '📖 Правила'
 BTN_TUTOR = '💬 Наставник'
 BTN_SUBSCRIBE = '⭐️ Подписка'
 
+SKILL_FOCUS_RU = {
+    'speaking': 'говорение',
+    'listening': 'аудирование',
+    'reading': 'чтение',
+    'writing': 'письмо',
+    'grammar': 'грамматика',
+    'vocabulary': 'слова',
+}
+
 
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -67,6 +76,7 @@ def diagnostic_self_assess_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('B1 — средний', callback_data='diag:claim:b1'),
             InlineKeyboardButton('B2 — выше среднего', callback_data='diag:claim:b2'),
         ],
+        [InlineKeyboardButton('C1 — продвинутый', callback_data='diag:claim:c1')],
         [InlineKeyboardButton('🤷 Не уверен(а)', callback_data='diag:claim:unsure')],
     ])
 
@@ -226,14 +236,12 @@ def progress_kb() -> InlineKeyboardMarkup:
 
 
 def target_level_kb(current: str = '', *, onboarding: bool = False) -> InlineKeyboardMarkup:
-    rows = []
-    for code, label in (
-        ('B1', 'B1'), ('B2', 'B2'), ('C1', 'C1'), ('C2', 'C2'),
-    ):
-        mark = '✓ ' if current == code else ''
-        rows.append([
-            InlineKeyboardButton(f'{mark}{label}', callback_data=f'target:set:{code}'),
-        ])
+    # Bot tops out at confident C1 — no C2 track for now.
+    rows = [[
+        InlineKeyboardButton(f'{"✓ " if current == code else ""}{code}',
+                             callback_data=f'target:set:{code}')
+        for code in ('B1', 'B2', 'C1')
+    ]]
     if not onboarding:
         rows.append([InlineKeyboardButton('◀️ Назад', callback_data='profile:back')])
     return InlineKeyboardMarkup(rows)
@@ -241,22 +249,25 @@ def target_level_kb(current: str = '', *, onboarding: bool = False) -> InlineKey
 
 def skill_focus_kb(selected: set[str] | None = None, *, onboarding: bool = False) -> InlineKeyboardMarkup:
     selected = selected or set()
-    labels = {
-        'speaking': '🎙️ Говорение',
-        'listening': '👂 Аудирование',
-        'reading': '📖 Чтение',
-        'writing': '✍️ Письмо',
-        'grammar': '📐 Грамматика',
-        'vocabulary': '🗂 Слова',
-    }
+    labels = [
+        ('speaking', '🎙 Говорение'),
+        ('listening', '👂 Аудирование'),
+        ('reading', '📖 Чтение'),
+        ('writing', '✍️ Письмо'),
+        ('grammar', '📐 Грамматика'),
+        ('vocabulary', '🗂 Слова'),
+    ]
     rows = []
-    for skill, label in labels.items():
-        mark = '✓ ' if skill in selected else ''
-        rows.append([
-            InlineKeyboardButton(f'{mark}{label}', callback_data=f'focus:toggle:{skill}'),
-        ])
+    for i in range(0, len(labels), 2):
+        row = []
+        for skill, label in labels[i:i + 2]:
+            mark = '✅ ' if skill in selected else ''
+            row.append(
+                InlineKeyboardButton(f'{mark}{label}', callback_data=f'focus:toggle:{skill}')
+            )
+        rows.append(row)
     done_cb = 'focus:done' if onboarding else 'profile:back'
-    rows.append([InlineKeyboardButton('✅ Готово', callback_data=done_cb)])
+    rows.append([InlineKeyboardButton('➡️ Подтвердить выбор', callback_data=done_cb)])
     return InlineKeyboardMarkup(rows)
 
 

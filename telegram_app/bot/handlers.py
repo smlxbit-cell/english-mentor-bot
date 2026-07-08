@@ -7,6 +7,7 @@ process). DB access goes through .db (async wrappers). AI/STT go through ai_app.
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import html
 import io
@@ -335,7 +336,11 @@ async def _send_tts(context, chat_id, text: str) -> bool:
             provider = get_tts_provider(prov_name)
             if getattr(provider, 'name', '') == 'mock':
                 continue
-            result = await provider.synthesize(text)
+            # Hard timeout so a stalled provider never freezes the chat flow.
+            result = await asyncio.wait_for(provider.synthesize(text), timeout=20)
+        except asyncio.TimeoutError:
+            logger.warning('tts timed out (%s)', prov_name)
+            continue
         except Exception as exc:  # noqa: BLE001
             logger.warning('tts failed (%s): %s', prov_name, exc)
             continue
@@ -1011,8 +1016,31 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
         number = diag['count']
         total = diag_flow.PRIMARY_QUESTIONS
 
-    if item['item_type'] == 'listening' and item.get('audio'):
-        await _send_media(context, chat_id, item['audio'])
+    is_listening = item['item_type'] == 'listening'
+
+    if is_listening:
+        # Hide the English transcript: play audio first, question + options below.
+        audio_en, question = _parse_listening_prompt(item['prompt'])
+        context.user_data['tts_text'] = audio_en or None
+        if item.get('audio'):
+            await _send_media(context, chat_id, item['audio'])
+        elif audio_en:
+            await _send(context, chat_id, '🎧 Слушай (текст скрыт):')
+            await _send_tts(context, chat_id, audio_en)
+        prompt = f'Вопрос {number}/{total}\n\n{question}'
+        if audio_en:
+            prompt += f'\n\n🙈 Текст (спойлер): <tg-spoiler>{html.escape(audio_en)}</tg-spoiler>'
+        task = diag_flow.task_instruction(item)
+        if task:
+            prompt += f'\n\n{task}'
+        await _send(
+            context, chat_id, prompt,
+            reply_markup=keyboards.diagnostic_options_kb(
+                item['options'], item_id=item['id'], with_listen=bool(audio_en),
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
     prompt = f'Вопрос {number}/{total}\n\n{item["prompt"]}'
     task = diag_flow.task_instruction(item)
@@ -1027,7 +1055,7 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
         else None
     )
 
-    if item['item_type'] in ('multiple_choice', 'listening') and item['options']:
+    if item['item_type'] == 'multiple_choice' and item['options']:
         await _send(
             context, chat_id, prompt,
             reply_markup=keyboards.diagnostic_options_kb(
@@ -1043,6 +1071,24 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=keyboards.say_kb() if listen else None,
             parse_mode=parse_mode,
         )
+
+
+def _parse_listening_prompt(prompt: str) -> tuple[str, str]:
+    """Split a listening item into (english_audio_text, russian_question)."""
+    prompt = prompt or ''
+    audio = ''
+    m = re.search(r'«([^»]+)»', prompt)
+    if m:
+        audio = m.group(1).strip()
+    # Question = everything after the first blank line, else the last line.
+    parts = prompt.split('\n\n', 1)
+    question = parts[1].strip() if len(parts) == 2 else ''
+    if not question:
+        lines = [ln.strip() for ln in prompt.splitlines() if ln.strip()]
+        question = lines[-1] if lines else prompt
+    if not audio:
+        audio = _english_text_for_tts(prompt)
+    return audio, question
 
 
 async def _score_diagnostic_answer(item: dict, answer_text: str, voice_ok: bool = False):
@@ -2988,13 +3034,17 @@ async def show_target_level(
         f'🎯 <b>Цель уровня</b>\n\n'
         f'Сейчас по диагностике: <b>{cur}</b>\n'
         f'К какому уровню идёшь? От этого строится карта пути и срок в месяцах.\n\n'
+        f'<i>Бот доводит до уверенного C1.</i>\n'
         f'Выбрано: <b>{current or "ещё не выбрано"}</b>'
     )
     if onboarding:
         text = (
             '🎯 <b>Куда идём?</b>\n\n'
             f'Диагностика показала <b>{cur}</b>. Какой уровень — твоя цель?\n\n'
-            'Например, B2 → C1, если хочешь уверенно читать научные статьи и говорить свободнее.'
+            'Например, B2 → C1, если хочешь уверенно читать научные статьи и '
+            'говорить свободнее.\n\n'
+            '<i>Пока доводим до уверенного C1 — этого хватает для работы, '
+            'учёбы и свободного общения.</i>'
         )
     await _send(
         context, _chat_id(update), text,
@@ -3009,12 +3059,19 @@ async def show_skill_focus(
     profile_id = context.user_data['profile_id']
     selected = set(await db.get_skill_focus(profile_id))
     onboarding = onboarding or context.user_data.get('onboarding', False)
+    chosen = (
+        '\n\nВыбрано: <b>' + ', '.join(
+            keyboards.SKILL_FOCUS_RU.get(s, s) for s in selected
+        ) + '</b>'
+        if selected else ''
+    )
     await _send(
         context, _chat_id(update),
         '💪 <b>Фокус практики</b>\n\n'
-        'Что важнее всего сейчас? Например, говорение — если страшно говорить, '
-        'или аудирование — если мало практики на слух.\n\n'
-        'Выбери один или несколько 👇',
+        'Что подтянуть в первую очередь? Отметь нужное и нажми '
+        '«Подтвердить выбор».\n'
+        '<i>Можно ничего не отмечать — тогда план будет сбалансированным.</i>'
+        + chosen,
         reply_markup=keyboards.skill_focus_kb(selected, onboarding=onboarding),
         parse_mode=ParseMode.HTML,
     )
@@ -3733,10 +3790,29 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('focus:toggle:'):
         skill = data.rsplit(':', 1)[1]
         await db.toggle_skill_focus(context.user_data['profile_id'], skill)
-        await show_skill_focus(
-            update, context,
-            onboarding=context.user_data.get('onboarding', False),
+        selected = set(await db.get_skill_focus(context.user_data['profile_id']))
+        onboarding = context.user_data.get('onboarding', False)
+        chosen = (
+            '\n\nВыбрано: <b>' + ', '.join(
+                keyboards.SKILL_FOCUS_RU.get(s, s) for s in selected
+            ) + '</b>'
+            if selected else ''
         )
+        body = (
+            '💪 <b>Фокус практики</b>\n\n'
+            'Что подтянуть в первую очередь? Отметь нужное и нажми '
+            '«Подтвердить выбор».\n'
+            '<i>Можно ничего не отмечать — тогда план будет сбалансированным.</i>'
+            + chosen
+        )
+        try:
+            await query.message.edit_text(
+                body,
+                reply_markup=keyboards.skill_focus_kb(selected, onboarding=onboarding),
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:  # noqa: BLE001
+            await show_skill_focus(update, context, onboarding=onboarding)
     elif data.startswith('anxiety:set:'):
         level = data.rsplit(':', 1)[1]
         await _handle_speaking_anxiety(update, context, level)
