@@ -90,14 +90,16 @@ class Command(BaseCommand):
                  explanation_ru='С <b>I</b> всегда <b>am</b>: I am a student.'),
             dict(level='a1', skill='vocabulary', item_type='multiple_choice', order=2,
                  prompt='Как по-английски «кофе»?',
-                 options=['coffee', 'tea', 'water'], correct=['coffee']),
+                 options=['coffee', 'tea', 'water'], correct=['coffee'],
+                 explanation_ru='Coffee = кофе (tea — чай, water — вода).'),
             dict(level='a1', skill='grammar', item_type='multiple_choice', order=3,
                  prompt='«Она счастлива»\n\nShe ___ happy.',
                  options=['is', 'are', 'am'], correct=['is'],
                  explanation_ru='С <b>she</b> → <b>is</b>: She is happy.'),
             dict(level='a1', skill='vocabulary', item_type='multiple_choice', order=4,
                  prompt='«Книга» по-английски:',
-                 options=['book', 'door', 'bag'], correct=['book']),
+                 options=['book', 'door', 'bag'], correct=['book'],
+                 explanation_ru='Book = книга (door — дверь, bag — сумка).'),
             # A2
             dict(level='a2', skill='grammar', item_type='multiple_choice', order=1,
                  prompt='«Она пьёт кофе каждое утро»\n\nShe ___ coffee every morning.',
@@ -118,7 +120,8 @@ class Command(BaseCommand):
                  explanation_ru='They → глагол без <b>-s</b>: they go.'),
             dict(level='a2', skill='vocabulary', item_type='multiple_choice', order=4,
                  prompt='«Библиотека» по-английски:',
-                 options=['library', 'hospital', 'station'], correct=['library']),
+                 options=['library', 'hospital', 'station'], correct=['library'],
+                 explanation_ru='Library = библиотека (hospital — больница, station — станция).'),
             # B1
             dict(level='b1', skill='grammar', item_type='multiple_choice', order=1,
                  prompt=(
@@ -157,9 +160,10 @@ class Command(BaseCommand):
                      'I look forward to <b>seeing</b> you.'
                  )),
             dict(level='b2', skill='vocabulary', item_type='multiple_choice', order=2,
-                 prompt='«Несмотря на дождь, мы пошли гулять»\n\nDespite ___',
+                 prompt='«Несмотря на дождь, мы пошли гулять»\n\nDespite ___, we went for a walk.',
                  options=['the rain', 'rainy', 'raining'], correct=['the rain', 'rain'],
-                 explanation_ru='После <b>despite</b> — существительное: <b>the rain</b>, не <b>rainy</b>.'),
+                 explanation_ru='После <b>despite</b> — существительное: Despite <b>the rain</b>, '
+                                'we went for a walk.'),
             dict(level='b2', skill='grammar', item_type='multiple_choice', order=3,
                  prompt='«Она предложила уйти пораньше»\n\nShe suggested ___ earlier.',
                  options=['leaving', 'leave', 'to leave', 'left'], correct=['leaving', 'to leave'],
@@ -174,7 +178,9 @@ class Command(BaseCommand):
                      'говорил только в прошлом',
                      'бросить учить язык',
                  ],
-                 correct=['говорить по-английски лучше']),
+                 correct=['говорить по-английски лучше'],
+                 explanation_ru='<b>I wish I spoke…</b> = сожаление: хотел бы говорить свободно '
+                                '(но пока нет).'),
             # Extra — typing & speaking (always with Russian context)
             dict(level='a1', skill='vocabulary', item_type='translation_ru_en', order=5,
                  prompt='Переведи на английский:\n\n«Привет!»',
@@ -256,7 +262,7 @@ class Command(BaseCommand):
             # ---- C1: advanced grammar, nuance, listening ----
             dict(level='c1', skill='grammar', item_type='multiple_choice', order=1,
                  prompt=(
-                     'Choose the most natural option:\n\n'
+                     'Выбери самый естественный вариант:\n\n'
                      '«Had I known about the deadline, I ___ the report sooner.»'
                  ),
                  options=['would have finished', 'will finish', 'finished', 'would finish'],
@@ -264,7 +270,7 @@ class Command(BaseCommand):
                  explanation_ru='Инверсия третьего условного: Had I known… → would have finished.'),
             dict(level='c1', skill='vocabulary', item_type='multiple_choice', order=2,
                  prompt=(
-                     'Pick the best word:\n\n'
+                     'Выбери подходящее слово:\n\n'
                      'The findings ___ our initial hypothesis rather than contradicting it.'
                  ),
                  options=['corroborate', 'confuse', 'consist', 'complain'],
@@ -272,7 +278,7 @@ class Command(BaseCommand):
                  explanation_ru='Corroborate = подтверждать (научный/формальный стиль).'),
             dict(level='c1', skill='reading', item_type='multiple_choice', order=3,
                  prompt=(
-                     'What does the writer imply?\n\n'
+                     'Что подразумевает автор?\n\n'
                      '«The proposal, while ambitious, glosses over the practical hurdles.»'
                  ),
                  options=[
@@ -295,7 +301,8 @@ class Command(BaseCommand):
                  correct=['The client should have been involved earlier'],
                  explanation_ru='Loop in = подключить/проинформировать; should have = сожаление о прошлом.'),
             dict(level='c1', skill='writing', item_type='fill_gap', order=5,
-                 prompt='Complete formally:\n\n«I am writing to ___ my concern about the delay.»',
+                 prompt='Заполни пропуск (формальный стиль):\n\n'
+                        '«I am writing to ___ my concern about the delay.»',
                  correct=['express', 'raise', 'voice'],
                  keywords=['express'],
                  explanation_ru='Express/raise/voice concern = выразить обеспокоенность.'),

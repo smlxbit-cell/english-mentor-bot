@@ -92,6 +92,7 @@ def diagnostic_challenge_kb() -> InlineKeyboardMarkup:
 
 def diagnostic_options_kb(
     options: list[str], *, item_id: int, with_listen: bool = False,
+    with_dont_know: bool = True,
 ) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(opt, callback_data=f'diag:ans:{item_id}:{i}')]
@@ -99,6 +100,17 @@ def diagnostic_options_kb(
     ]
     if with_listen:
         rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
+    if with_dont_know:
+        rows.append([InlineKeyboardButton('🤔 Не знаю', callback_data=f'diag:idk:{item_id}')])
+    return InlineKeyboardMarkup(rows)
+
+
+def diagnostic_text_kb(item_id: int, *, with_listen: bool = False) -> InlineKeyboardMarkup:
+    """For typed diagnostic answers (fill/translation): a 'don't know' escape."""
+    rows = []
+    if with_listen:
+        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
+    rows.append([InlineKeyboardButton('🤔 Не знаю', callback_data=f'diag:idk:{item_id}')])
     return InlineKeyboardMarkup(rows)
 
 

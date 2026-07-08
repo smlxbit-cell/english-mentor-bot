@@ -1027,6 +1027,10 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
 
     is_listening = item['item_type'] == 'listening'
 
+    # Shuffle options so the correct answer isn't always first (anti-guessing).
+    if item.get('options'):
+        random.shuffle(item['options'])
+
     if is_listening:
         # Hide the English transcript: play audio first, question + options below.
         audio_en, question = _parse_listening_prompt(item['prompt'])
@@ -1072,12 +1076,11 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
             ),
             parse_mode=parse_mode,
         )
-    elif item['item_type'] == 'speaking':
-        await _send(context, chat_id, prompt, parse_mode=parse_mode)
     else:
+        # Typed answer (fill / translation / speaking): offer a "don't know" escape.
         await _send(
             context, chat_id, prompt,
-            reply_markup=keyboards.say_kb() if listen else None,
+            reply_markup=keyboards.diagnostic_text_kb(item['id'], with_listen=listen),
             parse_mode=parse_mode,
         )
 
@@ -1127,14 +1130,14 @@ async def _clear_diagnostic_buttons(update: Update) -> None:
         pass
 
 
-async def _handle_diagnostic_answer(update, context, answer_text: str):
+async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_know: bool = False):
     diag = context.user_data.get('diag')
     if not diag or not diag.get('current'):
         return
     item = diag['current']
     chat_id = _chat_id(update)
 
-    is_correct = await _score_diagnostic_answer(item, answer_text)
+    is_correct = False if dont_know else await _score_diagnostic_answer(item, answer_text)
 
     skill = item['skill']
     c, t = diag['skill'].get(skill, [0, 0])
@@ -1151,26 +1154,18 @@ async def _handle_diagnostic_answer(update, context, answer_text: str):
     else:
         diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
         await send_mentor_reaction(context, chat_id, 'answer_wrong')
-        feedback = 'Не совсем — ничего страшного, идём дальше 🙂'
+        feedback = 'Ничего страшного — запомним 🙂' if dont_know \
+            else 'Не совсем — ничего страшного, идём дальше 🙂'
+        # Always show the correct answer, plus a short explanation when we have one.
+        if item.get('correct'):
+            feedback += f'\n\n✅ Правильно: <b>{_esc(item["correct"][0])}</b>'
         tip = (item.get('explanation_ru') or '').strip()
         if tip:
-            feedback += f'\n\n💡 {tip}'
-        elif item.get('correct'):
-            ans = item['correct'][0]
-            feedback += (
-                f'\n\n💡 Ты выбрал(а): <b>{_esc(answer_text)}</b>\n'
-                f'Правильно: <b>{_esc(ans)}</b>'
-            )
+            feedback += f'\n💡 {tip}'
 
     diag['current'] = None
     await _clear_diagnostic_buttons(update)
-    use_html = bool((item.get('explanation_ru') or '').strip()) or (
-        not is_correct and item.get('correct')
-    )
-    await _send(
-        context, chat_id, feedback,
-        parse_mode=ParseMode.HTML if use_html else None,
-    )
+    await _send(context, chat_id, feedback, parse_mode=ParseMode.HTML)
     await _ask_next_diagnostic(update, context)
 
 
@@ -1194,38 +1189,20 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
     level_code = diag_flow.finalize_level(diag)
     claimed = diag.get('claimed', 'unsure')
 
-    weak = [
-        skill for skill, (c, t) in diag.get('skill', {}).items()
-        if t > 0 and (c / t) < 0.5
-    ]
-
     profile_id = context.user_data['profile_id']
-    await db.finish_diagnostic(profile_id, level_code, weak)
+    # Level test decides the LEVEL only. Practice focus is set later by the
+    # dedicated per-skill test, so we don't guess weak skills from a few items.
+    await db.finish_diagnostic(profile_id, level_code, [])
 
     context.user_data['mode'] = None
     context.user_data['diag'] = None
 
-    weak_text = ''
-    if weak:
-        names = {
-            'grammar': 'грамматика', 'vocabulary': 'лексика',
-            'listening': 'аудирование', 'reading': 'чтение',
-            'speaking': 'говорение', 'pronunciation': 'произношение',
-        }
-        weak_text = '\n\nНад чем поработаем: ' + ', '.join(
-            names.get(s, s) for s in weak
-        ) + '.'
-
     await send_mentor_reaction(context, chat_id, 'diagnostic_done')
-    body = diag_flow.result_message(claimed, level_code, diag) + weak_text
-    await _send(
-        context, chat_id,
-        body + '\n\nОдин вопрос про говорение — это поможет подобрать практику 👇',
-        parse_mode=ParseMode.HTML,
-    )
+    body = diag_flow.result_message(claimed, level_code, diag)
+    await _send(context, chat_id, body, parse_mode=ParseMode.HTML)
     context.user_data['onboarding'] = True
     await db.clear_learning_goal(profile_id)
-    await _ask_speaking_anxiety(update, context)
+    await show_goal(update, context)
 
 
 async def _ask_speaking_anxiety(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3674,6 +3651,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         options = cur.get('options', [])
         if idx < len(options):
             await _handle_diagnostic_answer(update, context, options[idx])
+    elif data.startswith('diag:idk:'):
+        item_id = int(data.rsplit(':', 1)[1])
+        diag = context.user_data.get('diag') or {}
+        cur = diag.get('current') or {}
+        if cur.get('id') != item_id:
+            await query.answer('Это прошлый вопрос 🙂', show_alert=True)
+        else:
+            await _handle_diagnostic_answer(update, context, '', dont_know=True)
     elif data.startswith('diag:opt:'):
         # Legacy buttons from older messages (before diag:ans:id:idx).
         idx = int(data.rsplit(':', 1)[1])

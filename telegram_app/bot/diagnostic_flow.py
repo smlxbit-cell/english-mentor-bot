@@ -40,8 +40,8 @@ def test_band(claimed: str) -> tuple[int, int, int]:
         return 0, 2, 1
     if idx == 2:  # B1
         return 1, 3, 2
-    if idx == 3:  # B2 — allow reaching C1
-        return 2, 4, 3
+    if idx == 3:  # B2 — C1 only via the challenge round (needs high accuracy)
+        return 2, 3, 3
     return 3, 4, 4  # C1
 
 
