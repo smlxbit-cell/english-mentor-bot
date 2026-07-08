@@ -62,27 +62,28 @@ class BotFunnelTests(TestCase):
         self.assertEqual(len(recommended), 1)
         self.assertFalse(recommended[0]['completed'])
 
-    def test_trial_allowed_then_paywall_when_exhausted(self):
+    def test_full_trial_opens_everything_then_paywall_after_expiry(self):
+        # During the 2-day full trial, all lessons (incl. non-trial) are open.
         gate = sync(db.can_start_lesson)(self.profile.id, self.trial.id)
         self.assertTrue(gate['allowed'])
-
-        # Non-trial lesson is always gated for non-premium users.
         gate2 = sync(db.can_start_lesson)(self.profile.id, self.paid.id)
-        self.assertFalse(gate2['allowed'])
+        self.assertTrue(gate2['allowed'])
 
-        # Exhaust the trial allowance.
-        self.profile.trial_lessons_used = 2  # settings.TRIAL_LESSONS_LIMIT
+        # After the trial window expires, non-premium users hit the paywall.
+        from datetime import timedelta
+        self.profile.refresh_from_db()
+        self.profile.trial_started_at = timezone.now() - timedelta(days=5)
         self.profile.save()
-        gate3 = sync(db.can_start_lesson)(self.profile.id, self.trial.id)
+        gate3 = sync(db.can_start_lesson)(self.profile.id, self.paid.id)
         self.assertFalse(gate3['allowed'])
 
-    def test_complete_lesson_counts_trial_and_flags_paywall(self):
-        self.profile.trial_lessons_used = 1
+    def test_complete_lesson_flags_paywall_after_trial_expiry(self):
+        from datetime import timedelta
+        # Move the trial start into the past so the trial is over.
+        self.profile.trial_started_at = timezone.now() - timedelta(days=5)
         self.profile.save()
         sync(db.start_or_resume_lesson)(self.profile.id, self.trial.id)
         summary = sync(db.complete_lesson)(self.profile.id, self.trial.id)
-        self.profile.refresh_from_db()
-        self.assertEqual(self.profile.trial_lessons_used, 2)
         self.assertTrue(summary['need_paywall'])
         self.assertGreaterEqual(summary['xp_earned'], 50)
 

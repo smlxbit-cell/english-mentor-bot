@@ -309,10 +309,32 @@ def schedule_days_kb(selected: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+WEEKDAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+WEEKDAY_NAMES_FULL = [
+    'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье',
+]
+
+
+def rest_day_kb(selected: int | None = 6) -> InlineKeyboardMarkup:
+    rows = []
+    for i in range(0, 7, 3):
+        row = []
+        for d in range(i, min(i + 3, 7)):
+            mark = '✓ ' if d == selected else ''
+            row.append(InlineKeyboardButton(
+                f'{mark}{WEEKDAY_NAMES[d]}', callback_data=f'schedule:rest:{d}'))
+        rows.append(row)
+    none_mark = '✓ ' if (selected is None or selected == 7) else ''
+    rows.append([InlineKeyboardButton(
+        f'{none_mark}Без выходного', callback_data='schedule:rest:7')])
+    return InlineKeyboardMarkup(rows)
+
+
 def schedule_edit_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('⏱ Время в день', callback_data='profile:schedule:min')],
         [InlineKeyboardButton('📅 Дней в неделю', callback_data='profile:schedule:days')],
+        [InlineKeyboardButton('🌿 День отдыха', callback_data='profile:schedule:rest')],
         [InlineKeyboardButton('◀️ Назад', callback_data='profile:back')],
     ])
 

@@ -434,17 +434,19 @@ def set_study_schedule(
     *,
     daily_minutes: int,
     study_days_per_week: int,
-    rest_weekday: int = 6,
+    rest_weekday: int | None = None,
 ) -> None:
     minutes = daily_minutes if daily_minutes in (20, 30, 60) else 20
     days = max(3, min(7, study_days_per_week))
-    rest = max(0, min(6, rest_weekday))
-    UserProfile.objects.filter(id=profile_id).update(
+    fields = dict(
         daily_minutes=minutes,
         study_days_per_week=days,
-        rest_weekday=rest,
         study_schedule_set=True,
     )
+    if rest_weekday is not None:
+        # 0–6 = weekday, 7 = no fixed rest day.
+        fields['rest_weekday'] = max(0, min(7, rest_weekday))
+    UserProfile.objects.filter(id=profile_id).update(**fields)
 
 
 @sync_to_async
@@ -796,16 +798,12 @@ def can_start_lesson(profile_id: int, lesson_id: int) -> dict:
         status=LessonProgress.Status.COMPLETED,
     ).exists()
 
+    # 2-day full trial (or active subscription) opens the whole app.
+    # After it ends, everything is behind the paywall.
     if premium or already_completed:
         return {'allowed': True, 'premium': premium}
 
-    if not lesson.is_trial:
-        return {'allowed': False, 'reason': 'paywall', 'premium': premium}
-
-    if profile.trial_lessons_used >= settings.TRIAL_LESSONS_LIMIT:
-        return {'allowed': False, 'reason': 'paywall', 'premium': premium}
-
-    return {'allowed': True, 'premium': premium}
+    return {'allowed': False, 'reason': 'paywall', 'premium': premium}
 
 
 @sync_to_async
@@ -907,7 +905,7 @@ def complete_lesson(profile_id: int, lesson_id: int) -> dict:
         'is_trial': lesson.is_trial,
         'premium': premium,
         'trial_left': trial_left,
-        'need_paywall': (not premium) and trial_left <= 0,
+        'need_paywall': not premium,
     }
 
 

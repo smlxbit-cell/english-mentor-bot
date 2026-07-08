@@ -855,7 +855,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Что я умею:\n'
         '📚 Учиться — персональный план на день (чеклист)\n'
         '👤 Профиль — уровень, цель, интересы, напоминания\n'
-        '📊 Прогресс — XP, стрик, пройденные уроки\n'
+        '📊 Прогресс — XP, дни подряд, пройденные уроки\n'
         '🗂 Словарь — слова из уроков с озвучкой\n'
         '📖 Правила — карта грамматики с отметками ✅\n'
         '💬 Наставник — задай вопрос по английскому\n'
@@ -1280,22 +1280,24 @@ def _format_daily_plan_text(plan: dict) -> str:
 
     if plan.get('is_rest_day'):
         lines.append('Сегодня без нового эпизода — только лёгкая разминка (~5 мин).')
-        lines.append('Стрик сохранится 🔥')
+        lines.append('Серия дней не прервётся 🔥')
         lines.append('')
 
     steps: list[str] = []
     total_mins = plan.get('progress_minutes_total', 0)
     total_xp = 0
 
+    def _mark(done: bool, icon: str) -> str:
+        # One symbol per step: ✅ when done, otherwise the type icon.
+        return '✅' if done else icon
+
     warmup = plan.get('warmup')
     if warmup:
         from study_app.daily_facts import warmup_label
         icon, label = warmup_label(warmup.get('kind', 'fact'))
-        mark = '✅' if warmup.get('done') else '○'
-        steps.append(f'{mark} {icon} {label} — ~3 мин')
+        steps.append(f'{_mark(warmup.get("done"), icon)} {label} — ~3 мин')
 
     if episode:
-        mark = '✅' if episode.get('done') else '○'
         mins = episode.get('minutes') or 8
         xp = episode.get('xp_reward') or 0
         title = episode.get('subtitle') or episode.get('title', 'Эпизод')
@@ -1303,34 +1305,36 @@ def _format_daily_plan_text(plan: dict) -> str:
         if xp:
             meta += f' · +{xp} XP'
             total_xp += xp
-        steps.append(f'{mark} 📺 {_esc(title)} — {meta}')
+        steps.append(f'{_mark(episode.get("done"), "📺")} {_esc(title)} — {meta}')
     elif not plan.get('has_episode') and not plan.get('is_rest_day'):
         lines.append('🎬 Все эпизоды пройдены — скоро новая глава!')
         lines.append('')
 
     listening = plan.get('listening')
     if listening:
-        mark = '✅' if listening.get('done') else '○'
         lm = listening.get('target_minutes') or listening.get('minutes') or 4
-        steps.append(f'{mark} 🎧 {_esc(listening.get("title", "Аудирование"))} — ~{lm} мин')
+        steps.append(
+            f'{_mark(listening.get("done"), "🎧")} '
+            f'{_esc(listening.get("title", "Аудирование"))} — ~{lm} мин'
+        )
 
     speaking = plan.get('speaking')
     if speaking:
-        mark = '✅' if speaking.get('done') else '○'
         sm = speaking.get('target_minutes') or speaking.get('minutes') or 4
-        steps.append(f'{mark} 🎙️ {_esc(speaking.get("title", "Говорение"))} — ~{sm} мин')
+        steps.append(
+            f'{_mark(speaking.get("done"), "🎙")} '
+            f'{_esc(speaking.get("title", "Говорение"))} — ~{sm} мин'
+        )
 
     bonus = plan.get('bonus_words')
     if bonus:
-        mark = '✅' if bonus.get('done') else '○'
         cnt = bonus.get('count', 0)
         est = bonus.get('target_minutes') or max(2, min(cnt, 8))
-        steps.append(f'{mark} 🗂 Повторить {cnt} слов — ~{est} мин')
+        steps.append(f'{_mark(bonus.get("done"), "🗂")} Повторить {cnt} слов — ~{est} мин')
 
     drill = plan.get('rule_drill')
     if drill:
-        mark = '✅' if drill.get('done') else '○'
-        steps.append(f'{mark} 📖 Тренировка правил — ~5 мин')
+        steps.append(f'{_mark(drill.get("done"), "📖")} Тренировка правил — ~5 мин')
 
     if steps:
         summary = f'<b>Маршрут на сегодня</b> (~{total_mins} мин'
@@ -2528,7 +2532,7 @@ async def _finish_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'Правильных ответов: {summary["correct"]}/{summary["total"]}'
         if summary['total'] else 'Отличная работа!',
         f'+{summary["xp_earned"]} XP  •  всего {summary["total_xp"]} XP',
-        f'🔥 Стрик: {summary["streak"]} дн.  •  Игровой уровень {summary["level"]}',
+        f'🔥 Дней подряд: {summary["streak"]}  •  Игровой уровень {summary["level"]}',
     ]
     if summary.get('level_up'):
         lines.append(f'⬆️ Новый игровой уровень {summary["level"]}! Так держать 💪')
@@ -2826,7 +2830,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'📉 Над чем работаем: {weak}\n\n'
         f'⭐️ XP: {d["xp"]} (до уровня {d["user_level"] + 1} осталось {d["xp_to_next"]})\n'
         f'🎮 Игровой уровень: {d["user_level"]}\n'
-        f'🔥 Стрик: {d["streak"]} дн. (рекорд {d["longest_streak"]})\n'
+        f'🔥 Дней подряд: {d["streak"]} (рекорд {d["longest_streak"]})\n'
         f'📚 Пройдено уроков: {d["completed_lessons"]}\n'
         f'🎟 Пробные уроки: {d["trial_used"]}/{d["trial_limit"]}\n'
         f'💳 Подписка: {sub}\n\n'
@@ -2948,17 +2952,18 @@ async def show_schedule_minutes(
     schedule = await db.get_study_schedule(context.user_data['profile_id'])
     selected = schedule.get('daily_minutes', 20)
     text = (
-        'Сколько минут в день готов уделять английскому?\n\n'
-        'От этого зависит, сколько практики будет в плане.'
+        'Сколько минут в день комфортно уделять английскому?\n\n'
+        'Это рекомендуемый объём — под него подберу размер дневного плана.'
     )
     if onboarding:
         text = (
-            'Отлично! Теперь подберём нагрузку.\n\n'
+            '⏱ <b>Ритм на день</b>\n\n'
             + text
         )
     await _send(
         context, _chat_id(update), text,
         reply_markup=keyboards.schedule_minutes_kb(selected),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -2967,9 +2972,29 @@ async def show_schedule_days(update: Update, context: ContextTypes.DEFAULT_TYPE)
     selected = schedule.get('study_days_per_week', 5)
     await _send(
         context, _chat_id(update),
-        'Сколько дней в неделю планируешь заниматься?\n\n'
-        '🌿 Воскресенье — лёгкий день отдыха (стрик сохранится).',
+        'Сколько дней в неделю комфортно заниматься?\n\n'
+        'Это ориентир для плана — заниматься можно и чаще.',
         reply_markup=keyboards.schedule_days_kb(selected),
+    )
+
+
+def _rest_day_ru(rest_weekday: int | None) -> str:
+    if rest_weekday is None or rest_weekday >= 7:
+        return 'без выходного'
+    return keyboards.WEEKDAY_NAMES_FULL[rest_weekday]
+
+
+async def show_rest_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    schedule = await db.get_study_schedule(context.user_data['profile_id'])
+    selected = schedule.get('rest_weekday', 6)
+    await _send(
+        context, _chat_id(update),
+        '🌿 <b>День отдыха</b>\n\n'
+        'Выбери день, когда будет только лёгкая разминка вместо полного плана '
+        '(серия дней не прервётся).\n'
+        'Или «Без выходного», если хочешь заниматься каждый день.',
+        reply_markup=keyboards.rest_day_kb(selected),
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -2979,20 +3004,24 @@ async def _save_schedule_and_finish(
     *,
     daily_minutes: int,
     study_days_per_week: int,
+    rest_weekday: int | None = None,
 ):
     profile_id = context.user_data['profile_id']
     await db.set_study_schedule(
         profile_id,
         daily_minutes=daily_minutes,
         study_days_per_week=study_days_per_week,
-        rest_weekday=6,
+        rest_weekday=rest_weekday,
     )
+    rest_txt = _rest_day_ru(rest_weekday)
     if context.user_data.pop('onboarding', False):
         await db.complete_onboarding(profile_id)
         await _send(
             context, _chat_id(update),
-            f'Всё готово! 🎉 План: <b>{daily_minutes} мин</b> · '
-            f'<b>{study_days_per_week} дн/нед</b> · воскресенье — отдых.\n\n'
+            f'Всё готово! 🎉 Рекомендуемый ритм: <b>{daily_minutes} мин</b> · '
+            f'<b>{study_days_per_week} дн/нед</b> · отдых: <b>{rest_txt}</b>.\n\n'
+            'Это твой ориентир на день. Внутри — эпизоды, слова, правила, '
+            'аудирование и наставник, с упором на выбранные навыки.\n\n'
             'Жми «📚 Учиться» — там твой маршрут на сегодня.',
             reply_markup=keyboards.main_menu(),
             parse_mode=ParseMode.HTML,
@@ -3003,7 +3032,8 @@ async def _save_schedule_and_finish(
     else:
         await _send(
             context, _chat_id(update),
-            f'План обновлён: {daily_minutes} мин · {study_days_per_week} дн/нед ✅',
+            f'План обновлён: {daily_minutes} мин · {study_days_per_week} дн/нед · '
+            f'отдых: {rest_txt} ✅',
         )
         await show_profile(update, context)
 
@@ -3012,12 +3042,15 @@ async def show_schedule_settings(update: Update, context: ContextTypes.DEFAULT_T
     schedule = await db.get_study_schedule(context.user_data['profile_id'])
     mins = schedule.get('daily_minutes', 20)
     days = schedule.get('study_days_per_week', 5)
+    rest_txt = _rest_day_ru(schedule.get('rest_weekday', 6))
     await _send(
         context, _chat_id(update),
         f'⏱ <b>План на день</b>\n\n'
         f'• Время: <b>{mins} мин</b> в день\n'
         f'• Частота: <b>{days} дней</b> в неделю\n'
-        f'• Воскресенье — лёгкий день отдыха 🌿',
+        f'• День отдыха: <b>{rest_txt}</b> 🌿\n\n'
+        f'<i>Это рекомендуемый ритм. Программа включает всё — эпизоды, слова, '
+        f'правила, аудирование и наставника — с упором на выбранные навыки.</i>',
         reply_markup=keyboards.schedule_edit_kb(),
         parse_mode=ParseMode.HTML,
     )
@@ -3784,6 +3817,28 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'focus:done':
         await db.confirm_skill_focus(context.user_data['profile_id'])
         if context.user_data.get('onboarding'):
+            focus = set(await db.get_skill_focus(context.user_data['profile_id']))
+            if focus:
+                focus_txt = ', '.join(
+                    keyboards.SKILL_FOCUS_RU.get(s, s) for s in focus
+                )
+                bias = (
+                    f'Сделаю упор на: <b>{focus_txt}</b> — этого будет больше, '
+                    'но грамматика, слова и остальное тоже останутся.'
+                )
+            else:
+                bias = 'План будет сбалансированным по всем навыкам.'
+            await _send(
+                context, _chat_id(update),
+                '🗺 <b>Что тебя ждёт</b>\n\n'
+                'Это персональная программа под твой уровень и цель. Внутри — '
+                'эпизоды-истории, слова, правила, аудирование, говорение, тесты '
+                'и живой наставник Spirit.\n\n'
+                f'{bias}\n\n'
+                'Дальше выберем комфортный ритм на день — это ориентир, '
+                'а не потолок: заниматься можно сколько захочешь.',
+                parse_mode=ParseMode.HTML,
+            )
             await show_schedule_minutes(update, context, onboarding=True)
         else:
             await show_profile(update, context)
@@ -3835,18 +3890,36 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('schedule:days:'):
         days = int(data.rsplit(':', 1)[1])
         if context.user_data.get('onboarding') or context.user_data.get('pending_schedule_minutes'):
-            minutes = context.user_data.pop('pending_schedule_minutes', 20)
-            await _save_schedule_and_finish(
-                update, context,
-                daily_minutes=minutes,
-                study_days_per_week=days,
-            )
+            context.user_data['pending_schedule_days'] = days
+            await show_rest_day(update, context)
         else:
             sched = await db.get_study_schedule(context.user_data['profile_id'])
             await db.set_study_schedule(
                 context.user_data['profile_id'],
                 daily_minutes=sched.get('daily_minutes', 20),
                 study_days_per_week=days,
+            )
+            await show_schedule_settings(update, context)
+    elif data == 'profile:schedule:rest':
+        await show_rest_day(update, context)
+    elif data.startswith('schedule:rest:'):
+        rest = int(data.rsplit(':', 1)[1])
+        if context.user_data.get('onboarding') or context.user_data.get('pending_schedule_days'):
+            minutes = context.user_data.pop('pending_schedule_minutes', 20)
+            days = context.user_data.pop('pending_schedule_days', 5)
+            await _save_schedule_and_finish(
+                update, context,
+                daily_minutes=minutes,
+                study_days_per_week=days,
+                rest_weekday=rest,
+            )
+        else:
+            sched = await db.get_study_schedule(context.user_data['profile_id'])
+            await db.set_study_schedule(
+                context.user_data['profile_id'],
+                daily_minutes=sched.get('daily_minutes', 20),
+                study_days_per_week=sched.get('study_days_per_week', 5),
+                rest_weekday=rest,
             )
             await show_schedule_settings(update, context)
     elif data.startswith('goal:set:'):

@@ -41,7 +41,13 @@ def effective_daily_minutes(profile: UserProfile) -> int:
 
 
 def is_rest_day(profile: UserProfile, day: date) -> bool:
-    return day.weekday() == int(profile.rest_weekday or 6)
+    rw = profile.rest_weekday
+    if rw is None:
+        rw = 6
+    rw = int(rw)
+    if rw > 6:  # 7 = no fixed rest day
+        return False
+    return day.weekday() == rw
 
 
 def _pick_fact(user_id: int, day: date) -> dict:
@@ -53,7 +59,7 @@ def _pick_greeting(name: str, user_id: int, day: date, *, rest: bool = False) ->
     if rest:
         variants = [
             'Привет, {name}! Сегодня день отдыха — лёгкая разминка и всё 🌿',
-            '{name}, сегодня воскресенье в твоём плане. Отдохни — стрик сохранится.',
+            '{name}, сегодня в твоём плане день отдыха. Отдохни — прогресс не сгорит.',
         ]
         idx = (_day_seed(user_id, day) // 3) % len(variants)
         return variants[idx].format(name=name or 'друг')
@@ -473,7 +479,7 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
 def format_plan_reminder_summary(plan: dict) -> str:
     """Short plain-text plan for daily reminder messages."""
     if plan.get('is_rest_day'):
-        return '🌿 Сегодня день отдыха — лёгкая разминка (~5 мин). Стрик сохранится.'
+        return '🌿 Сегодня день отдыха — лёгкая разминка (~5 мин). Серия дней не прервётся.'
 
     lines = ['📋 План на день:']
     step = 1
