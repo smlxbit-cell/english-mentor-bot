@@ -947,9 +947,7 @@ async def _start_diagnostic_test(
     total = diag_flow.PRIMARY_QUESTIONS
     await _send(
         context, chat_id,
-        f'📝 <b>Тест уровня</b>\n\n'
-        f'{total} коротких вопросов: грамматика, слова, чтение, аудирование.\n'
-        'Отвечай как можешь.',
+        f'📝 Небольшой тест уровня — {total} вопросов.',
         parse_mode=ParseMode.HTML,
     )
     await _ask_next_diagnostic(update, context)
