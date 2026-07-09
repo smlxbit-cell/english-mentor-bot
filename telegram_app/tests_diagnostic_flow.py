@@ -34,3 +34,36 @@ class DiagnosticFlowTests(TestCase):
         self.assertIsNone(
             diag_flow.prefer_skill_for_question(6, listening_count=2),
         )
+
+    def test_b2_primary_strong_stays_b2_without_challenge(self):
+        diag = {
+            'claimed': 'b2', 'claimed_idx': 3,
+            'band': (2, 3, 3), 'correct': 7, 'count': 8, 'level_idx': 3,
+        }
+        self.assertEqual(diag_flow.confirmed_primary_level(diag), 3)
+        self.assertEqual(diag_flow.finalize_level(diag), 'b2')
+
+    def test_b2_primary_plus_challenge_pass_gives_c1(self):
+        diag = {
+            'claimed': 'b2', 'claimed_idx': 3, 'confirmed_idx': 3,
+            'band': (4, 4), 'correct': 8, 'count': 8, 'level_idx': 4,
+            'phase': 'challenge_done', 'challenge_correct': 3,
+        }
+        self.assertEqual(diag_flow.finalize_level(diag), 'c1')
+
+    def test_b2_primary_plus_failed_challenge_stays_b2(self):
+        diag = {
+            'claimed': 'b2', 'claimed_idx': 3, 'confirmed_idx': 3,
+            'band': (4, 4), 'correct': 8, 'count': 8, 'level_idx': 4,
+            'phase': 'challenge_done', 'challenge_correct': 1,
+        }
+        self.assertEqual(diag_flow.finalize_level(diag), 'b2')
+
+    def test_a1_strong_offers_a2_challenge(self):
+        diag = {
+            'claimed': 'a1', 'claimed_idx': 0,
+            'band': (0, 1, 0), 'correct': 8, 'count': 8, 'level_idx': 1,
+            'phase': 'primary_done',
+        }
+        self.assertTrue(diag_flow.should_offer_challenge(diag))
+        self.assertEqual(diag_flow.confirmed_primary_level(diag), 0)

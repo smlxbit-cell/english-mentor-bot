@@ -15,8 +15,9 @@ LEVEL_LABELS = {
 MAX_LEVEL_IDX = len(LEVELS) - 1  # c1
 
 PRIMARY_QUESTIONS = 8
-CHALLENGE_QUESTIONS = 3
+CHALLENGE_QUESTIONS = 4
 CHALLENGE_MIN_ACCURACY = 0.85
+CHALLENGE_PASS_RATIO = 0.75  # e.g. 3/4 to upgrade one level
 
 
 def level_index(code: str) -> int:
@@ -45,10 +46,31 @@ def test_band(claimed: str) -> tuple[int, int, int]:
     return 3, 4, 4  # C1
 
 
-def challenge_band(claimed_idx: int, result_idx: int) -> tuple[int, int]:
-    """Questions one CEFR step above the primary result."""
-    target = min(MAX_LEVEL_IDX, max(result_idx, claimed_idx) + 1)
+def challenge_band(confirmed_idx: int) -> tuple[int, int]:
+    """Questions exactly one CEFR step above the confirmed primary level."""
+    target = min(MAX_LEVEL_IDX, confirmed_idx + 1)
     return target, target
+
+
+def confirmed_primary_level(diag: dict) -> int:
+    """Level confirmed by the primary 8-question test (never above self-assessed)."""
+    claimed_idx = diag.get('claimed_idx', 1)
+    if diag.get('claimed') == 'unsure':
+        claimed_idx = diag.get('level_idx', 1)
+    correct = diag.get('correct', 0)
+    total = diag.get('count', 0) or PRIMARY_QUESTIONS
+    acc = accuracy(correct, total)
+    min_i, max_i = diag['band'][0], diag['band'][1]
+
+    if acc >= CHALLENGE_MIN_ACCURACY:
+        return min(claimed_idx, max_i)
+    if acc >= 0.5:
+        return max(min_i, min(claimed_idx, diag.get('level_idx', claimed_idx)))
+    return max(min_i, diag.get('level_idx', claimed_idx))
+
+
+def challenge_pass_threshold() -> int:
+    return max(2, int(CHALLENGE_QUESTIONS * CHALLENGE_PASS_RATIO + 0.5))
 
 
 def pick_item(
@@ -146,25 +168,34 @@ def task_instruction(item: dict) -> str:
 
 
 def should_offer_challenge(diag: dict) -> bool:
+    """Offer optional next-level check after a strong primary result (all levels)."""
     if diag.get('phase') != 'primary_done':
         return False
     correct = diag.get('correct', 0)
     total = diag.get('count', 0)
     if total < PRIMARY_QUESTIONS or accuracy(correct, total) < CHALLENGE_MIN_ACCURACY:
         return False
-    result_idx = diag.get('level_idx', 0)
-    ceiling = diag['band'][1]
-    return result_idx >= ceiling and ceiling < MAX_LEVEL_IDX
+    return confirmed_primary_level(diag) < MAX_LEVEL_IDX
 
 
 def finalize_level(diag: dict) -> str:
-    if diag.get('challenge') or diag.get('phase') == 'challenge_done':
-        idx = diag.get('level_idx', 1)
-    else:
-        idx = max(diag['band'][0], min(diag['band'][1], diag.get('level_idx', 1)))
-    if diag.get('phase') == 'challenge_done' and diag.get('challenge_correct', 0) >= 3:
-        idx = min(MAX_LEVEL_IDX, idx + 1)
-    return LEVELS[min(idx, MAX_LEVEL_IDX)]
+    primary_idx = diag.get('confirmed_idx')
+    if primary_idx is None:
+        primary_idx = confirmed_primary_level(diag)
+    if diag.get('phase') == 'challenge_done':
+        if diag.get('challenge_correct', 0) >= challenge_pass_threshold():
+            return LEVELS[min(primary_idx + 1, MAX_LEVEL_IDX)]
+    return LEVELS[primary_idx]
+
+
+def challenge_offer_text(diag: dict) -> str:
+    idx = confirmed_primary_level(diag)
+    curr = LEVELS[idx].upper()
+    nxt = LEVELS[min(idx + 1, MAX_LEVEL_IDX)].upper()
+    return (
+        f'Хороший результат по <b>{curr}</b>.\n\n'
+        f'Хочешь проверить уровень <b>{nxt}</b>? Можно пропустить.'
+    )
 
 
 def result_message(claimed: str, level_code: str, diag: dict) -> str:

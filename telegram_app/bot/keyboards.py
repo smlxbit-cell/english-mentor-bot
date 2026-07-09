@@ -83,10 +83,8 @@ def diagnostic_self_assess_kb() -> InlineKeyboardMarkup:
 
 def diagnostic_challenge_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton('Да, проверить выше', callback_data='diag:challenge:yes'),
-            InlineKeyboardButton('Нет, достаточно', callback_data='diag:challenge:no'),
-        ],
+        [InlineKeyboardButton('Проверить уровень выше', callback_data='diag:challenge:yes')],
+        [InlineKeyboardButton('Пропустить', callback_data='diag:challenge:no')],
     ])
 
 
@@ -123,6 +121,7 @@ def skill_test_offer_kb() -> InlineKeyboardMarkup:
 
 def skill_test_options_kb(
     options: list[str], *, with_listen: bool = False,
+    with_dont_know: bool = True,
 ) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(opt, callback_data=f'skilltest:ans:{i}')]
@@ -130,6 +129,16 @@ def skill_test_options_kb(
     ]
     if with_listen:
         rows.append([InlineKeyboardButton('🔊 Слушать ещё раз', callback_data='tts:say')])
+    if with_dont_know:
+        rows.append([InlineKeyboardButton('🤔 Не знаю', callback_data='skilltest:idk')])
+    return InlineKeyboardMarkup(rows)
+
+
+def skill_test_text_kb(*, with_listen: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if with_listen:
+        rows.append([InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')])
+    rows.append([InlineKeyboardButton('🤔 Не знаю', callback_data='skilltest:idk')])
     return InlineKeyboardMarkup(rows)
 
 

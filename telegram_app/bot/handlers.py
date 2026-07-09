@@ -998,12 +998,13 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
             await _finish_diagnostic(update, context)
         elif diag_flow.should_offer_challenge({**diag, 'phase': 'primary_done'}):
             diag['phase'] = 'primary_done'
+            diag['confirmed_idx'] = diag_flow.confirmed_primary_level(diag)
             await send_mentor_reaction(context, chat_id, 'answer_correct')
             await _send(
                 context, chat_id,
-                'Отлично справляешься! 👍\n\n'
-                'Похоже, можешь больше. Проверим посложнее?',
+                diag_flow.challenge_offer_text(diag),
                 reply_markup=keyboards.diagnostic_challenge_kb(),
+                parse_mode=ParseMode.HTML,
             )
         else:
             await _finish_diagnostic(update, context)
@@ -1171,15 +1172,18 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
 
 async def _begin_challenge_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data['diag']
-    claimed_idx = diag.get('claimed_idx', 1)
-    result_idx = diag.get('level_idx', 1)
+    primary_idx = diag_flow.confirmed_primary_level(diag)
+    diag['confirmed_idx'] = primary_idx
     diag['challenge'] = True
-    diag['band'] = diag_flow.challenge_band(claimed_idx, result_idx)
+    diag['band'] = diag_flow.challenge_band(primary_idx)
     diag['level_idx'] = diag['band'][0]
     diag['challenge_count'] = 0
     diag['challenge_correct'] = 0
     chat_id = _chat_id(update)
+    nxt = diag_flow.LEVELS[diag['band'][0]].upper()
     await send_mentor_reaction(context, chat_id, 'lesson_start')
+    await _send(context, chat_id, f'Проверка уровня <b>{nxt}</b> — {diag_flow.CHALLENGE_QUESTIONS} вопроса.',
+                parse_mode=ParseMode.HTML)
     await _ask_next_diagnostic(update, context)
 
 
@@ -1286,6 +1290,9 @@ async def _ask_skill_test_item(update: Update, context: ContextTypes.DEFAULT_TYP
     header = f'🧩 {skill_ru} · {idx + 1}/{len(queue)}'
     itype = item['type']
 
+    if item.get('options'):
+        random.shuffle(item['options'])
+
     if itype == 'mc':
         await _send(
             context, chat_id, f'{header}\n\n{_esc(item["prompt"])}',
@@ -1312,6 +1319,7 @@ async def _ask_skill_test_item(update: Update, context: ContextTypes.DEFAULT_TYP
         await _send(
             context, chat_id,
             f'{header}\n\n{_esc(item["prompt"])}\n\n✍️ Напиши ответ текстом.',
+            reply_markup=keyboards.skill_test_text_kb(),
             parse_mode=ParseMode.HTML,
         )
     elif itype == 'speaking':
@@ -1319,6 +1327,7 @@ async def _ask_skill_test_item(update: Update, context: ContextTypes.DEFAULT_TYP
         await _send(
             context, chat_id,
             f'{header}\n\n{_esc(item["prompt"])}\n\n🎙️ Ответь голосовым или текстом.',
+            reply_markup=keyboards.skill_test_text_kb(),
             parse_mode=ParseMode.HTML,
         )
 
@@ -1334,22 +1343,38 @@ def _record_skill_answer(context: ContextTypes.DEFAULT_TYPE, correct: bool) -> N
     st['idx'] = st.get('idx', 0) + 1
 
 
+async def _skill_test_feedback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, item: dict, *, dont_know: bool,
+) -> None:
+    if item.get('correct'):
+        tip = f'✅ Правильно: <b>{_esc(item["correct"][0])}</b>'
+    else:
+        tip = 'Ок.'
+    await _clear_diagnostic_buttons(update)
+    await _send(context, _chat_id(update), tip, parse_mode=ParseMode.HTML)
+
+
 async def _handle_skill_test_choice(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, opt_idx: int,
+    update: Update, context: ContextTypes.DEFAULT_TYPE, opt_idx: int, *,
+    dont_know: bool = False,
 ):
     st = context.user_data.get('skill_test') or {}
     item = st.get('current') or {}
     options = item.get('options') or []
     correct_list = [c.lower().strip() for c in (item.get('correct') or [])]
     chosen = options[opt_idx] if 0 <= opt_idx < len(options) else ''
-    is_correct = chosen.lower().strip() in correct_list
-    await _clear_diagnostic_buttons(update)
+    is_correct = False if dont_know else chosen.lower().strip() in correct_list
+    if not is_correct:
+        await _skill_test_feedback(update, context, item, dont_know=dont_know)
+    else:
+        await _clear_diagnostic_buttons(update)
     _record_skill_answer(context, is_correct)
     await _ask_skill_test_item(update, context)
 
 
 async def _handle_skill_test_answer(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str,
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, *,
+    dont_know: bool = False,
 ):
     """Handle text/voice answers for writing & speaking items."""
     st = context.user_data.get('skill_test') or {}
@@ -1358,13 +1383,17 @@ async def _handle_skill_test_answer(
     if itype not in ('writing', 'speaking'):
         await _send(context, _chat_id(update), 'Выбери вариант кнопкой 👆')
         return
-    if itype == 'writing':
+    if dont_know:
+        ok = False
+    elif itype == 'writing':
         correct_list = [normalize(c) for c in (item.get('correct') or [])]
         norm = normalize(text)
         ok = any(norm == c or (c and c in norm) for c in correct_list)
     else:
         target = item.get('model') or ' '.join(item.get('keywords') or [])
         ok = score_speaking(text, target).is_correct
+    if not ok:
+        await _skill_test_feedback(update, context, item, dont_know=dont_know)
     _record_skill_answer(context, ok)
     await _ask_skill_test_item(update, context)
 
@@ -3982,6 +4011,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             opt_idx = -1
         await _handle_skill_test_choice(update, context, opt_idx)
+    elif data == 'skilltest:idk':
+        st = context.user_data.get('skill_test') or {}
+        item = st.get('current') or {}
+        if item.get('options'):
+            await _handle_skill_test_choice(update, context, -1, dont_know=True)
+        else:
+            await _handle_skill_test_answer(update, context, '', dont_know=True)
     elif data == 'focus:done':
         await db.confirm_skill_focus(context.user_data['profile_id'])
         if context.user_data.get('onboarding'):
