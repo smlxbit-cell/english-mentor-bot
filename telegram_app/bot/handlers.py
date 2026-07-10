@@ -1442,6 +1442,7 @@ def _progress_bar_percent(percent: int) -> str:
 
 
 def _format_daily_plan_text(plan: dict) -> str:
+    from study_app.services.daily_plan import _display_title
     episode = plan.get('episode')
     ep_num = (episode or {}).get('episode_num', 0)
     if plan.get('is_rest_day'):
@@ -1482,23 +1483,25 @@ def _format_daily_plan_text(plan: dict) -> str:
             total_xp += xp
         steps.append(f'{_mark(episode.get("done"), "📺")} {_esc(title)} — {meta}')
     elif not plan.get('has_episode') and not plan.get('is_rest_day'):
-        lines.append('🎬 Все эпизоды пройдены — скоро новая глава!')
+        lines.append('📚 Сегодня без эпизода — новая глава скоро в программе')
         lines.append('')
 
     listening = plan.get('listening')
     if listening:
         lm = listening.get('target_minutes') or listening.get('minutes') or 4
+        title = _display_title(listening.get('title', ''), 'Аудирование')
         steps.append(
             f'{_mark(listening.get("done"), "🎧")} '
-            f'{_esc(listening.get("title", "Аудирование"))} — ~{lm} мин'
+            f'{_esc(title)} — ~{lm} мин'
         )
 
     speaking = plan.get('speaking')
     if speaking:
         sm = speaking.get('target_minutes') or speaking.get('minutes') or 4
+        title = _display_title(speaking.get('title', ''), 'Говорение')
         steps.append(
             f'{_mark(speaking.get("done"), "🎙")} '
-            f'{_esc(speaking.get("title", "Говорение"))} — ~{sm} мин'
+            f'{_esc(title)} — ~{sm} мин'
         )
 
     bonus = plan.get('bonus_words')
@@ -1634,7 +1637,9 @@ async def _show_listening(update: Update, context: ContextTypes.DEFAULT_TYPE):
     en_lines = [ln.get('en', '') for ln in lines if ln.get('en')]
     context.user_data['tts_text'] = ' '.join(en_lines)
 
-    body = [f'🎧 <b>{_esc(listening.get("title", "Аудирование"))}</b>\n']
+    from study_app.services.daily_plan import _display_title
+    title = _display_title(listening.get('title', ''), 'Аудирование')
+    body = [f'🎧 <b>{_esc(title)}</b>\n']
     for ln in lines:
         body.append(f'🇬🇧 {_esc(ln.get("en", ""))}')
         if ln.get('ru'):
@@ -1663,8 +1668,10 @@ async def _show_speaking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['plan_speaking'] = speaking
     context.user_data['tts_text'] = speaking.get('model_answer', '')
 
+    from study_app.services.daily_plan import _display_title
+    title = _display_title(speaking.get('title', ''), 'Говорение')
     text = (
-        f'🎙️ <b>{_esc(speaking.get("title", "Говорение"))}</b>\n\n'
+        f'🎙 <b>{_esc(title)}</b>\n\n'
         f'{_esc(speaking.get("prompt_ru", ""))}\n\n'
         f'🇬🇧 <i>{_esc(speaking.get("prompt_en", ""))}</i>\n\n'
         'Ответь текстом или голосовым — можно простыми словами. '

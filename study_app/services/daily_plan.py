@@ -283,7 +283,7 @@ def _build_initial_blocks(
             session=session,
             order=order,
             block_type=DailySessionBlock.BlockType.DIALOGUE,
-            title=f'🎙️ {bite["title"]}',
+            title=bite['title'],
             content={
                 'item_type': 'speaking',
                 'title': bite['title'],
@@ -303,7 +303,7 @@ def _build_initial_blocks(
             session=session,
             order=order,
             block_type=DailySessionBlock.BlockType.DIALOGUE,
-            title=f'🎧 {bite["title"]}',
+            title=bite['title'],
             content={
                 'item_type': 'listening',
                 'title': bite['title'],
@@ -476,6 +476,15 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
     }
 
 
+def _display_title(title: str, fallback: str = '') -> str:
+    """Plain block title for UI (strip icons if stored in older sessions)."""
+    t = (title or fallback).strip()
+    for prefix in ('🎧 ', '🎙️ ', '🎙 '):
+        if t.startswith(prefix):
+            return t[len(prefix):]
+    return t
+
+
 def format_plan_reminder_summary(plan: dict) -> str:
     """Short plain-text plan for daily reminder messages."""
     if plan.get('is_rest_day'):
@@ -506,16 +515,18 @@ def format_plan_reminder_summary(plan: dict) -> str:
             lines.append(f'{mark} 📺 {title} — {meta}')
         step += 1
     elif not plan.get('has_episode'):
-        lines.append('🎬 Новая глава скоро')
+        lines.append('📚 Сегодня без эпизода — новая глава скоро в программе')
     listening = plan.get('listening')
     if listening:
         mark = '✅' if listening.get('done') else f'{step}.'
-        lines.append(f'{mark} 🎧 {listening.get("title", "Аудирование")} — ~{listening.get("target_minutes", 4)} мин')
+        title = _display_title(listening.get('title', ''), 'Аудирование')
+        lines.append(f'{mark} 🎧 {title} — ~{listening.get("target_minutes", 4)} мин')
         step += 1
     speaking = plan.get('speaking')
     if speaking:
         mark = '✅' if speaking.get('done') else f'{step}.'
-        lines.append(f'{mark} 🎙️ {speaking.get("title", "Говорение")} — ~{speaking.get("target_minutes", 4)} мин')
+        title = _display_title(speaking.get('title', ''), 'Говорение')
+        lines.append(f'{mark} 🎙 {title} — ~{speaking.get("target_minutes", 4)} мин')
         step += 1
     bonus = plan.get('bonus_words')
     if bonus:
