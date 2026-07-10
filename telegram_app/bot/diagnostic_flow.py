@@ -14,7 +14,7 @@ LEVEL_LABELS = {
 
 MAX_LEVEL_IDX = len(LEVELS) - 1  # c1
 
-PRIMARY_QUESTIONS = 8
+PRIMARY_QUESTIONS = 10
 CHALLENGE_QUESTIONS = 4
 CHALLENGE_MIN_ACCURACY = 0.85
 CHALLENGE_PASS_RATIO = 0.75  # e.g. 3/4 to upgrade one level
@@ -53,7 +53,7 @@ def challenge_band(confirmed_idx: int) -> tuple[int, int]:
 
 
 def confirmed_primary_level(diag: dict) -> int:
-    """Level confirmed by the primary 8-question test (never above self-assessed)."""
+    """Level confirmed by the primary test (never above self-assessed)."""
     claimed_idx = diag.get('claimed_idx', 1)
     if diag.get('claimed') == 'unsure':
         claimed_idx = diag.get('level_idx', 1)
@@ -81,10 +81,22 @@ def pick_item(
     *,
     used_skills: set[str] | None = None,
     prefer_skill: str | None = None,
+    asked_prompts: set[str] | None = None,
 ):
     used_skills = used_skills or set()
+    asked_prompts = asked_prompts or set()
+
+    def _ok(it: dict) -> bool:
+        if it['id'] in asked:
+            return False
+        if prompt_key(it) in asked_prompts:
+            return False
+        return True
+
     if prefer_skill:
-        preferred = _pick_by_skill(group, asked, band, focus_idx, prefer_skill)
+        preferred = _pick_by_skill(
+            group, asked, band, focus_idx, prefer_skill, asked_prompts=asked_prompts,
+        )
         if preferred:
             return preferred
 
@@ -101,7 +113,7 @@ def pick_item(
     for idx in order:
         level = LEVELS[idx]
         for it in group.get(level, []):
-            if it['id'] in asked:
+            if not _ok(it):
                 continue
             if it['skill'] not in used_skills:
                 return it
@@ -116,7 +128,10 @@ def _pick_by_skill(
     band: tuple[int, int],
     focus_idx: int,
     skill: str,
+    *,
+    asked_prompts: set[str] | None = None,
 ):
+    asked_prompts = asked_prompts or set()
     min_i, max_i = band
     focus_idx = max(min_i, min(max_i, focus_idx))
     order = [focus_idx]
@@ -130,14 +145,16 @@ def _pick_by_skill(
         for it in group.get(level, []):
             if it['id'] in asked:
                 continue
+            if prompt_key(it) in asked_prompts:
+                continue
             if it.get('skill') == skill:
                 return it
     return None
 
 
 def prefer_skill_for_question(question_number: int, *, listening_count: int = 0) -> str | None:
-    """Rotate listening/speaking into the 8-question primary diagnostic."""
-    if question_number in (3, 6) and listening_count < 2:
+    """Rotate listening/speaking into the 10-question primary diagnostic."""
+    if question_number in (3, 7) and listening_count < 2:
         return 'listening'
     if question_number == 5:
         return 'speaking'
@@ -146,6 +163,49 @@ def prefer_skill_for_question(question_number: int, *, listening_count: int = 0)
 
 def accuracy(correct: int, total: int) -> float:
     return correct / total if total else 0.0
+
+
+def prompt_key(item: dict) -> str:
+    """Fingerprint a question so we never ask the same sentence twice."""
+    import re
+    p = (item.get('prompt') or '').lower()
+    m = re.search(r'([a-z][^.?!\n]*___[^.?!\n]*)', p)
+    if m:
+        p = m.group(1)
+    p = re.sub(r'вопрос \d+/\d+', '', p)
+    p = re.sub(r'\s+', ' ', p).strip()
+    return p[:120]
+
+
+def explanation_detail(item: dict, user_answer: str = '') -> str:
+    """Longer rule explanation after a wrong diagnostic answer."""
+    tip = (item.get('explanation_ru') or '').strip()
+    correct = (item.get('correct') or [''])[0]
+    lines = ['💡 <b>Разбор</b>']
+    if user_answer and user_answer.strip():
+        lines.append(f'Твой ответ: <b>{user_answer.strip()}</b>')
+    if correct:
+        lines.append(f'Правильно: <b>{correct}</b>')
+    if tip:
+        lines.append('')
+        lines.append(tip)
+    # Extra hint for suggest + -ing pattern
+    prompt = (item.get('prompt') or '').lower()
+    if 'suggested' in prompt and '___' in prompt:
+        lines.append(
+            '\nПосле <b>suggest</b> в разговорном английском чаще всего идёт '
+            '<b>-ing</b> (герундий):\n'
+            '✅ She suggested <b>leaving</b> earlier.\n'
+            '✅ She suggested <b>leaving</b> / to leave (реже)\n'
+            '❌ She suggested <b>leave</b> — так не говорят.'
+        )
+    elif 'look forward to' in prompt:
+        lines.append(
+            '\nПосле <b>look forward to</b> всегда <b>-ing</b>, потому что '
+            '<b>to</b> здесь — предлог, не часть инфинитива:\n'
+            '✅ I look forward to <b>seeing</b> you.'
+        )
+    return '\n'.join(lines)
 
 
 def task_instruction(item: dict) -> str:

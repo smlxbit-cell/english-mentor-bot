@@ -938,6 +938,7 @@ async def _start_diagnostic_test(
         'correct': 0,
         'skill': {},
         'skills_used': set(),
+        'asked_prompts': set(),
         'current': None,
         'challenge': False,
         'challenge_count': 0,
@@ -966,9 +967,11 @@ def _pick_diagnostic_item(diag: dict):
         diag['level_idx'],
         used_skills=diag.get('skills_used') or set(),
         prefer_skill=prefer,
+        asked_prompts=set(diag.get('asked_prompts') or []),
     )
     if item:
         diag.setdefault('skills_used', set()).add(item['skill'])
+        diag.setdefault('asked_prompts', set()).add(diag_flow.prompt_key(item))
         if item.get('skill') == 'listening':
             diag['listening_count'] = diag.get('listening_count', 0) + 1
     return item
@@ -989,6 +992,8 @@ def _diag_progress(diag: dict) -> int:
 
 async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data['diag']
+    if diag.get('pending_continue'):
+        return
     chat_id = _chat_id(update)
     limit = _diag_limit(diag)
 
@@ -1133,7 +1138,7 @@ async def _clear_diagnostic_buttons(update: Update) -> None:
 
 async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_know: bool = False):
     diag = context.user_data.get('diag')
-    if not diag or not diag.get('current'):
+    if not diag or not diag.get('current') or diag.get('pending_continue'):
         return
     item = diag['current']
     chat_id = _chat_id(update)
@@ -1152,22 +1157,60 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
         diag['level_idx'] = min(max_i, diag['level_idx'] + 1)
         await send_mentor_reaction(context, chat_id, 'answer_correct')
         feedback = 'Верно! 👍'
-    else:
-        diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
-        await send_mentor_reaction(context, chat_id, 'answer_wrong')
-        feedback = 'Ничего страшного — запомним 🙂' if dont_know \
-            else 'Не совсем — ничего страшного, идём дальше 🙂'
-        # Always show the correct answer, plus a short explanation when we have one.
-        if item.get('correct'):
-            feedback += f'\n\n✅ Правильно: <b>{_esc(item["correct"][0])}</b>'
-        tip = (item.get('explanation_ru') or '').strip()
-        if tip:
-            feedback += f'\n💡 {tip}'
+        diag['current'] = None
+        await _clear_diagnostic_buttons(update)
+        await _send(context, chat_id, feedback, parse_mode=ParseMode.HTML)
+        await _ask_next_diagnostic(update, context)
+        return
 
+    diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
+    await send_mentor_reaction(context, chat_id, 'answer_wrong')
+    feedback = 'Ничего страшного — запомним 🙂' if dont_know \
+        else 'Не совсем — ничего страшного, идём дальше 🙂'
+    if item.get('correct'):
+        feedback += f'\n\n✅ Правильно: <b>{_esc(item["correct"][0])}</b>'
+    tip = (item.get('explanation_ru') or '').strip()
+    if tip:
+        feedback += f'\n💡 {tip}'
+
+    diag['pending_continue'] = True
+    diag['last_wrong_item'] = item
+    diag['last_user_answer'] = '' if dont_know else answer_text
     diag['current'] = None
     await _clear_diagnostic_buttons(update)
-    await _send(context, chat_id, feedback, parse_mode=ParseMode.HTML)
+    await _send(
+        context, chat_id, feedback,
+        reply_markup=keyboards.diagnostic_wrong_kb(item['id']),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _diagnostic_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    diag = context.user_data.get('diag')
+    if not diag or not diag.get('pending_continue'):
+        return
+    diag['pending_continue'] = False
+    diag.pop('last_wrong_item', None)
+    diag.pop('last_user_answer', None)
     await _ask_next_diagnostic(update, context)
+
+
+async def _diagnostic_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
+    query = update.callback_query
+    diag = context.user_data.get('diag') or {}
+    item = diag.get('last_wrong_item')
+    if not item or item.get('id') != item_id:
+        if query:
+            await query.answer('Сначала ответь на вопрос 🙂', show_alert=True)
+        return
+    if query:
+        await query.answer()
+    detail = diag_flow.explanation_detail(item, diag.get('last_user_answer', ''))
+    await _send(
+        context, _chat_id(update), detail,
+        reply_markup=keyboards.diagnostic_continue_kb(),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def _begin_challenge_round(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3695,6 +3738,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer('Это прошлый вопрос 🙂', show_alert=True)
         else:
             await _handle_diagnostic_answer(update, context, '', dont_know=True)
+    elif data == 'diag:continue':
+        await query.answer()
+        await _diagnostic_continue(update, context)
+    elif data.startswith('diag:explain:'):
+        item_id = int(data.rsplit(':', 1)[1])
+        await _diagnostic_explain(update, context, item_id)
     elif data.startswith('diag:opt:'):
         # Legacy buttons from older messages (before diag:ans:id:idx).
         idx = int(data.rsplit(':', 1)[1])

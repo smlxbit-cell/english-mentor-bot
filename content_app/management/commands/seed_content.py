@@ -166,9 +166,9 @@ class Command(BaseCommand):
                                 'we went for a walk.'),
             dict(level='b2', skill='grammar', item_type='multiple_choice', order=3,
                  prompt='«Она предложила уйти пораньше»\n\nShe suggested ___ earlier.',
-                 options=['leaving', 'leave', 'to leave', 'left'], correct=['leaving', 'to leave'],
+                 options=['leaving', 'leave', 'to leave', 'left'], correct=['leaving'],
                  explanation_ru=(
-                     'После <b>suggest</b> обычно <b>-ing</b>: '
+                     'После <b>suggest</b> в разговорном английском идёт <b>-ing</b>: '
                      '<b>She suggested leaving</b> = она предложила уйти.'
                  )),
             dict(level='b2', skill='reading', item_type='multiple_choice', order=4,
@@ -218,11 +218,26 @@ class Command(BaseCommand):
                  explanation_ru='I need help = мне нужна помощь.'),
             dict(level='b2', skill='grammar', item_type='fill_gap', order=5,
                  prompt=(
-                     '«Она предложила уйти пораньше»\n\n'
-                     'She suggested ___ earlier.'
+                     '«К тому времени, как мы приехали, фильм уже начался»\n\n'
+                     'By the time we arrived, the film ___ already started.'
                  ),
-                 correct=['leaving', 'to leave'],
-                 explanation_ru='She suggested <b>leaving</b> = она предложила уйти.'),
+                 correct=['had'],
+                 explanation_ru=(
+                     'Past Perfect: <b>had started</b> — действие раньше другого в прошлом.'
+                 )),
+            dict(level='b2', skill='grammar', item_type='multiple_choice', order=8,
+                 prompt=(
+                     '«Если бы я знал(а) об этом раньше, я бы сказал(а)»\n\n'
+                     'If I ___ known earlier, I would have told you.'
+                 ),
+                 options=['had', 'have', 'would', 'was'],
+                 correct=['had'],
+                 explanation_ru='Третье условное: <b>If I had known</b>…, I would have…'),
+            dict(level='b2', skill='vocabulary', item_type='multiple_choice', order=9,
+                 prompt='«Она взяла на себя ответственность за проект»\n\nShe ___ responsibility for the project.',
+                 options=['took', 'made', 'did', 'got'],
+                 correct=['took'],
+                 explanation_ru='Устойчиво: <b>take responsibility</b> = взять ответственность.'),
             dict(level='b2', skill='speaking', item_type='speaking', order=6,
                  prompt='«Я согласен»\n\nКак сказать по-английски?',
                  keywords=['agree', 'i agree'],
@@ -235,6 +250,14 @@ class Command(BaseCommand):
                  options=['A table for two', 'A coffee to go', 'A hotel room'],
                  correct=['A table for two', 'a table for two'],
                  explanation_ru='Table for two = столик на двоих.'),
+            dict(level='a2', skill='grammar', item_type='multiple_choice', order=8,
+                 prompt=(
+                     '«Я не был там вчера»\n\n'
+                     'I ___ there yesterday.'
+                 ),
+                 options=["wasn't", "weren't", "didn't", "haven't"],
+                 correct=["wasn't", 'was not'],
+                 explanation_ru='Past Simple отрицание: <b>I wasn\'t there</b> yesterday.'),
             dict(level='b1', skill='listening', item_type='listening', order=7,
                  prompt=(
                      '🎧 Listen: «Could you send me the report by Friday?»\n\n'
@@ -251,6 +274,14 @@ class Command(BaseCommand):
                  options=['At ten', 'At two', 'Tomorrow'],
                  correct=['At ten', 'at ten', 'at 10'],
                  explanation_ru='At ten = в десять.'),
+            dict(level='b1', skill='grammar', item_type='multiple_choice', order=9,
+                 prompt=(
+                     '«Он сказал, что уже закончил работу»\n\n'
+                     'He said he ___ already finished the work.'
+                 ),
+                 options=['had', 'has', 'have', 'was'],
+                 correct=['had'],
+                 explanation_ru='Reported speech: <b>He said he had finished</b> (Past Perfect).'),
             dict(level='b2', skill='listening', item_type='listening', order=7,
                  prompt=(
                      '🎧 Listen: «Despite the rain, we enjoyed the walk.»\n\n'
