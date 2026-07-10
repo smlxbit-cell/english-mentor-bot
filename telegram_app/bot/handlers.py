@@ -18,6 +18,7 @@ import re
 from django.conf import settings
 from telegram import BotCommand, LabeledPrice, Update
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -102,10 +103,6 @@ _DIAG_CHECK_TYPE = {
 }
 
 
-# --------------------------------------------------------------------------- #
-# Small helpers
-# --------------------------------------------------------------------------- #
-
 async def _ensure_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> dict:
     profile = await db.get_or_create_profile(update.effective_user)
     context.user_data['profile_id'] = profile['id']
@@ -113,6 +110,14 @@ async def _ensure_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data['sphere_en'] = profile.get('sphere_en', '')
     context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
     return profile
+
+
+async def _ack_callback(query, text: str | None = None, *, show_alert: bool = False) -> None:
+    """Answer inline button — never let a stale query block the action."""
+    try:
+        await query.answer(text, show_alert=show_alert)
+    except BadRequest:
+        pass
 
 
 def _practice_topic(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -1164,7 +1169,6 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
         return
 
     diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
-    await send_mentor_reaction(context, chat_id, 'answer_wrong')
     feedback = 'Ничего страшного — запомним 🙂' if dont_know \
         else 'Не совсем — ничего страшного, идём дальше 🙂'
     if item.get('correct'):
@@ -1183,28 +1187,31 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
         reply_markup=keyboards.diagnostic_wrong_kb(item['id']),
         parse_mode=ParseMode.HTML,
     )
+    asyncio.create_task(send_mentor_reaction(context, chat_id, 'answer_wrong'))
 
 
 async def _diagnostic_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data.get('diag')
-    if not diag or not diag.get('pending_continue'):
+    if not diag:
         return
-    diag['pending_continue'] = False
-    diag.pop('last_wrong_item', None)
-    diag.pop('last_user_answer', None)
+    if not diag.get('pending_continue'):
+        if diag.get('current') or _diag_progress(diag) >= _diag_limit(diag):
+            return
+    else:
+        diag['pending_continue'] = False
+        diag.pop('last_wrong_item', None)
+        diag.pop('last_user_answer', None)
     await _ask_next_diagnostic(update, context)
 
 
 async def _diagnostic_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
-    query = update.callback_query
     diag = context.user_data.get('diag') or {}
     item = diag.get('last_wrong_item')
     if not item or item.get('id') != item_id:
+        query = update.callback_query
         if query:
-            await query.answer('Сначала ответь на вопрос 🙂', show_alert=True)
+            await _ack_callback(query, 'Сначала ответь на вопрос 🙂', show_alert=True)
         return
-    if query:
-        await query.answer()
     detail = diag_flow.explanation_detail(item, diag.get('last_user_answer', ''))
     await _send(
         context, _chat_id(update), detail,
@@ -3700,9 +3707,9 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
 
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    await _ensure_profile(update, context)
     data = query.data or ''
+    await _ack_callback(query)
+    await _ensure_profile(update, context)
 
     if data == 'diag:start':
         await _begin_diagnostic(update, context)
@@ -3722,7 +3729,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         diag = context.user_data.get('diag') or {}
         cur = diag.get('current') or {}
         if cur.get('id') != item_id:
-            await query.answer(
+            await _ack_callback(
+                query,
                 'Это прошлый вопрос — смотри последний выше 🙂',
                 show_alert=True,
             )
@@ -3735,11 +3743,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         diag = context.user_data.get('diag') or {}
         cur = diag.get('current') or {}
         if cur.get('id') != item_id:
-            await query.answer('Это прошлый вопрос 🙂', show_alert=True)
+            await _ack_callback(query, 'Это прошлый вопрос 🙂', show_alert=True)
         else:
             await _handle_diagnostic_answer(update, context, '', dont_know=True)
     elif data == 'diag:continue':
-        await query.answer()
         await _diagnostic_continue(update, context)
     elif data.startswith('diag:explain:'):
         item_id = int(data.rsplit(':', 1)[1])
@@ -3779,7 +3786,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'lesson:next':
         await _advance(update, context)
     elif data == 'lesson:skip':
-        await query.answer('Пропускаем 👍')
+        await _ack_callback(query, 'Пропускаем 👍')
         await _advance(update, context)
     elif data == 'lesson:ask':
         step = context.user_data.get('current_step') or {}
@@ -3806,7 +3813,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('lesson:open:'):
         await open_lesson(update, context, int(data.rsplit(':', 1)[1]))
     elif data == 'ex:hint':
-        await query.answer()
+        await _ack_callback(query)
         await _show_exercise_hint(update, context)
     elif data.startswith('ex:opt:'):
         idx = int(data.rsplit(':', 1)[1])
@@ -4012,7 +4019,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif data == 'intr:done':
         if not await db.has_any_interests(context.user_data['profile_id']):
-            await update.callback_query.answer(
+            await _ack_callback(
+                query,
                 'Выбери хотя бы один интерес или напиши свои',
                 show_alert=True,
             )
