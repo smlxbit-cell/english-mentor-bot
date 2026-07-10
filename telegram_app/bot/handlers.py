@@ -1414,14 +1414,29 @@ def _record_skill_answer(context: ContextTypes.DEFAULT_TYPE, correct: bool) -> N
 
 
 async def _skill_test_feedback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, item: dict, *, dont_know: bool,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    item: dict,
+    *,
+    is_correct: bool,
+    user_answer: str = '',
+    dont_know: bool = False,
 ) -> None:
-    if item.get('correct'):
-        tip = f'✅ Правильно: <b>{_esc(item["correct"][0])}</b>'
+    ua = (user_answer or '').strip()
+    if dont_know:
+        feedback = 'Не знаю — ничего страшного, идём дальше 🙂'
+    elif is_correct:
+        feedback = 'Верно! 👍'
+        if ua:
+            feedback += f'\n✅ Твой ответ: <b>{_esc(ua)}</b>'
     else:
-        tip = 'Ок.'
+        feedback = 'Не совсем — запомним 🙂'
+        if ua:
+            feedback += f'\nТвой ответ: <b>{_esc(ua)}</b>'
+        if item.get('correct'):
+            feedback += f'\n✅ Правильный ответ: <b>{_esc(item["correct"][0])}</b>'
     await _clear_diagnostic_buttons(update)
-    await _send(context, _chat_id(update), tip, parse_mode=ParseMode.HTML)
+    await _send(context, _chat_id(update), feedback, parse_mode=ParseMode.HTML)
 
 
 async def _handle_skill_test_choice(
@@ -1434,10 +1449,10 @@ async def _handle_skill_test_choice(
     correct_list = [c.lower().strip() for c in (item.get('correct') or [])]
     chosen = options[opt_idx] if 0 <= opt_idx < len(options) else ''
     is_correct = False if dont_know else chosen.lower().strip() in correct_list
-    if not is_correct:
-        await _skill_test_feedback(update, context, item, dont_know=dont_know)
-    else:
-        await _clear_diagnostic_buttons(update)
+    await _skill_test_feedback(
+        update, context, item,
+        is_correct=is_correct, user_answer=chosen, dont_know=dont_know,
+    )
     _record_skill_answer(context, is_correct)
     await _ask_skill_test_item(update, context)
 
@@ -1462,8 +1477,10 @@ async def _handle_skill_test_answer(
     else:
         target = item.get('model') or ' '.join(item.get('keywords') or [])
         ok = score_speaking(text, target).is_correct
-    if not ok:
-        await _skill_test_feedback(update, context, item, dont_know=dont_know)
+    await _skill_test_feedback(
+        update, context, item,
+        is_correct=ok, user_answer=text, dont_know=dont_know,
+    )
     _record_skill_answer(context, ok)
     await _ask_skill_test_item(update, context)
 
@@ -3268,15 +3285,27 @@ async def _save_schedule_and_finish(
     rest_txt = _rest_day_ru(rest_weekday)
     if context.user_data.pop('onboarding', False):
         await db.complete_onboarding(profile_id)
+        roadmap = await db.get_roadmap(profile_id)
+        from study_app.services.roadmap import format_roadmap_message
+
         await _send(
             context, _chat_id(update),
             f'Всё готово! 🎉 Рекомендуемый ритм: <b>{daily_minutes} мин</b> · '
             f'<b>{study_days_per_week} дн/нед</b> · отдых: <b>{rest_txt}</b>.\n\n'
             'Это твой ориентир на день. Внутри — эпизоды, слова, правила, '
-            'аудирование и наставник, с упором на выбранные навыки.\n\n'
-            'Жми «📚 Учиться» — там твой маршрут на сегодня.',
+            'аудирование и наставник, с упором на выбранные навыки.',
+            parse_mode=ParseMode.HTML,
+        )
+        await _send(
+            context, _chat_id(update),
+            format_roadmap_message(roadmap),
             reply_markup=keyboards.main_menu(),
             parse_mode=ParseMode.HTML,
+        )
+        await _send(
+            context, _chat_id(update),
+            'Жми «📚 Учиться» — там маршрут на сегодня 👇',
+            reply_markup=keyboards.main_menu(),
         )
         notify = await db.get_notification_settings(profile_id)
         if not notify.get('setup_done'):

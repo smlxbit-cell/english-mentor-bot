@@ -19,6 +19,19 @@ PLANNED_RULES = {'a1': 16, 'a2': 20, 'b1': 24, 'b2': 28, 'c1': 32, 'c2': 20}
 MINUTES_PER_EPISODE = 12
 MINUTES_PER_RULE = 5
 
+# Real CEFR jumps need more than in-app minutes alone (especially productive skills).
+LEVEL_GAP_MULTIPLIER = {
+    1: 1.4,
+    2: 2.2,
+    3: 3.0,
+}
+MIN_GOAL_MONTHS = {
+    ('b2', 'c1'): 4,
+    ('b1', 'c1'): 6,
+    ('a2', 'c1'): 9,
+}
+PRODUCTIVE_SKILLS = frozenset({'speaking', 'listening', 'reading', 'writing'})
+
 SKILL_FOCUS_RU = {
     'speaking': 'говорение',
     'listening': 'аудирование',
@@ -73,6 +86,32 @@ def _months_range(weeks_low: int, weeks_high: int) -> tuple[int, int]:
     m_low = max(1, int(weeks_low / 4.3))
     m_high = max(m_low + 1, int(weeks_high / 4.3) + 1)
     return (m_low, m_high)
+
+
+def _goal_realism_multiplier(profile: UserProfile, current: str, goal: str) -> float:
+    cur_i = _level_idx(current)
+    goal_i = _level_idx(goal)
+    gap = max(0, goal_i - cur_i)
+    mult = LEVEL_GAP_MULTIPLIER.get(gap, 1.0 + gap * 0.5)
+    if _norm_level(goal) == 'c1' and cur_i >= _level_idx('b2'):
+        mult = max(mult, 2.8)
+    focus = profile.skill_focus or profile.weak_skills or []
+    productive_weak = sum(1 for s in focus if s in PRODUCTIVE_SKILLS)
+    if productive_weak >= 2:
+        mult *= 1.0 + productive_weak * 0.12
+    return mult
+
+
+def _apply_goal_month_floor(
+    current: str, goal: str, months_low: int, months_high: int,
+) -> tuple[int, int]:
+    key = (_norm_level(current), _norm_level(goal))
+    floor = MIN_GOAL_MONTHS.get(key, 0)
+    if floor <= 0:
+        return months_low, months_high
+    months_low = max(months_low, floor)
+    months_high = max(months_high, months_low + 1)
+    return months_low, months_high
 
 
 def _content_totals(level: str) -> tuple[int, int]:
@@ -171,10 +210,17 @@ def build_roadmap(profile: UserProfile) -> dict:
         + max(0, rules_total - rules_done) * MINUTES_PER_RULE
     )
     goal_remaining = _remaining_to_goal(profile, current, goal)
+    realism = _goal_realism_multiplier(profile, current, goal)
+    goal_remaining = int(goal_remaining * realism)
 
     step_weeks = _weeks_range(step_remaining, daily_minutes=daily, study_days=study_days) if step_target else None
     goal_weeks = _weeks_range(goal_remaining, daily_minutes=daily, study_days=study_days)
     goal_months = _months_range(goal_weeks[0], goal_weeks[1])
+    goal_months = _apply_goal_month_floor(current, goal, goal_months[0], goal_months[1])
+    goal_weeks = (
+        max(goal_weeks[0], goal_months[0] * 4),
+        max(goal_weeks[1], goal_months[1] * 4),
+    )
 
     next_episode = get_next_episode_lesson(profile)
     focus = profile.skill_focus or profile.weak_skills or []
@@ -200,6 +246,7 @@ def build_roadmap(profile: UserProfile) -> dict:
         'goal_weeks_high': goal_weeks[1],
         'goal_months_low': goal_months[0],
         'goal_months_high': goal_months[1],
+        'goal_realism_note': _goal_realism_note(current, goal, focus),
         'journey_map': _journey_map(current, goal),
         'skill_focus': focus,
         'skill_focus_ru': [SKILL_FOCUS_RU.get(s, s) for s in focus[:4]],
@@ -208,6 +255,23 @@ def build_roadmap(profile: UserProfile) -> dict:
         'user_level': stats.level,
         'streak': stats.current_streak,
     }
+
+
+def _goal_realism_note(current: str, goal: str, focus: list[str]) -> str:
+    cur = _norm_level(current)
+    gol = _norm_level(goal)
+    if gol == 'c1' and _level_idx(cur) >= _level_idx('b2'):
+        weak = [SKILL_FOCUS_RU.get(s, s) for s in focus if s in PRODUCTIVE_SKILLS]
+        if weak:
+            return (
+                f'С упором на {", ".join(weak[:3])} путь к C1 обычно дольше, '
+                'чем только «пройти эпизоды» — срок учитывает это.'
+            )
+        return (
+            'Переход B2→C1 в жизни обычно занимает месяцы регулярной практики, '
+            'не только уроков в боте.'
+        )
+    return ''
 
 
 def format_roadmap_message(roadmap: dict) -> str:
@@ -250,6 +314,8 @@ def format_roadmap_message(roadmap: dict) -> str:
         f'⏱ ~{roadmap["goal_months_low"]}–{roadmap["goal_months_high"]} месяцев '
         f'({roadmap["goal_weeks_low"]}–{roadmap["goal_weeks_high"]} нед.)'
     )
+    if roadmap.get('goal_realism_note'):
+        lines.append(f'<i>{roadmap["goal_realism_note"]}</i>')
 
     lines.append('')
     lines.append(

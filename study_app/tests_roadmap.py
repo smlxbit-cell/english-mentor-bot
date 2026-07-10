@@ -49,11 +49,12 @@ class RoadmapTests(TestCase):
     def test_roadmap_with_target_c1(self):
         self.profile.cefr_level = 'B2'
         self.profile.target_cefr_level = 'C1'
+        self.profile.skill_focus = ['speaking', 'reading', 'writing']
         self.profile.save()
         data = build_roadmap(self.profile)
         self.assertEqual(data['goal_level'], 'C1')
         self.assertIn('C1', data['journey_map'])
-        self.assertGreater(data['goal_months_low'], 0)
+        self.assertGreaterEqual(data['goal_months_low'], 4)
 
     def test_format_includes_map_and_disclaimer(self):
         data = build_roadmap(self.profile)
