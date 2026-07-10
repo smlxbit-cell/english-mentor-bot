@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from content_app.diagnostic_explanations import diagnostic_deep_dive
+
 LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1']
 LEVEL_LABELS = {
     'a1': 'A1 (начальный)',
@@ -188,33 +190,21 @@ def explanation_detail(item: dict, user_answer: str = '', *, was_correct: bool =
             lines.append(f'Твой ответ: <b>{ua}</b> ✅')
         if correct:
             lines.append(f'Верно — <b>{correct}</b>')
-        if tip:
-            lines.append('')
-            lines.append(f'<b>Почему так:</b> {tip}')
     else:
         if ua:
             lines.append(f'Твой ответ: <b>{ua}</b>')
         if correct:
             lines.append(f'Правильно: <b>{correct}</b>')
-        if tip:
-            lines.append('')
-            lines.append(tip)
-    # Extra hint for suggest + -ing pattern
-    prompt = (item.get('prompt') or '').lower()
-    if 'suggested' in prompt and '___' in prompt:
-        lines.append(
-            '\nПосле <b>suggest</b> в разговорном английском чаще всего идёт '
-            '<b>-ing</b> (герундий):\n'
-            '✅ She suggested <b>leaving</b> earlier.\n'
-            '✅ She suggested <b>leaving</b> / to leave (реже)\n'
-            '❌ She suggested <b>leave</b> — так не говорят.'
-        )
-    elif 'look forward to' in prompt:
-        lines.append(
-            '\nПосле <b>look forward to</b> всегда <b>-ing</b>, потому что '
-            '<b>to</b> здесь — предлог, не часть инфинитива:\n'
-            '✅ I look forward to <b>seeing</b> you.'
-        )
+
+    deep = diagnostic_deep_dive(item)
+    if deep:
+        lines.append('')
+        lines.append(deep)
+    elif tip:
+        lines.append('')
+        prefix = '<b>Почему так:</b> ' if was_correct else ''
+        lines.append(f'{prefix}{tip}')
+
     return '\n'.join(lines)
 
 

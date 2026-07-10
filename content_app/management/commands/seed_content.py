@@ -162,8 +162,9 @@ class Command(BaseCommand):
             dict(level='b2', skill='vocabulary', item_type='multiple_choice', order=2,
                  prompt='«Несмотря на дождь, мы пошли гулять»\n\nDespite ___, we went for a walk.',
                  options=['the rain', 'rainy', 'raining'], correct=['the rain', 'rain'],
-                 explanation_ru='После <b>despite</b> — существительное: Despite <b>the rain</b>, '
-                                'we went for a walk.'),
+                 explanation_ru=(
+                     'После <b>despite</b> — существительное (<b>the rain</b>), не прилагательное и не глагол.'
+                 )),
             dict(level='b2', skill='grammar', item_type='multiple_choice', order=3,
                  prompt='«Она предложила уйти пораньше»\n\nShe suggested ___ earlier.',
                  options=['leaving', 'leave', 'to leave', 'left'], correct=['leaving'],
