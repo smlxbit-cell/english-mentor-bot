@@ -1155,17 +1155,30 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
     diag['skill'][skill] = [c + (1 if is_correct else 0), t + 1]
 
     min_i, max_i = diag['band']
+    user_answer = '' if dont_know else answer_text
     if is_correct:
         diag['correct'] = diag.get('correct', 0) + 1
         if diag.get('challenge'):
             diag['challenge_correct'] = diag.get('challenge_correct', 0) + 1
         diag['level_idx'] = min(max_i, diag['level_idx'] + 1)
-        await send_mentor_reaction(context, chat_id, 'answer_correct')
         feedback = 'Верно! 👍'
+        if user_answer.strip():
+            feedback += f'\n\n✅ Твой ответ: <b>{_esc(user_answer.strip())}</b>'
+        tip = (item.get('explanation_ru') or '').strip()
+        if tip:
+            feedback += f'\n💡 {tip}'
+        diag['pending_continue'] = True
+        diag['last_review_item'] = item
+        diag['last_user_answer'] = user_answer
+        diag['last_answer_correct'] = True
         diag['current'] = None
         await _clear_diagnostic_buttons(update)
-        await _send(context, chat_id, feedback, parse_mode=ParseMode.HTML)
-        await _ask_next_diagnostic(update, context)
+        await _send(
+            context, chat_id, feedback,
+            reply_markup=keyboards.diagnostic_review_kb(item['id']),
+            parse_mode=ParseMode.HTML,
+        )
+        asyncio.create_task(send_mentor_reaction(context, chat_id, 'answer_correct'))
         return
 
     diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
@@ -1178,13 +1191,14 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
         feedback += f'\n💡 {tip}'
 
     diag['pending_continue'] = True
-    diag['last_wrong_item'] = item
-    diag['last_user_answer'] = '' if dont_know else answer_text
+    diag['last_review_item'] = item
+    diag['last_user_answer'] = user_answer
+    diag['last_answer_correct'] = False
     diag['current'] = None
     await _clear_diagnostic_buttons(update)
     await _send(
         context, chat_id, feedback,
-        reply_markup=keyboards.diagnostic_wrong_kb(item['id']),
+        reply_markup=keyboards.diagnostic_review_kb(item['id']),
         parse_mode=ParseMode.HTML,
     )
     asyncio.create_task(send_mentor_reaction(context, chat_id, 'answer_wrong'))
@@ -1199,20 +1213,26 @@ async def _diagnostic_continue(update: Update, context: ContextTypes.DEFAULT_TYP
             return
     else:
         diag['pending_continue'] = False
+        diag.pop('last_review_item', None)
         diag.pop('last_wrong_item', None)
         diag.pop('last_user_answer', None)
+        diag.pop('last_answer_correct', None)
     await _ask_next_diagnostic(update, context)
 
 
 async def _diagnostic_explain(update: Update, context: ContextTypes.DEFAULT_TYPE, item_id: int):
     diag = context.user_data.get('diag') or {}
-    item = diag.get('last_wrong_item')
+    item = diag.get('last_review_item') or diag.get('last_wrong_item')
     if not item or item.get('id') != item_id:
         query = update.callback_query
         if query:
             await _ack_callback(query, 'Сначала ответь на вопрос 🙂', show_alert=True)
         return
-    detail = diag_flow.explanation_detail(item, diag.get('last_user_answer', ''))
+    detail = diag_flow.explanation_detail(
+        item,
+        diag.get('last_user_answer', ''),
+        was_correct=bool(diag.get('last_answer_correct')),
+    )
     await _send(
         context, _chat_id(update), detail,
         reply_markup=keyboards.diagnostic_continue_kb(),

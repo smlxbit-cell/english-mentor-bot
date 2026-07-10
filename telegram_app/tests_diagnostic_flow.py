@@ -52,6 +52,16 @@ class DiagnosticFlowTests(TestCase):
         item = diag_flow.pick_item(group, asked, (3, 3), 3, asked_prompts=prompts)
         self.assertEqual(item['id'], 3)
 
+    def test_explanation_detail_correct(self):
+        item = {
+            'correct': ['had'],
+            'explanation_ru': 'Нереальное сейчас: <b>If I had</b> more time…',
+            'prompt': 'If I ___ more time, I would travel.',
+        }
+        text = diag_flow.explanation_detail(item, 'had', was_correct=True)
+        self.assertIn('✅', text)
+        self.assertIn('Почему так', text)
+
     def test_b2_primary_strong_stays_b2_without_challenge(self):
         diag = {
             'claimed': 'b2', 'claimed_idx': 3,

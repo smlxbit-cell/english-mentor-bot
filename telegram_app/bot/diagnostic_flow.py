@@ -177,18 +177,28 @@ def prompt_key(item: dict) -> str:
     return p[:120]
 
 
-def explanation_detail(item: dict, user_answer: str = '') -> str:
-    """Longer rule explanation after a wrong diagnostic answer."""
+def explanation_detail(item: dict, user_answer: str = '', *, was_correct: bool = False) -> str:
+    """Rule breakdown after a diagnostic answer (right or wrong)."""
     tip = (item.get('explanation_ru') or '').strip()
     correct = (item.get('correct') or [''])[0]
+    ua = (user_answer or '').strip()
     lines = ['💡 <b>Разбор</b>']
-    if user_answer and user_answer.strip():
-        lines.append(f'Твой ответ: <b>{user_answer.strip()}</b>')
-    if correct:
-        lines.append(f'Правильно: <b>{correct}</b>')
-    if tip:
-        lines.append('')
-        lines.append(tip)
+    if was_correct:
+        if ua:
+            lines.append(f'Твой ответ: <b>{ua}</b> ✅')
+        if correct:
+            lines.append(f'Верно — <b>{correct}</b>')
+        if tip:
+            lines.append('')
+            lines.append(f'<b>Почему так:</b> {tip}')
+    else:
+        if ua:
+            lines.append(f'Твой ответ: <b>{ua}</b>')
+        if correct:
+            lines.append(f'Правильно: <b>{correct}</b>')
+        if tip:
+            lines.append('')
+            lines.append(tip)
     # Extra hint for suggest + -ing pattern
     prompt = (item.get('prompt') or '').lower()
     if 'suggested' in prompt and '___' in prompt:
