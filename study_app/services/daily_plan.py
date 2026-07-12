@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, datetime
 
 from django.db.models import Q
 from django.utils import timezone
 
 from content_app.models import Lesson
-from study_app.daily_facts import DAILY_FACTS, GREETING_VARIANTS, warmup_label
+from study_app.daily_facts import DAILY_FACTS, pick_plan_greeting, warmup_label
 from study_app.listening_bites import pick_listening_bite
 from study_app.speaking_bites import pick_speaking_bite
 from study_app.models import DailySession, DailySessionBlock, LessonProgress
@@ -55,16 +55,15 @@ def _pick_fact(user_id: int, day: date) -> dict:
     return DAILY_FACTS[idx]
 
 
-def _pick_greeting(name: str, user_id: int, day: date, *, rest: bool = False) -> str:
-    if rest:
-        variants = [
-            'Привет, {name}! Сегодня день отдыха — лёгкая разминка и всё 🌿',
-            '{name}, сегодня в твоём плане день отдыха. Отдохни — прогресс не сгорит.',
-        ]
-        idx = (_day_seed(user_id, day) // 3) % len(variants)
-        return variants[idx].format(name=name or 'друг')
-    idx = (_day_seed(user_id, day) // 7) % len(GREETING_VARIANTS)
-    return GREETING_VARIANTS[idx].format(name=name or 'друг')
+def _pick_greeting(
+    name: str,
+    user_id: int,
+    day: date,
+    *,
+    rest: bool = False,
+    now: datetime | None = None,
+) -> str:
+    return pick_plan_greeting(name, user_id, day, rest=rest, now=now)
 
 
 def _has_active_subscription(profile: UserProfile) -> bool:
@@ -427,23 +426,29 @@ def _structured_plan(items: list[dict], *, daily_minutes: int) -> dict:
 def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) -> dict:
     """Create or refresh today's DailySession and return a plan dict for the bot."""
     day = day or timezone.localdate()
+    now = timezone.localtime()
     premium = _has_active_subscription(profile)
     fact = _pick_fact(profile.id, day)
     rest = is_rest_day(profile, day)
     minutes = effective_daily_minutes(profile)
-    greeting = _pick_greeting(profile.first_name, profile.id, day, rest=rest)
+    greeting = _pick_greeting(profile.first_name, profile.id, day, rest=rest, now=now)
     interest_hint = _interest_hint(profile)
     schedule_hint = _schedule_hint(profile) if profile.study_schedule_set else ''
+    full_intro = greeting + interest_hint + schedule_hint
 
     session, created = DailySession.objects.get_or_create(
         user=profile,
         date=day,
         defaults={
             'title': 'День отдыха' if rest else 'Глава дня',
-            'intro_text': greeting + interest_hint + schedule_hint,
+            'intro_text': full_intro,
             'status': DailySession.Status.PLANNED,
         },
     )
+
+    if not created and session.intro_text != full_intro:
+        session.intro_text = full_intro
+        session.save(update_fields=['intro_text', 'updated_at'])
 
     if not created and session.status in {DailySession.Status.PLANNED, DailySession.Status.ACTIVE}:
         _purge_legacy_rules_blocks(session)
@@ -463,7 +468,7 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
     return {
         'session_id': session.id,
         'date': day.isoformat(),
-        'greeting': session.intro_text or greeting,
+        'greeting': full_intro,
         'premium': premium,
         'trial_left': trial_left,
         'daily_minutes': minutes,

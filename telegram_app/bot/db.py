@@ -1522,6 +1522,7 @@ def users_due_reminder(hour: int, minute: int = 0) -> list[dict]:
             continue
         plan = build_or_get_daily_plan(profile)
         result.append({
+            'profile_id': profile.id,
             'telegram_id': profile.telegram_id,
             'first_name': profile.first_name or '',
             'plan': plan,
