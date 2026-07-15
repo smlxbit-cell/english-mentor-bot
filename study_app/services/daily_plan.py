@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from content_app.models import Lesson
-from study_app.daily_facts import DAILY_FACTS, pick_plan_greeting, warmup_label
+from study_app.daily_facts import pick_daily_fact, pick_plan_greeting, warmup_label
 from study_app.listening_bites import pick_listening_bite
 from study_app.speaking_bites import pick_speaking_bite
 from study_app.models import DailySession, DailySessionBlock, LessonProgress
@@ -50,9 +50,18 @@ def is_rest_day(profile: UserProfile, day: date) -> bool:
     return day.weekday() == rw
 
 
-def _pick_fact(user_id: int, day: date) -> dict:
-    idx = _day_seed(user_id, day) % len(DAILY_FACTS)
-    return DAILY_FACTS[idx]
+def _pick_fact(user_id: int, day: date, profile: UserProfile | None = None) -> dict:
+    tokens: list[str] = []
+    if profile is not None:
+        tokens = list(
+            UserInterest.objects.filter(user=profile)
+            .select_related('interest')
+            .values_list('interest__name', flat=True)[:8]
+        )
+        custom = (profile.interests_custom or '').strip()
+        if custom:
+            tokens.extend(p.strip() for p in custom.split(',') if p.strip())
+    return pick_daily_fact(user_id, day, interest_tokens=tokens)
 
 
 def _pick_greeting(
@@ -187,17 +196,43 @@ def _skill_focus_set(profile: UserProfile) -> set[str]:
 
 
 def _include_listening(profile: UserProfile, minutes_budget: int) -> bool:
-    if 'listening' in _skill_focus_set(profile):
-        return minutes_budget >= 20
-    return minutes_budget >= 30
+    """Listening bite: default from 30+; at 20 only if listening is a focus skill."""
+    focus = _skill_focus_set(profile)
+    if minutes_budget >= 30:
+        # At 30+, always include unless speaking is the only focus and we need room —
+        # still include listening for balanced days.
+        return True
+    if minutes_budget >= 20 and 'listening' in focus:
+        return True
+    return False
 
 
 def _include_speaking(profile: UserProfile, minutes_budget: int) -> bool:
-    if profile.speaking_anxiety in ('high', 'mild'):
-        return minutes_budget >= 20
-    if 'speaking' in _skill_focus_set(profile):
-        return minutes_budget >= 20
+    """Speaking bite: default from 30+; at 20 if focus/anxiety."""
+    focus = _skill_focus_set(profile)
+    if profile.speaking_anxiety in ('high', 'mild') and minutes_budget >= 20:
+        return True
+    if minutes_budget >= 30:
+        return True
+    if minutes_budget >= 20 and 'speaking' in focus:
+        return True
     return False
+
+
+def _optional_block_order(profile: UserProfile) -> list[str]:
+    """Priority for optional blocks when both listening and speaking fit."""
+    focus = _skill_focus_set(profile)
+    order = []
+    if 'speaking' in focus or profile.speaking_anxiety in ('high', 'mild'):
+        order.append('speaking')
+    if 'listening' in focus:
+        order.append('listening')
+    if 'grammar' in focus or 'vocabulary' in focus:
+        order.append('rule_drill')
+    for key in ('speaking', 'listening', 'rule_drill'):
+        if key not in order:
+            order.append(key)
+    return order
 
 
 def _target_minutes_for_item(item: dict) -> int:
@@ -276,53 +311,71 @@ def _build_initial_blocks(
         )
         order += 1
 
-    if _include_speaking(profile, minutes_budget) and not _block_exists(session, 'speaking'):
-        bite = pick_speaking_bite(profile.id, day)
-        DailySessionBlock.objects.create(
-            session=session,
-            order=order,
-            block_type=DailySessionBlock.BlockType.DIALOGUE,
-            title=bite['title'],
-            content={
-                'item_type': 'speaking',
-                'title': bite['title'],
-                'prompt_ru': bite['prompt_ru'],
-                'prompt_en': bite['prompt_en'],
-                'model_answer': bite['model_answer'],
-                'keywords': bite.get('keywords', []),
-                'minutes': bite.get('minutes', SPEAKING_MINUTES),
-            },
-        )
-        order += 1
+    want_speaking = _include_speaking(profile, minutes_budget)
+    want_listening = _include_listening(profile, minutes_budget)
+    want_drill = minutes_budget >= 60
+    # At 20 min: at most one optional bite (focus/anxiety), keep spine light.
+    if minutes_budget < 30:
+        prefer = _optional_block_order(profile)
+        chosen = None
+        for key in prefer:
+            if key == 'speaking' and want_speaking:
+                chosen = 'speaking'
+                break
+            if key == 'listening' and want_listening:
+                chosen = 'listening'
+                break
+        want_speaking = chosen == 'speaking'
+        want_listening = chosen == 'listening'
+        want_drill = False
 
-    if _include_listening(profile, minutes_budget) and not _block_exists(session, 'listening'):
-        level = (profile.cefr_level or 'a2').lower()
-        bite = pick_listening_bite(profile.id, day, user_level=level)
-        DailySessionBlock.objects.create(
-            session=session,
-            order=order,
-            block_type=DailySessionBlock.BlockType.DIALOGUE,
-            title=bite['title'],
-            content={
-                'item_type': 'listening',
-                'title': bite['title'],
-                'lines': bite['lines'],
-                'question_ru': bite['question_ru'],
-                'options': bite['options'],
-                'correct_index': bite['correct_index'],
-                'minutes': bite.get('minutes', 4),
-            },
-        )
-        order += 1
-
-    if minutes_budget >= 60 and not _block_exists(session, 'rule_drill'):
-        DailySessionBlock.objects.create(
-            session=session,
-            order=order,
-            block_type=DailySessionBlock.BlockType.EXERCISE,
-            title='Тренировка правил',
-            content={'item_type': 'rule_drill'},
-        )
+    for key in _optional_block_order(profile):
+        if key == 'speaking' and want_speaking and not _block_exists(session, 'speaking'):
+            bite = pick_speaking_bite(profile.id, day)
+            DailySessionBlock.objects.create(
+                session=session,
+                order=order,
+                block_type=DailySessionBlock.BlockType.DIALOGUE,
+                title=bite['title'],
+                content={
+                    'item_type': 'speaking',
+                    'title': bite['title'],
+                    'prompt_ru': bite['prompt_ru'],
+                    'prompt_en': bite['prompt_en'],
+                    'model_answer': bite['model_answer'],
+                    'keywords': bite.get('keywords', []),
+                    'minutes': bite.get('minutes', SPEAKING_MINUTES),
+                },
+            )
+            order += 1
+        elif key == 'listening' and want_listening and not _block_exists(session, 'listening'):
+            level = (profile.cefr_level or 'a2').lower()
+            bite = pick_listening_bite(profile.id, day, user_level=level)
+            DailySessionBlock.objects.create(
+                session=session,
+                order=order,
+                block_type=DailySessionBlock.BlockType.DIALOGUE,
+                title=bite['title'],
+                content={
+                    'item_type': 'listening',
+                    'title': bite['title'],
+                    'lines': bite['lines'],
+                    'question_ru': bite['question_ru'],
+                    'options': bite['options'],
+                    'correct_index': bite['correct_index'],
+                    'minutes': bite.get('minutes', 4),
+                },
+            )
+            order += 1
+        elif key == 'rule_drill' and want_drill and not _block_exists(session, 'rule_drill'):
+            DailySessionBlock.objects.create(
+                session=session,
+                order=order,
+                block_type=DailySessionBlock.BlockType.GRAMMAR,
+                title='Тренировка правил',
+                content={'item_type': 'rule_drill'},
+            )
+            order += 1
 
 
 def ensure_bonus_blocks(session: DailySession, profile: UserProfile) -> None:
@@ -339,13 +392,17 @@ def ensure_bonus_blocks(session: DailySession, profile: UserProfile) -> None:
     if not due:
         return
 
+    minutes_budget = effective_daily_minutes(profile)
+    # 60-min days: expand SRS window; shorter days: capped review.
+    count = min(due, 12) if minutes_budget >= 60 else min(due, 6)
+
     max_order = max((b.order for b in session.blocks.all()), default=0)
     DailySessionBlock.objects.create(
         session=session,
         order=max_order + 1,
         block_type=DailySessionBlock.BlockType.VOCABULARY,
         title='Бонус: слова',
-        content={'item_type': 'words', 'count': due},
+        content={'item_type': 'words', 'count': count},
     )
 
 
@@ -428,7 +485,7 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
     day = day or timezone.localdate()
     now = timezone.localtime()
     premium = _has_active_subscription(profile)
-    fact = _pick_fact(profile.id, day)
+    fact = _pick_fact(profile.id, day, profile)
     rest = is_rest_day(profile, day)
     minutes = effective_daily_minutes(profile)
     greeting = _pick_greeting(profile.first_name, profile.id, day, rest=rest, now=now)

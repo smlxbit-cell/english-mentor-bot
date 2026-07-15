@@ -62,14 +62,26 @@ class DailyPlanV2Tests(TestCase):
     def test_plan_includes_listening_for_30_min(self):
         plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 8))
         self.assertIsNotNone(plan.get('listening'))
+        self.assertIsNotNone(plan.get('speaking'))
         self.assertGreater(plan.get('progress_minutes_total', 0), 10)
         self.assertIn('progress_percent', plan)
 
+    def test_plan_60_min_has_rule_drill(self):
+        self.profile.daily_minutes = 60
+        self.profile.save()
+        plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 15))
+        self.assertIsNotNone(plan.get('listening'))
+        self.assertIsNotNone(plan.get('speaking'))
+        self.assertIsNotNone(plan.get('rule_drill'))
+
     def test_plan_20_min_no_listening(self):
         self.profile.daily_minutes = 20
+        self.profile.skill_focus = []
+        self.profile.speaking_anxiety = 'none'
         self.profile.save()
         plan = build_or_get_daily_plan(self.profile, day=date(2026, 7, 9))
         self.assertIsNone(plan.get('listening'))
+        self.assertIsNone(plan.get('speaking'))
 
     def test_plan_20_min_speaking_when_focus(self):
         self.profile.daily_minutes = 20

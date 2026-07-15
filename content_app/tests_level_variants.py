@@ -42,3 +42,18 @@ class LevelVariantTests(TestCase):
         }]
         out = apply_level_variants(steps, 'a2')
         self.assertEqual(out[0]['content']['correct'], ['easy'])
+
+    def test_variant_can_patch_step_text(self):
+        steps = [{
+            'text': 'Base prompt',
+            'content': {
+                'level_variants': {
+                    'b1': {'text': 'Harder prompt', 'correct': ['x']},
+                },
+                'correct': ['y'],
+            },
+        }]
+        out = apply_level_variants(steps, 'b1')
+        self.assertEqual(out[0]['text'], 'Harder prompt')
+        self.assertEqual(out[0]['content']['correct'], ['x'])
+        self.assertNotIn('level_variants', out[0]['content'])

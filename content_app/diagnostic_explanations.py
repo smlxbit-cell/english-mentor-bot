@@ -229,6 +229,49 @@ def diagnostic_deep_dive(item: dict) -> str:
         }
         extra = _option_section(item, notes)
         return f'{body}\n\n{extra}' if extra else body
+    if 'would like a cup of coffee' in p or 'чашку кофе' in p:
+        body = (
+            '<b>Грамматика:</b> вежливая просьба — <b>I would like…</b>\n'
+            '✅ I would like a cup of coffee.\n'
+            '❌ I am like… — «like» здесь не «нравиться» в этой конструкции.\n'
+            '❌ I would liking… — после would нужен инфинитив без -ing.'
+        )
+        notes = {
+            'I am like a cup of coffee': 'неверная конструкция (похоже на «я похож на…»).',
+            'I would liking coffee': 'после would — базовая форма глагола: would like.',
+        }
+        extra = _option_section(item, notes)
+        return f'{body}\n\n{extra}' if extra else body
+    if 'has already finished' in p or 'present perfect' in p:
+        body = (
+            '<b>Грамматика:</b> <b>has/have + V3</b> = Present Perfect.\n'
+            '✅ She <b>has already finished</b> — результат уже есть.\n'
+            'Past Simple (finished yesterday) — про законченный момент в прошлом.'
+        )
+        notes = {
+            'Past Simple': 'Past Simple — когда есть ясный момент в прошлом (yesterday).',
+            'Future': 'Future — про будущее; already здесь не про будущее.',
+        }
+        extra = _option_section(item, notes)
+        return f'{body}\n\n{extra}' if extra else body
+    if 'i wish i spoke' in p:
+        return (
+            '<b>Грамматика:</b> <b>I wish + Past Simple</b> = сожаление о настоящем.\n'
+            '✅ I wish I <b>spoke</b> English fluently — хотел бы говорить свободно (сейчас не так).\n'
+            'Это не про прошлое событие, а про желание изменить текущую ситуацию.'
+        )
+    if 'corroborate' in p:
+        body = (
+            '<b>Лексика (C1):</b> <b>corroborate</b> = подтверждать (факты, гипотезу).\n'
+            'The findings corroborate our hypothesis.'
+        )
+        notes = {
+            'confuse': 'confuse = путать.',
+            'consist': 'consist (of) = состоять из.',
+            'complain': 'complain = жаловаться.',
+        }
+        extra = _option_section(item, notes)
+        return f'{body}\n\n{extra}' if extra else body
 
     # Vocabulary MC: show translations for all options
     options = item.get('options') or []

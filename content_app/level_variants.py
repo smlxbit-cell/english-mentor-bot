@@ -51,7 +51,12 @@ def apply_level_variants(steps: list[dict], user_level: str) -> list[dict]:
                     best_patch = patch
                     best_idx = idx
             if best_patch:
-                content = {**content, **best_patch}
+                patch = dict(best_patch)
+                if 'text' in patch:
+                    step['text'] = patch.pop('text')
+                if 'title' in patch:
+                    step['title'] = patch.pop('title')
+                content = {**content, **patch}
 
         step['content'] = content
         resolved.append(step)

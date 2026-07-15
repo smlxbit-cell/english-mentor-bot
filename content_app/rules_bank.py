@@ -395,4 +395,65 @@ RULES_BANK: list[dict] = [
         ],
         'tip_ru': 'В Slack/Teams три коротких предложения часто лучше абзаца.',
     },
+    # ── B1 · Present Perfect / Conditionals ───────────────────────────
+    {
+        'key': 'present-perfect-since-for',
+        'level': 'b1',
+        'topic': 'Present Perfect',
+        'title': 'Since / For',
+        'order': 1,
+        'summary_ru': 'Present Perfect: since = точка начала, for = длительность.',
+        'table': {
+            'headers': ['Слово', 'Пример', 'Перевод'],
+            'rows': [
+                ['since', "I've lived here since 2010.", 'Я живу здесь с 2010.'],
+                ['for', "I've lived here for 5 years.", 'Я живу здесь 5 лет.'],
+                ['already', 'She has already finished.', 'Она уже закончила.'],
+            ],
+        },
+        'examples': [
+            {'en': "I've known her since university.", 'ru': 'Я знаю её с университета.'},
+            {'en': 'We have worked together for two years.', 'ru': 'Мы работаем вместе два года.'},
+        ],
+        'tip_ru': 'Since + дата/момент. For + период (for a week / for years).',
+    },
+    {
+        'key': 'second-conditional',
+        'level': 'b1',
+        'topic': 'Условие',
+        'title': 'Второе условное (If I had…)',
+        'order': 1,
+        'summary_ru': 'Нереальное сейчас: If + Past Simple, would + глагол.',
+        'table': {
+            'headers': ['Часть', 'Пример', 'Перевод'],
+            'rows': [
+                ['If…', 'If I had more time,', 'Если бы у меня было больше времени,'],
+                ['…would', 'I would travel more.', 'я бы больше путешествовал.'],
+                ['Wish', 'I wish I spoke English fluently.', 'Хотел бы говорить свободно.'],
+            ],
+        },
+        'examples': [
+            {'en': 'If I knew, I would tell you.', 'ru': 'Если бы я знал, я бы сказал.'},
+        ],
+        'tip_ru': 'С I после if — was или were: If I were you… (формальная норма).',
+    },
+    {
+        'key': 'suggest-gerund',
+        'level': 'b2',
+        'topic': 'Герундий',
+        'title': 'Suggest + -ing',
+        'order': 1,
+        'summary_ru': 'После suggest обычно герундий: suggested leaving.',
+        'table': {
+            'headers': ['Форма', 'Пример', 'Перевод'],
+            'rows': [
+                ['suggest + -ing', 'She suggested leaving earlier.', 'Она предложила уйти раньше.'],
+                ['look forward to + -ing', 'I look forward to seeing you.', 'Жду встречи.'],
+            ],
+        },
+        'examples': [
+            {'en': 'He suggested taking a taxi.', 'ru': 'Он предложил взять такси.'},
+        ],
+        'tip_ru': 'Не «suggested leave» — нужна форма -ing.',
+    },
 ]

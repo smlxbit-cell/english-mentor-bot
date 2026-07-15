@@ -44,3 +44,9 @@ class DailyGreetingsTests(TestCase):
     def test_reminder_includes_quote(self):
         lines = pick_reminder_lines('Мария', 5, date(2026, 7, 12), 10)
         self.assertTrue(any('💬' in ln for ln in lines))
+
+    def test_interest_biased_fact(self):
+        from study_app.daily_facts import pick_daily_fact
+        day = date(2026, 7, 12)
+        fact = pick_daily_fact(99, day, interest_tokens=['Музыка'])
+        self.assertIn('music', fact.get('topics') or [])

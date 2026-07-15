@@ -90,14 +90,42 @@ _COFFEE_STEPS = [
              '(Что для вас?)\n\n'
              'Как вежливо заказать кофе?\n'
              '<i>Не уверен? Нажми 💡 Подсказка</i>',
-     'content': {'exercise_type': 'multiple_choice',
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'options': ['Give me coffee.',
+                     'I would like a coffee, please.',
+                     'Coffee now.'],
+         'correct': ['I would like a coffee, please.'],
+         'rule_key': 'polite-requests',
+         'hint_detail_ru': _COFFEE_HINT_POLITE,
+         'explanation': (
+             '✅ <b>I would like a coffee, please</b> — мягкая просьба.\n'
+             '❌ <b>Give me coffee</b> — приказ, звучит грубо.\n'
+             '❌ <b>Coffee now</b> — обрывки слов, не фраза.'
+         ),
+         'level_variants': {
+             'a1': {
                  'options': ['Give me coffee.',
                              'I would like a coffee, please.',
                              'Coffee now.'],
                  'correct': ['I would like a coffee, please.'],
-                 'rule_key': 'polite-requests',
-                 'hint_detail_ru': _COFFEE_HINT_POLITE,
-                 'explanation': '«I would like … , please» — вежливый заказ в кафе.'}},
+             },
+             'b1': {
+                 'options': [
+                     'I want coffee.',
+                     'I would like a coffee, please.',
+                     'Give me the coffee now.',
+                     'Coffee for me.',
+                 ],
+                 'correct': ['I would like a coffee, please.'],
+                 'explanation': (
+                     '✅ <b>I would like…, please</b> — норма в кафе.\n'
+                     '❌ <b>I want</b> / приказы — слишком прямолинейно.\n'
+                     '❌ <b>Coffee for me</b> — неполно и резко.'
+                 ),
+             },
+         },
+     }},
     {'type': 'dialogue', 'skill': 'listening',
      'text': '💬 У стойки — послушай диалог:',
      'content': {'lines': [
@@ -137,48 +165,88 @@ _COFFEE_STEPS = [
      }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Верно или нет?\n\n«I want a coffee» — вежливая фраза для кафе.',
-     'content': {'exercise_type': 'true_false',
-                 'options': ['Верно', 'Неверно'],
-                 'correct': ['Неверно'],
-                 'explanation': 'Грубовато. Лучше: «I would like a coffee, please.»',
-                 'rule_key': 'polite-requests',
-                 'hint_detail_ru': _COFFEE_HINT_POLITE}},
+     'content': {
+         'exercise_type': 'true_false',
+         'options': ['Верно', 'Неверно'],
+         'correct': ['Неверно'],
+         'explanation': (
+             '❌ <b>I want</b> в кафе звучит грубовато.\n'
+             '✅ Лучше: <b>I would like a coffee, please.</b>'
+         ),
+         'rule_key': 'polite-requests',
+         'hint_detail_ru': _COFFEE_HINT_POLITE,
+     }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Заполни пропуск:\n\nI ___ like a tea, please.',
-     'content': {'exercise_type': 'fill_gap', 'correct': ['would'],
-                 'rule_key': 'polite-requests',
-                 'hint_detail_ru': (
-                     '💡 Нужно слово <b>would</b> — вместе с <b>like</b> это вежливое '
-                     '«хотел(а) бы»: <b>would like</b>.'
-                 ),
-                 'explanation': 'would like = вежливое «хотел бы».'}},
+     'content': {
+         'exercise_type': 'fill_gap',
+         'correct': ['would'],
+         'rule_key': 'polite-requests',
+         'hint_detail_ru': (
+             '💡 Нужно слово <b>would</b> — вместе с <b>like</b> это вежливое '
+             '«хотел(а) бы»: <b>would like</b>.'
+         ),
+         'explanation': (
+             '✅ <b>would</b> + like = «хотел(а) бы».\n'
+             'Полная фраза: I <b>would</b> like a tea, please.'
+         ),
+         'level_variants': {
+             'b1': {
+                 'text': 'Заполни пропуск:\n\nI ___ like a latte and a croissant, please.',
+                 'correct': ['would'],
+             },
+         },
+     }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Собери фразу из слов:\n\nlike / a / I / coffee / would / please',
-     'content': {'exercise_type': 'word_order',
-                 'rule_key': 'polite-requests',
-                 'hint_detail_ru': _COFFEE_HINT_POLITE,
-                 'correct': ['i would like a coffee please'],
-                 'explanation': 'I would like a coffee, please.'}},
+     'content': {
+         'exercise_type': 'word_order',
+         'rule_key': 'polite-requests',
+         'hint_detail_ru': _COFFEE_HINT_POLITE,
+         'correct': ['i would like a coffee please'],
+         'explanation': 'Порядок: I + would like + a coffee + please.',
+     }},
     {'type': 'speaking', 'skill': 'speaking',
-     'text': 'Теперь скажи вслух свой заказ:',
-     'content': {'target': 'A cup of coffee, please.'}},
+     'text': 'Теперь скажи вслух свой заказ:\n'
+             '🇬🇧 A cup of coffee, please.\n'
+             '(Чашку кофе, пожалуйста.)',
+     'content': {
+         'target': 'A cup of coffee, please.',
+         'level_variants': {
+             'a1': {'target': 'A cup of coffee, please.'},
+             'b1': {'target': 'I would like a cup of coffee, please.'},
+             'b2': {'target': 'Could I have a coffee, please?'},
+         },
+     }},
     {'type': 'exercise', 'skill': 'vocabulary',
      'text': 'Том спрашивает:\n'
              '🇬🇧 Anything else?\n'
              '(Ещё что-нибудь?)\n\n'
              'Как вежливо сказать «Нет, спасибо»?',
-     'content': {'exercise_type': 'multiple_choice',
-                 'options': ['No.', 'No, thank you.', 'Not.'],
-                 'correct': ['No, thank you.'],
-                 'hint_detail_ru': (
-                     '💡 Вежливый отказ: <b>No, thank you</b> — «Нет, спасибо». '
-                     'Просто «No» звучит сухо.'
-                 ),
-                 'explanation': '«No, thank you» — вежливый отказ.'}},
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'options': ['No.', 'No, thank you.', 'Not.'],
+         'correct': ['No, thank you.'],
+         'hint_detail_ru': (
+             '💡 Вежливый отказ: <b>No, thank you</b> — «Нет, спасибо». '
+             'Просто «No» звучит сухо.'
+         ),
+         'explanation': (
+             '✅ <b>No, thank you</b> — вежливый отказ.\n'
+             '❌ <b>No</b> — слишком резко у стойки.\n'
+             '❌ <b>Not</b> — так не отвечают на «Anything else?».'
+         ),
+     }},
+    {'type': 'exercise', 'skill': 'vocabulary',
+     'text': 'Практика из твоей сферы — задание подстроится под тебя:',
+     'content': {'personalize': True, 'skill': 'vocabulary'}},
     {'type': 'reflection',
      'text': '🧠 <b>Совет:</b> не бойся ошибок. Мозг запоминает язык быстрее, '
              'когда ты говоришь вслух — даже с ошибками. Каждая попытка '
-             'приближает к цели.'},
+             'приближает к цели.\n\n'
+             '🇬🇧 Speaking out loud helps your brain remember.\n'
+             '(Говорить вслух помогает мозгу запоминать.)',
+     'content': {'speak_en': 'Speaking out loud helps your brain remember.'}},
     {'type': 'reward',
      'text': '🎉 <b>Эпизод пройден!</b>\n\n'
              'Ты сделал свой первый заказ в Лондоне! +XP, новые слова — в словаре, '
@@ -248,14 +316,21 @@ _FOOD_STEPS = [
 
 _PLANE_STEPS = [
     {'type': 'hook',
-     'text': '✈️ Эпизод 2. Рейс в Манчестер.\n\n'
+     'content': {'scene_key': 'ep02_plane', 'speak_en': 'Hi! Is this seat taken?'},
+     'text': '✈️ <b>Эпизод 2. Meeting on a Plane</b>\n\n'
              'Ты садишься в кресло у окна. Рядом опускается попутчица, улыбается '
-             'и говорит: «Hi! Is this seat taken?» Сейчас научимся знакомиться и '
-             'вести small talk — так, чтобы было легко и приятно.'},
+             'и говорит:\n'
+             '🇬🇧 Hi! Is this seat taken?\n'
+             '(Привет! Это место занято?)\n\n'
+             'Сейчас научимся знакомиться и вести <b>small talk</b> — так, чтобы '
+             'было легко и приятно.'},
     {'type': 'story', 'with_character': True,
-     'text': '📖 Соседку зовут Sophie. Она летит на конференцию и обожает '
-             'знакомиться с новыми людьми. «Where are you from?» — спрашивает она '
-             'с улыбкой. Пора ответить.'},
+     'text': '📖 Соседку зовут <b>Sophie</b>. Она летит на конференцию и обожает '
+             'знакомиться с новыми людьми.\n\n'
+             '🇬🇧 Where are you from?\n'
+             '(Откуда ты?)\n\n'
+             'Она ждёт ответа с улыбкой. Пора ответить.',
+     'content': {'speak_en': 'Where are you from?'}},
     {'type': 'vocabulary', 'skill': 'vocabulary',
      'content': {'words': [
          {'en': 'seat', 'ru': 'место', 'example': 'Is this seat taken?',
@@ -266,6 +341,10 @@ _PLANE_STEPS = [
           'example_ru': 'Хорошей поездки!'},
          {'en': 'nice to meet you', 'ru': 'приятно познакомиться',
           'example': 'Nice to meet you!', 'example_ru': 'Приятно познакомиться!'},
+         {'en': 'from', 'ru': 'из / откуда', 'example': 'I am from Russia.',
+          'example_ru': 'Я из России.'},
+         {'en': 'conference', 'ru': 'конференция', 'example': 'I am going to a conference.',
+          'example_ru': 'Я еду на конференцию.'},
      ]}},
     {'type': 'grammar_note', 'skill': 'grammar', 'title': 'Вопросы в Present Simple',
      'content': {
@@ -288,9 +367,37 @@ _PLANE_STEPS = [
      }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Собери вопрос из слов: from / are / where / you',
-     'content': {'exercise_type': 'word_order',
-                 'correct': ['where are you from'],
-                 'explanation': 'Where are you from? — Откуда ты?'}},
+     'content': {
+         'exercise_type': 'word_order',
+         'correct': ['where are you from'],
+         'explanation': (
+             '✅ <b>Where are you from?</b> — «Откуда ты?»\n'
+             'С <b>to be</b> (are) частица do не нужна.'
+         ),
+         'rule_key': 'present-simple-questions',
+     }},
+    {'type': 'exercise', 'skill': 'grammar',
+     'text': 'Заполни пропуск:\n\nWhere ___ you live?',
+     'content': {
+         'exercise_type': 'fill_gap',
+         'correct': ['do'],
+         'rule_key': 'present-simple-questions',
+         'explanation': (
+             '✅ <b>do</b> + you + live.\n'
+             '❌ does — для he/she/it.\n'
+             '❌ are — здесь нужен do, не to be.'
+         ),
+         'level_variants': {
+             'b1': {
+                 'text': 'Заполни пропуск:\n\nWhere ___ she work?',
+                 'correct': ['does'],
+                 'explanation': (
+                     '✅ she/he/it → <b>does</b> + глагол без -s.\n'
+                     'Where does she work?'
+                 ),
+             },
+         },
+     }},
     {'type': 'dialogue', 'skill': 'reading',
      'text': 'Послушай, как знакомятся Sophie и попутчик:',
      'content': {'lines': [
@@ -305,17 +412,56 @@ _PLANE_STEPS = [
      ]}},
     {'type': 'exercise', 'skill': 'vocabulary',
      'text': 'Как ответить на «Nice to meet you»?',
-     'content': {'exercise_type': 'multiple_choice',
-                 'options': ['Nice to meet you too!', 'Yes.', 'Thank you bye.'],
-                 'correct': ['Nice to meet you too!'],
-                 'explanation': 'Отвечаем тем же: «Nice to meet you too!»'}},
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'options': ['Nice to meet you too!', 'Yes.', 'Thank you bye.'],
+         'correct': ['Nice to meet you too!'],
+         'explanation': (
+             '✅ <b>Nice to meet you too!</b> — зеркальный ответ.\n'
+             '❌ <b>Yes</b> — не отвечает на знакомство.\n'
+             '❌ <b>Thank you bye</b> — обрывает разговор.'
+         ),
+         'level_variants': {
+             'b1': {
+                 'options': [
+                     'Nice to meet you too!',
+                     'Same here!',
+                     'Yes, nice.',
+                     'Thank you bye.',
+                 ],
+                 'correct': ['Nice to meet you too!', 'Same here!'],
+                 'explanation': (
+                     '✅ <b>Nice to meet you too!</b> — классика.\n'
+                     '✅ <b>Same here!</b> — коротко и естественно.\n'
+                     '❌ Обрывки вроде «Yes, nice» звучат странно.'
+                 ),
+             },
+         },
+     }},
+    {'type': 'exercise', 'skill': 'vocabulary',
+     'text': 'Верно или нет?\n\n«Is this seat taken?» = «Это место занято?»',
+     'content': {
+         'exercise_type': 'true_false',
+         'options': ['Верно', 'Неверно'],
+         'correct': ['Верно'],
+         'explanation': 'Точный перевод — удобная фраза в самолёте, кино, кафе.',
+     }},
     {'type': 'ai_dialogue', 'skill': 'speaking', 'with_character': True,
      'content': {'opening': "Hi! Is this seat taken? I'm Sophie. What's your name?",
                  'situation': 'small talk between two passengers on a plane',
                  'turns': 4}},
     {'type': 'speaking', 'skill': 'speaking',
-     'text': 'Представься вслух: скажи, как тебя зовут и откуда ты.',
-     'content': {'target': 'My name is Alex. I am from Russia.'}},
+     'text': 'Представься вслух: скажи, как тебя зовут и откуда ты.\n'
+             '🇬🇧 My name is Alex. I am from Russia.\n'
+             '(Меня зовут Алекс. Я из России.)',
+     'content': {
+         'target': 'My name is Alex. I am from Russia.',
+         'level_variants': {
+             'b1': {
+                 'target': "I'm Alex. I'm from Russia, and I work in tech.",
+             },
+         },
+     }},
     {'type': 'exercise', 'skill': 'vocabulary',
      'text': 'Небольшая практика из твоей сферы — задание подстроится под тебя:',
      'content': {'personalize': True, 'skill': 'vocabulary'}},
@@ -327,27 +473,41 @@ _PLANE_STEPS = [
                                     'point out at most one key fix.'}},
     {'type': 'reflection',
      'text': '🧠 Психология общения: люди любят, когда им задают вопросы о них. '
-             'Один искренний вопрос («Where are you from?») — и разговор пошёл.'},
+             'Один искренний вопрос («Where are you from?») — и разговор пошёл.\n\n'
+             '🇬🇧 People enjoy talking about themselves.\n'
+             '(Людям нравится говорить о себе.)',
+     'content': {'speak_en': 'People enjoy talking about themselves.'}},
     {'type': 'reward', 'text': '🗣️🎉 Ты познакомился с Sophie на английском и '
                                'рассказал о себе! Слова — в словаре, прогресс — растёт.'},
     {'type': 'cliffhanger',
      'text': '🏙️ В Манчестере тебя ждёт новая история: заселение в отель и первый '
-             'рабочий разговор. Продолжение — в <b>эпизоде 3</b>…'},
+             'рабочий разговор.\n\n'
+             '🇬🇧 Next stop: hotel check-in in Manchester.\n'
+             '(Следующая остановка: заселение в отель в Манчестере.)\n\n'
+             'Продолжение — в <b>эпизоде 3</b>…',
+     'content': {'speak_en': 'Next stop: hotel check-in in Manchester.'}},
 ]
 
 
 _HOTEL_STEPS = [
     {'type': 'hook',
+     'content': {
+         'speak_en': "Just say you have a reservation — they'll help you.",
+     },
      'text': '🏨 <b>Эпизод 3. Hotel Check-in</b>\n\n'
              'Манчестер, вечер. Рейс позади, ты устал, но нужно заселиться. '
              'В лобби отеля очередь, слышны только английские фразы.\n\n'
-             'Эмма писала: «Just say you have a reservation — they\'ll help you.» '
+             'Эмма писала:\n'
+             '🇬🇧 Just say you have a reservation — they\'ll help you.\n'
+             '(Просто скажи, что у тебя бронь — тебе помогут.)\n\n'
              'Сейчас проверим это на практике.'},
     {'type': 'story', 'with_character': True,
      'text': '📖 Ты подходишь к стойке. Молодой администратор <b>James</b> поднимает '
              'глаза и улыбается:\n'
-             '«Good evening! How can I help you?»\n\n'
-             'Глубокий вдох — твоя очередь.'},
+             '🇬🇧 Good evening! How can I help you?\n'
+             '(Добрый вечер! Чем могу помочь?)\n\n'
+             'Глубокий вдох — твоя очередь.',
+     'content': {'speak_en': 'Good evening! How can I help you?'}},
     {'type': 'dialogue', 'skill': 'listening',
      'text': '💬 Типичный диалог на ресепшене:',
      'content': {'lines': [
@@ -378,8 +538,13 @@ _HOTEL_STEPS = [
           'example_ru': 'Завтрак с семи до десяти.'},
      ]}},
     {'type': 'story',
-     'text': '🌍 <b>Факт:</b> в UK чаще говорят <b>lift</b>, в США — <b>elevator</b>. '
-             'Оба варианта правильные — в Британии пригодится lift.'},
+     'text': '🌍 <b>Факт:</b>\n\n'
+             '🇬🇧 In the UK people say <b>lift</b>; in the US they say <b>elevator</b>.\n'
+             '(В UK чаще говорят <b>lift</b>, в США — <b>elevator</b>.)\n\n'
+             'Оба варианта правильные — в Британии пригодится lift.',
+     'content': {
+         'speak_en': 'In the UK people say lift; in the US they say elevator.',
+     }},
     {'type': 'grammar_note', 'skill': 'grammar', 'title': 'Заселение в отель',
      'content': {
          'rule_ru': 'На ресепшене: скажи, что хочешь заселиться, и назови имя в брони. '
@@ -414,36 +579,83 @@ _HOTEL_STEPS = [
      }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Верно или нет?\n\n«I want room now» — нормальная фраза на ресепшене.',
-     'content': {'exercise_type': 'true_false',
-                 'options': ['Верно', 'Неверно'],
-                 'correct': ['Неверно'],
-                 'explanation': "Лучше: «I'd like to check in, please.»"}},
+     'content': {
+         'exercise_type': 'true_false',
+         'options': ['Верно', 'Неверно'],
+         'correct': ['Неверно'],
+         'explanation': (
+             '❌ <b>I want room now</b> — резко и с ошибками.\n'
+             '✅ Лучше: <b>I\'d like to check in, please.</b>'
+         ),
+         'rule_key': 'hotel-check-in',
+     }},
     {'type': 'exercise', 'skill': 'vocabulary',
      'text': 'James: «Do you have a reservation?» Что ответить?',
-     'content': {'exercise_type': 'multiple_choice',
-                 'options': ['Yes. I would like to check in, please.',
-                             'Give room.',
-                             'Reservation no.'],
-                 'correct': ['Yes. I would like to check in, please.'],
-                 'explanation': 'Подтверди бронь и скажи, что хочешь заселиться.'}},
+     'content': {
+         'exercise_type': 'multiple_choice',
+         'options': ['Yes. I would like to check in, please.',
+                     'Give room.',
+                     'Reservation no.'],
+         'correct': ['Yes. I would like to check in, please.'],
+         'explanation': (
+             '✅ Подтверди бронь и попроси заселиться вежливо.\n'
+             '❌ <b>Give room</b> / ломаные фразы — так не говорят.'
+         ),
+         'level_variants': {
+             'b1': {
+                 'options': [
+                     'Yes. I would like to check in, please.',
+                     "Yes, I've got a booking under Smith.",
+                     'Give room.',
+                     'I need room now.',
+                 ],
+                 'correct': [
+                     'Yes. I would like to check in, please.',
+                     "Yes, I've got a booking under Smith.",
+                 ],
+                 'explanation': (
+                     '✅ check in / booking under… — естественные ответы.\n'
+                     '❌ Приказы и «room now» — слишком резко.'
+                 ),
+             },
+         },
+     }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Заполни пропуск:\n\nI have a ___ under Ivanov.',
-     'content': {'exercise_type': 'fill_gap', 'correct': ['reservation'],
-                 'explanation': 'reservation = бронь.'}},
+     'content': {
+         'exercise_type': 'fill_gap',
+         'correct': ['reservation'],
+         'explanation': (
+             '✅ <b>reservation</b> = бронь.\n'
+             'Также встречаются <b>booking</b> (UK) — близкий синоним.'
+         ),
+     }},
     {'type': 'exercise', 'skill': 'grammar',
      'text': 'Собери фразу:\n\nto / check / I / in / would / like / please',
-     'content': {'exercise_type': 'word_order',
-                 'correct': ['i would like to check in please'],
-                 'explanation': "I'd like to check in, please."}},
+     'content': {
+         'exercise_type': 'word_order',
+         'correct': ['i would like to check in please'],
+         'explanation': "I'd like to check in, please. — стандарт на ресепшене.",
+     }},
     {'type': 'speaking', 'skill': 'speaking',
-     'text': 'Скажи вслух на ресепшене:',
-     'content': {'target': 'I have a reservation under Ivanov.'}},
+     'text': 'Скажи вслух на ресепшене:\n'
+             '🇬🇧 I have a reservation under Ivanov.\n'
+             '(У меня бронь на имя Иванов.)',
+     'content': {
+         'target': 'I have a reservation under Ivanov.',
+         'level_variants': {
+             'b1': {'target': "I'd like to check in. I have a reservation under Ivanov."},
+         },
+     }},
     {'type': 'exercise', 'skill': 'vocabulary',
      'text': 'Практика из твоей сферы — задание подстроится под тебя:',
      'content': {'personalize': True, 'skill': 'vocabulary'}},
     {'type': 'reflection',
      'text': '🧠 <b>Совет:</b> на ресепшене говори коротко и вежливо. '
-             'Достаточно трёх фраз: check in → имя в брони → спасибо.'},
+             'Достаточно трёх фраз: check in → имя в брони → спасибо.\n\n'
+             '🇬🇧 Keep it short and polite at reception.\n'
+             '(На ресепшене говори коротко и вежливо.)',
+     'content': {'speak_en': 'Keep it short and polite at reception.'}},
     {'type': 'reward',
      'text': '🏨🎉 <b>Эпизод пройден!</b>\n\n'
              'Ты заселился в отель в Манчестере! Новые слова — в словаре, '
@@ -451,7 +663,10 @@ _HOTEL_STEPS = [
     {'type': 'cliffhanger',
      'text': '💼 Завтра — первый рабочий день. Коллеги заговорят с тобой за кофе. '
              'Что сказать о своей работе?\n\n'
-             'Продолжение — в <b>эпизоде 4</b>…'},
+             '🇬🇧 Tomorrow: your first day at work.\n'
+             '(Завтра: твой первый рабочий день.)\n\n'
+             'Продолжение — в <b>эпизоде 4</b>…',
+     'content': {'speak_en': 'Tomorrow: your first day at work.'}},
 ]
 
 
