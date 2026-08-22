@@ -8,14 +8,21 @@ from telegram import (
     ReplyKeyboardMarkup,
 )
 
-# Reply-menu buttons (persistent bottom keyboard).
-BTN_LEARN = '📚 Учиться'
+# Reply-menu: только 2 главные кнопки (остальное — Menu / команды).
+BTN_START = '▶️ Начать'
+BTN_CONTINUE = '▶️ Продолжить'
+BTN_TRAINING = '🎯 Тренировка'
+
+# Legacy — для старых клавиатур и совместимости.
+BTN_LEARN = BTN_START
 BTN_PROFILE = '👤 Профиль'
 BTN_PROGRESS = '📊 Прогресс'
 BTN_WORDS = '🗂 Словарь'
 BTN_RULES = '📖 Правила'
 BTN_TUTOR = '💬 Наставник'
 BTN_SUBSCRIBE = '⭐️ Подписка'
+
+PRIMARY_BUTTONS = frozenset({BTN_START, BTN_CONTINUE, BTN_LEARN})
 
 SKILL_FOCUS_RU = {
     'speaking': 'говорение',
@@ -27,16 +34,24 @@ SKILL_FOCUS_RU = {
 }
 
 
-def main_menu() -> ReplyKeyboardMarkup:
+def main_menu(*, continue_mode: bool = False) -> ReplyKeyboardMarkup:
+    """Две кнопки: урок (начать/продолжить) + тренировка."""
+    primary = BTN_CONTINUE if continue_mode else BTN_START
     return ReplyKeyboardMarkup(
-        [
-            [BTN_LEARN],
-            [BTN_PROFILE, BTN_PROGRESS],
-            [BTN_WORDS, BTN_RULES],
-            [BTN_TUTOR, BTN_SUBSCRIBE],
-        ],
+        [[primary], [BTN_TRAINING]],
         resize_keyboard=True,
     )
+
+
+def training_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Тренировка»: слова, правила, наставник."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('Слова', callback_data='train:words'),
+            InlineKeyboardButton('Правила', callback_data='train:rules'),
+        ],
+        [InlineKeyboardButton('Наставник', callback_data='train:tutor')],
+    ])
 
 
 # --------------------------------------------------------------------------- #
@@ -549,15 +564,18 @@ def finish_dialogue_kb() -> InlineKeyboardMarkup:
 def profile_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton('🎯 Мои интересы', callback_data='profile:interests')],
-            [InlineKeyboardButton('🎓 Цель обучения', callback_data='profile:goal')],
-            [InlineKeyboardButton('💼 Моя сфера', callback_data='profile:sphere')],
-            [InlineKeyboardButton('⏱ План на день', callback_data='profile:schedule')],
-            [InlineKeyboardButton('🎯 Цель уровня', callback_data='profile:target')],
-            [InlineKeyboardButton('💪 Фокус практики', callback_data='profile:focus')],
-            [InlineKeyboardButton('🗺 Карта пути', callback_data='profile:roadmap')],
-            [InlineKeyboardButton('🔔 Напоминания', callback_data='profile:notify')],
-            [InlineKeyboardButton('🎯 Тест уровня заново', callback_data='profile:retest')],
+            [
+                InlineKeyboardButton('Сфера', callback_data='profile:sphere'),
+                InlineKeyboardButton('Расписание', callback_data='profile:schedule'),
+            ],
+            [
+                InlineKeyboardButton('Цель уровня', callback_data='profile:target'),
+                InlineKeyboardButton('Карта пути', callback_data='profile:roadmap'),
+            ],
+            [
+                InlineKeyboardButton('Тест уровня', callback_data='profile:retest'),
+                InlineKeyboardButton('Напоминания', callback_data='profile:notify'),
+            ],
         ]
     )
 

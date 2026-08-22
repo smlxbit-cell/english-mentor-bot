@@ -108,6 +108,33 @@ PLANS: tuple[dict, ...] = (
 DEFAULT_SUBSCRIPTION_CODE = 'basic'
 
 
+def format_subscription_compact(
+    sub_plans: list[dict],
+    *,
+    access_tier: str = 'free',
+) -> str:
+    """Короткая таблица тарифов для экрана подписки."""
+    tier_note = {
+        'free': 'сейчас: Free',
+        'trial': 'сейчас: пробный период',
+        'paid': 'сейчас: платная подписка',
+    }.get(access_tier, '')
+    lines = [
+        '<b>Тарифы</b>',
+        f'<i>{tier_note}</i>\n' if tier_note else '',
+        '<pre>'
+        'Free      0 ₽   эп.1–3, словарь, правила\n'
+        'Basic   590 ₽   60 мин голоса/мес\n'
+        'Active  990 ₽  180 мин голоса/мес\n'
+        'Pro    1990 ₽  450 мин голоса/мес\n'
+        '+100мин 290 ₽  докупка (при подписке)'
+        '</pre>',
+        'Free — текст и 🔊. Голос 🎙️ — в платных.',
+        '30 дней, без автопродления.',
+    ]
+    return '\n'.join(line for line in lines if line)
+
+
 def format_subscription_plans_message(
     *,
     header: str,

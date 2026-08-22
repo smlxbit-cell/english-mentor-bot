@@ -109,7 +109,34 @@ async def _ensure_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data['user_key'] = str(update.effective_user.id)
     context.user_data['sphere_en'] = profile.get('sphere_en', '')
     context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
+    unfinished = await db.get_in_progress_lesson(profile['id'])
+    context.user_data['use_continue_btn'] = bool(unfinished)
     return profile
+
+
+def _main_menu(context: ContextTypes.DEFAULT_TYPE) -> keyboards.ReplyKeyboardMarkup:
+    return keyboards.main_menu(
+        continue_mode=bool(context.user_data.get('use_continue_btn')),
+    )
+
+
+async def _handle_primary_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """▶️ Начать / Продолжить — урок или план дня."""
+    profile = await _ensure_profile(update, context)
+    unfinished = await db.get_in_progress_lesson(profile['id'])
+    if unfinished:
+        await open_lesson(update, context, unfinished['lesson_id'])
+        return
+    await show_daily_plan(update, context)
+
+
+async def _show_training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _ensure_profile(update, context)
+    await _send(
+        context, _chat_id(update),
+        'Тренировка — выбери направление:',
+        reply_markup=keyboards.training_menu_kb(),
+    )
 
 
 async def _ack_callback(query, text: str | None = None, *, show_alert: bool = False) -> None:
@@ -800,16 +827,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_mentor_reaction(context, chat_id, 'welcome_back')
         await _send(
             context, chat_id,
-            f'Привет, {name}! 👋\n\n'
-            'Я — English Mentor. Помогу учить английский маленькими шагами: '
-            'истории, диалоги, игры и живая практика с проверкой ответов.\n\n'
-            'Сначала короткая диагностика — подберём программу под твой уровень.',
+            f'Привет, {name}!\n\n'
+            'Я — English Mentor: истории, упражнения и наставник.\n'
+            'Сначала — короткая диагностика уровня (5–7 мин).',
             reply_markup=keyboards.start_diagnostic_kb(),
-        )
-        await _send(
-            context, chat_id,
-            'Можешь посмотреть тарифы: ⭐️ Подписка в меню ниже.',
-            reply_markup=keyboards.main_menu(),
         )
         return
 
@@ -832,52 +853,46 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'{name}, скучали! Тебя не было {_days_ru(days_away)}.\n'
             f'Уровень: {profile["cefr_level"] or "—"}.\n\n'
             'Начнём с плана дня?',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         return
 
     if unfinished:
         await send_mentor_reaction(context, chat_id, 'lesson_resume')
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                '▶️ Продолжить урок',
-                callback_data=f'lesson:open:{unfinished["lesson_id"]}',
-            )],
-            [InlineKeyboardButton('📚 План дня', callback_data='plan:menu')],
-        ])
         await _send(
             context, chat_id,
-            f'{name}, ты не закончила эпизод «{unfinished["title"]}».\n'
-            f'Остановились на шаге {unfinished["step_index"] + 1}. Продолжим?',
-            reply_markup=kb,
+            f'{name}, незакончен урок «{unfinished["title"]}».\n'
+            f'Шаг {unfinished["step_index"] + 1}. Жми «Продолжить».',
+            reply_markup=_main_menu(context),
         )
         return
 
     await send_mentor_reaction(context, chat_id, 'welcome_back')
     await _send(
         context, chat_id,
-        f'С возвращением, {name}! 👋\n'
-        f'Твой уровень: {profile["cefr_level"] or "—"}.\n\n'
-        'Выбери, чем займёмся 👇',
-        reply_markup=keyboards.main_menu(),
+        f'С возвращением, {name}. Уровень {profile["cefr_level"] or "—"}.\n'
+        '«Начать» — план дня. «Тренировка» — слова, правила, наставник.\n'
+        'Остальное — кнопка Menu (☰).',
+        reply_markup=_main_menu(context),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _ensure_profile(update, context)
     await _send(
         context, _chat_id(update),
-        'Что я умею:\n'
-        '📚 Учиться — персональный план на день (чеклист)\n'
-        '👤 Профиль — уровень, цель, интересы, напоминания\n'
-        '📊 Прогресс — XP, дни подряд, пройденные уроки\n'
-        '🗂 Словарь — слова из уроков с озвучкой\n'
-        '📖 Правила — карта грамматики с отметками ✅\n'
-        '💬 Наставник — задай вопрос по английскому\n'
-        '⭐️ Подписка — полный доступ\n\n'
-        'Команды: /start, /diagnostic, /profile, /plan, /tutor\n'
-        'В уроках и у наставника можно отвечать текстом или голосом 🎙️\n'
-        'Голос распознаётся (нужен Yandex SpeechKit в .env). Кнопка 🔊 озвучивает английский.',
-        reply_markup=keyboards.main_menu(),
+        '<b>Как пользоваться</b>\n\n'
+        'На экране две кнопки:\n'
+        '▶️ Начать (или Продолжить) — урок и план дня\n'
+        '🎯 Тренировка — слова, правила, наставник\n\n'
+        'Кнопка Menu (☰):\n'
+        '/profile — профиль\n'
+        '/progress — прогресс\n'
+        '/subscribe — тарифы\n'
+        '/diagnostic — тест уровня\n'
+        '/help — эта справка',
+        parse_mode=ParseMode.HTML,
+        reply_markup=_main_menu(context),
     )
 
 
@@ -907,12 +922,22 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def lessons_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = None
-    await show_daily_plan(update, context)
+    await _handle_primary_action(update, context)
 
 
 async def plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = None
-    await show_daily_plan(update, context)
+    await _handle_primary_action(update, context)
+
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = None
+    await show_subscription(update, context)
+
+
+async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['mode'] = None
+    await show_progress(update, context)
 
 
 async def tutor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -934,7 +959,7 @@ async def _begin_diagnostic(
             'Чтобы пройти тест заново: 👤 Профиль → «🎯 Тест уровня заново» '
             'или команда /diagnostic',
             parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         return
     if retake:
@@ -1318,7 +1343,7 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await _send(
                     context, chat_id,
                     f'Диагностика уже пройдена ✅ Уровень: {profile["cefr_level"]}.',
-                    reply_markup=keyboards.main_menu(),
+                    reply_markup=_main_menu(context),
                 )
             return
         await _send(
@@ -1353,7 +1378,7 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _send(
             context, chat_id, body,
             parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         return
 
@@ -1961,7 +1986,7 @@ async def show_rules_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context, chat_id,
             'Карта правил пока пуста. Пройди эпизод — правила появятся здесь '
             'после блока грамматики. Или нажми «Выучил» в уроке.',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         return
 
@@ -2021,7 +2046,7 @@ async def show_rule_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, r
     rule = await db.get_rule_detail(context.user_data['profile_id'], rule_key)
     chat_id = _chat_id(update)
     if not rule:
-        await _send(context, chat_id, 'Правило не найдено.', reply_markup=keyboards.main_menu())
+        await _send(context, chat_id, 'Правило не найдено.', reply_markup=_main_menu(context))
         return
     status_note = ''
     if rule.get('status') == 'learned':
@@ -2110,7 +2135,7 @@ async def start_rule_training(
         await _send(
             context, chat_id,
             'Все правила отмечены — отлично! 🎉 Новые появятся в следующих эпизодах.',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         return
     session = await db.get_rule_training(rule_key)
@@ -2191,7 +2216,7 @@ async def _finish_rule_training(update, context):
         await _send(context, chat_id, msg)
         await _plan_continue(update, context)
         return
-    await _send(context, chat_id, msg, reply_markup=keyboards.main_menu())
+    await _send(context, chat_id, msg, reply_markup=_main_menu(context))
 
 
 async def _grade_rule_training_answer(update, context, answer: str) -> None:
@@ -2285,7 +2310,7 @@ async def open_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE, lesson
     flow = await db.get_lesson_flow(lesson_id, profile_id=profile_id)
     if not flow or not flow['steps']:
         await _send(context, chat_id, 'Этот урок ещё не наполнен.',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         return
 
     progress = await db.start_or_resume_lesson(profile_id, lesson_id)
@@ -2992,12 +3017,14 @@ async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from study_app.services.roadmap import format_roadmap_message
 
     summary = await db.get_progress_summary(profile['id'])
-    sub = (f'Активна до {summary["subscription_until"]}'
-           if summary['subscription_until'] else 'нет активной подписки')
 
     text = format_roadmap_message(roadmap)
-    text += f'\n\n💳 Подписка: {sub}'
-    text += f'\n🎟 Пробные эпизоды: {summary["trial_used"]}/{summary["trial_limit"]}'
+    text += (
+        f'\n\nXP {summary.get("xp", 0)} · серия {summary.get("streak", 0)} · '
+        f'уроков {summary.get("completed_lessons", 0)}'
+    )
+    text += f'\nПробные эпизоды: {summary["trial_used"]}/{summary["trial_limit"]}'
+    text += '\nТариф — /subscribe'
 
     await _send(
         context, _chat_id(update),
@@ -3020,7 +3047,7 @@ async def show_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'Словарь пока пуст 📖\n\nСлова добавляются автоматически из '
                     'пройденных уроков. Пройди урок — и они появятся здесь для '
                     'тренировки с озвучкой.',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         return
     lines = ['🗂 Твой словарь:\n']
     speak_chunks = []
@@ -3058,7 +3085,7 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await _send(context, chat_id,
                     'Сейчас нет слов к повторению 👍 Загляни позже или пройди '
                     'новый эпизод, чтобы добавить слова.',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         if from_plan:
             await show_daily_plan(update, context)
         return
@@ -3090,7 +3117,7 @@ async def _ask_next_word(update, context):
             await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'words')
             await show_daily_plan(update, context)
         else:
-            await _send(context, chat_id, '👇', reply_markup=keyboards.main_menu())
+            await _send(context, chat_id, '👇', reply_markup=_main_menu(context))
         return
     word = queue.pop(0)
     context.user_data['review_current'] = word
@@ -3149,62 +3176,23 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     d = await db.get_profile_detail(profile['id'])
     name = d['first_name'] or 'друг'
-
-    unlocked = [a for a in d['achievements'] if a['unlocked']]
-    ach_line = (
-        ' '.join(a['icon'] for a in unlocked) if unlocked else 'пока нет — всё впереди!'
+    target = d.get('target_cefr_level') or '—'
+    sphere = d.get('sphere') or '—'
+    tier = d.get('access_tier', 'free')
+    tier_ru = {'free': 'Free', 'trial': 'Пробный', 'paid': d.get('plan_name', 'Платный')}.get(
+        tier, tier,
     )
-    if d['premium'] and d.get('subscription_until'):
-        sub = (
-            f'{d["plan_name"]} — активна до {d["subscription_until"]}\n'
-            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось '
-            f'(пакет {d["voice_minutes_monthly"]} мин/мес)\n'
-            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов '
-            f'осталось в этом месяце'
-        )
-    elif d['premium']:
-        sub = (
-            f'{d["plan_name"]}\n'
-            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось\n'
-            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
-        )
-    else:
-        tier = d.get('access_tier', 'free')
-        if tier == 'trial':
-            days_left = d.get('trial_days_left', 0)
-            sub = (
-                f'пробный период ({days_left} дн.) — всё открыто\n'
-                f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось\n'
-                f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
-            )
-        else:
-            sub = (
-                'бесплатный тариф — эпизоды 1–3, словарь, правила, 🔊 озвучка\n'
-                '   🎙️ Голосовой ввод — после подписки\n'
-                f'   💬 Наставник текстом: ~{d["tutor_messages_remaining"]} вопросов в месяце'
-            )
-    interests = ', '.join(d['interests']) if d['interests'] else 'не выбраны'
-    weak = ', '.join(d['weak_skills_ru']) if d['weak_skills_ru'] else '—'
 
     text = (
-        f'👤 Профиль — {name}\n\n'
-        f'🎯 Уровень английского: {d["level"]}\n'
-        f'🎓 Цель: {d["goal"] or "не выбрана"}\n'
-        f'💼 Сфера: {d.get("sphere") or "не выбрана"}\n'
-        f'❤️ Интересы: {interests}\n'
-        f'⏱ План: {d.get("daily_minutes", 20)} мин · {d.get("study_days_per_week", 5)} дн/нед\n'
-        f'🎯 Цель уровня: {d.get("target_cefr_level") or "не выбрана"}\n'
-        f'💪 Фокус: {", ".join(d.get("skill_focus_ru") or []) or "не выбран"}\n'
-        f'📉 Над чем работаем: {weak}\n\n'
-        f'⭐️ XP: {d["xp"]} (до уровня {d["user_level"] + 1} осталось {d["xp_to_next"]})\n'
-        f'🎮 Игровой уровень: {d["user_level"]}\n'
-        f'🔥 Дней подряд: {d["streak"]} (рекорд {d["longest_streak"]})\n'
-        f'📚 Пройдено уроков: {d["completed_lessons"]}\n'
-        f'🎟 Пробные уроки: {d["trial_used"]}/{d["trial_limit"]}\n'
-        f'💳 Подписка: {sub}\n\n'
-        f'🏆 Достижения: {ach_line}'
+        f'<b>{name}</b>\n'
+        f'Уровень {d["level"]} → цель {target}\n'
+        f'Сфера: {sphere}\n'
+        f'Ритм: {d.get("daily_minutes", 20)} мин · {d.get("study_days_per_week", 5)} дн/нед\n\n'
+        f'XP {d["xp"]} · серия {d["streak"]} · уроков {d["completed_lessons"]}\n'
+        f'Тариф: {tier_ru} — подробнее /subscribe\n\n'
+        'Настройки — кнопки ниже.'
     )
-    await _send(context, chat_id, text, reply_markup=keyboards.profile_kb())
+    await _send(context, chat_id, text, reply_markup=keyboards.profile_kb(), parse_mode=ParseMode.HTML)
 
 
 async def show_interests(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3212,7 +3200,7 @@ async def show_interests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     items = await db.get_interests()
     if not items:
         await _send(context, _chat_id(update),
-                    'Список интересов ещё не настроен.', reply_markup=keyboards.main_menu())
+                    'Список интересов ещё не настроен.', reply_markup=_main_menu(context))
         return
     selected = set(await db.get_user_interest_ids(profile['id']))
     custom = await db.get_interests_custom(profile['id'])
@@ -3398,13 +3386,13 @@ async def _save_schedule_and_finish(
         await _send(
             context, _chat_id(update),
             format_roadmap_message(roadmap),
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
             parse_mode=ParseMode.HTML,
         )
         await _send(
             context, _chat_id(update),
             'Жми «📚 Учиться» — там маршрут на сегодня 👇',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
         notify = await db.get_notification_settings(profile_id)
         if not notify.get('setup_done'):
@@ -3517,7 +3505,7 @@ async def start_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send(
         context, _chat_id(update),
         TUTOR_INTRO,
-        reply_markup=keyboards.main_menu(),
+        reply_markup=_main_menu(context),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3558,7 +3546,7 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
     if canned:
         ok, limit_msg = await db.check_tutor_message(context.user_data['profile_id'])
         if not ok:
-            await _send(context, chat_id, limit_msg, reply_markup=keyboards.main_menu())
+            await _send(context, chat_id, limit_msg, reply_markup=_main_menu(context))
             return
         history.append(ChatMessage('user', user_text))
         history.append(ChatMessage('assistant', canned))
@@ -3592,7 +3580,7 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
     profile_id = context.user_data['profile_id']
     ok, limit_msg = await db.check_tutor_message(profile_id)
     if not ok:
-        await _send(context, chat_id, limit_msg, reply_markup=keyboards.main_menu())
+        await _send(context, chat_id, limit_msg, reply_markup=_main_menu(context))
         return
 
     await context.bot.send_chat_action(chat_id, ChatAction.TYPING)
@@ -3641,19 +3629,11 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
 # --------------------------------------------------------------------------- #
 
 async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from billing_app.plans_catalog import format_subscription_plans_message
+    from billing_app.plans_catalog import format_subscription_compact
 
-    days = settings.SUBSCRIPTION_DAYS
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
-    text = format_subscription_plans_message(
-        header=(
-            'Дальше — полная программа и голос с наставником 🎙️\n'
-        ),
-        sub_plans=sub_plans,
-        days=days,
-        free_active=True,
-    )
+    text = format_subscription_compact(sub_plans, access_tier='free')
     await _send(
         context, _chat_id(update),
         text,
@@ -3668,14 +3648,17 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile_id = context.user_data['profile_id']
     limits = await db.get_user_limits(profile_id)
 
+    from billing_app.plans_catalog import format_subscription_compact
+
+    detail = await db.get_profile_detail(profile_id)
+    tier = detail.get('access_tier', 'free')
+
     if limits.get('has_subscription'):
         text = (
-            f'Тариф: <b>{limits["plan_name"]}</b>\n'
-            f'🎙️ Голос: ~{limits["voice_remaining_minutes"]} мин осталось в этом месяце\n'
-            f'💬 Наставник: ~{limits["tutor_messages_remaining"]} вопросов '
-            f'осталось (пакет на месяц, не сгорает за день)\n\n'
-            'Полная программа: план дня, Emma, словарь, правила.\n'
-            'Можно докупить +100 мин голоса, если пакет закончился.'
+            f'<b>{limits["plan_name"]}</b>\n'
+            f'Голос: ~{limits["voice_remaining_minutes"]} мин · '
+            f'наставник: ~{limits["tutor_messages_remaining"]} сообщ.\n'
+            'Полная программа активна.'
         )
         await _send(
             context, _chat_id(update),
@@ -3688,23 +3671,9 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    from billing_app.plans_catalog import format_subscription_plans_message
-
-    detail = await db.get_profile_detail(profile_id)
-    tier = detail.get('access_tier', 'free')
-
-    days = settings.SUBSCRIPTION_DAYS
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
-    header = 'Тарифы English Mentor 👇\n'
-    if tier == 'trial':
-        header = '🎁 Сейчас пробный период — всё открыто.\n\n' + header
-    text = format_subscription_plans_message(
-        header=header,
-        sub_plans=sub_plans,
-        days=days,
-        free_active=(tier == 'free'),
-    )
+    text = format_subscription_compact(sub_plans, access_tier=tier)
     await _send(
         context, _chat_id(update),
         text,
@@ -3742,7 +3711,7 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '• Бесплатно: диагностика уровня и 2 пробных урока.\n'
         '• Оплата через ЮKassa (подключается после модерации магазина).\n'
         '• Вопросы по оплате — в поддержку проекта.',
-        reply_markup=keyboards.main_menu(),
+        reply_markup=_main_menu(context),
     )
 
 
@@ -3757,7 +3726,7 @@ async def buy_subscription(
     plan = await db.get_plan_by_code(plan_code)
     if not plan:
         await _send(context, chat_id, 'Тариф не найден. Попробуй позже.',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         return
 
     if plan['plan_kind'] == 'voice_addon':
@@ -3766,12 +3735,12 @@ async def buy_subscription(
                 context, chat_id,
                 'Докупка минут доступна только с активной подпиской.\n'
                 'Сначала оформи Basic, Active или Pro.',
-                reply_markup=keyboards.main_menu(),
+                reply_markup=_main_menu(context),
             )
             return
     elif await db.has_active_subscription(profile_id):
         await _send(context, chat_id, 'У тебя уже есть активная подписка ✅',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         return
 
     if settings.PAYMENT_MODE == 'mock':
@@ -3780,7 +3749,7 @@ async def buy_subscription(
             await _send(
                 context, chat_id,
                 'Нужна активная подписка для докупки минут.',
-                reply_markup=keyboards.main_menu(),
+                reply_markup=_main_menu(context),
             )
             return
         if result.get('kind') == 'voice_addon':
@@ -3789,7 +3758,7 @@ async def buy_subscription(
                 f'Тестовая оплата прошла ✅\n\n'
                 f'+{result["minutes_added"]} мин голоса.\n'
                 f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
-                reply_markup=keyboards.main_menu(),
+                reply_markup=_main_menu(context),
             )
         else:
             await _send(
@@ -3797,7 +3766,7 @@ async def buy_subscription(
                 f'Тестовая оплата прошла ✅\n\n'
                 f'Тариф <b>{result["plan_name"]}</b> активен до {result["expires_at"]}.\n'
                 '(mock-режим — реальную оплату ЮKassa подключим после модерации.)',
-                reply_markup=keyboards.main_menu(),
+                reply_markup=_main_menu(context),
                 parse_mode=ParseMode.HTML,
             )
         return
@@ -3805,7 +3774,7 @@ async def buy_subscription(
     if not settings.TELEGRAM_PAYMENT_PROVIDER_TOKEN:
         await _send(context, chat_id,
                     'Оплата пока не настроена (нет provider token).',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
         return
 
     prices = [LabeledPrice(label=plan['name'], amount=plan['price_kopeks'])]
@@ -3848,14 +3817,14 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             context, _chat_id(update),
             f'Оплата прошла ✅ +{result["minutes_added"]} мин голоса.\n'
             f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
     else:
         await _send(
             context, _chat_id(update),
             f'Оплата прошла ✅ Тариф {result.get("plan_name", "")} '
             f'активен до {result["expires_at"]}.',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
 
 
@@ -3950,7 +3919,17 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['expect'] = None
         _clear_tutor_session(context)
         await _send(context, _chat_id(update), 'Главное меню 👇',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
+    elif data == 'train:words':
+        context.user_data['mode'] = None
+        context.user_data['expect'] = None
+        await show_words(update, context)
+    elif data == 'train:rules':
+        context.user_data['mode'] = None
+        context.user_data['expect'] = None
+        await show_rules_map(update, context)
+    elif data == 'train:tutor':
+        await start_tutor(update, context)
     elif data == 'lesson:next':
         await _advance(update, context)
     elif data == 'lesson:skip':
@@ -4122,7 +4101,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.set_notifications(context.user_data['profile_id'], enabled=False)
         await _send(context, _chat_id(update),
                     'Хорошо. Включить напоминания можно в 👤 Профиль → 🔔',
-                    reply_markup=keyboards.main_menu())
+                    reply_markup=_main_menu(context))
     elif data.startswith('notify:time:'):
         t = data.removeprefix('notify:time:')
         await db.set_notifications(
@@ -4132,7 +4111,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context, _chat_id(update),
             f'🔔 Готово! Буду напоминать каждый день в {t} (Москва).\n'
             'Пришлю факт дня и план на день.',
-            reply_markup=keyboards.main_menu(),
+            reply_markup=_main_menu(context),
         )
     elif data == 'profile:notify':
         notify = await db.get_notification_settings(context.user_data['profile_id'])
@@ -4168,11 +4147,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['diag_retake'] = True
         await _send(
             context, _chat_id(update),
-            '🎯 Тест уровня заново.\n'
+            'Тест уровня заново.\n'
             'XP, уроки и достижения сохранятся — изменится только уровень по результату.',
         )
-        await _begin_diagnostic(update, context, retake=True)
-    elif data == 'profile:rediag':
         await _begin_diagnostic(update, context, retake=True)
     elif data == 'tier:free':
         from billing_app.plans_catalog import FREE_TIER_BLOCK
@@ -4398,21 +4375,35 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or '').strip()
     await _ensure_profile(update, context)
 
-    menu = {
-        keyboards.BTN_LEARN: show_daily_plan,
+    if text in keyboards.PRIMARY_BUTTONS:
+        context.user_data['mode'] = None
+        context.user_data['expect'] = None
+        _clear_tutor_session(context)
+        await _handle_primary_action(update, context)
+        return
+
+    if text == keyboards.BTN_TRAINING:
+        context.user_data['mode'] = None
+        context.user_data['expect'] = None
+        await _show_training_menu(update, context)
+        return
+
+    # Legacy-кнопки старой клавиатуры (до обновления).
+    legacy = {
         keyboards.BTN_PROFILE: show_profile,
         keyboards.BTN_PROGRESS: show_progress,
         keyboards.BTN_WORDS: show_words,
         keyboards.BTN_RULES: show_rules_map,
         keyboards.BTN_TUTOR: start_tutor,
         keyboards.BTN_SUBSCRIBE: show_subscription,
+        '📚 Учиться': _handle_primary_action,
     }
-    if text in menu:
+    if text in legacy:
         context.user_data['mode'] = None
         context.user_data['expect'] = None
         if text != keyboards.BTN_TUTOR:
             _clear_tutor_session(context)
-        await menu[text](update, context)
+        await legacy[text](update, context)
         return
 
     if context.user_data.get('expect') == 'goal_custom':
@@ -4497,7 +4488,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await _send(context, _chat_id(update),
-                'Выбери действие в меню 👇', reply_markup=keyboards.main_menu())
+                'Выбери «Начать» или «Тренировка» 👇',
+                reply_markup=_main_menu(context))
 
 
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4623,12 +4615,12 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _post_init(app):
     """Register the command menu (the '/' button in Telegram)."""
     await app.bot.set_my_commands([
-        BotCommand('start', 'Начало и меню'),
-        BotCommand('lessons', 'Уроки под твой уровень'),
-        BotCommand('profile', 'Профиль и достижения'),
-        BotCommand('tutor', 'Спросить наставника'),
-        BotCommand('diagnostic', 'Пройти диагностику заново'),
-        BotCommand('help', 'Что я умею'),
+        BotCommand('start', 'Начать / продолжить'),
+        BotCommand('profile', 'Профиль'),
+        BotCommand('progress', 'Прогресс'),
+        BotCommand('subscribe', 'Тарифы'),
+        BotCommand('diagnostic', 'Тест уровня'),
+        BotCommand('help', 'Справка'),
     ])
 
 
@@ -4659,6 +4651,8 @@ def build_application():
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(CommandHandler('diagnostic', diagnostic_command))
     app.add_handler(CommandHandler('profile', profile_command))
+    app.add_handler(CommandHandler('progress', progress_command))
+    app.add_handler(CommandHandler('subscribe', subscribe_command))
     app.add_handler(CommandHandler('lessons', lessons_command))
     app.add_handler(CommandHandler('plan', plan_command))
     app.add_handler(CommandHandler('tutor', tutor_command))
