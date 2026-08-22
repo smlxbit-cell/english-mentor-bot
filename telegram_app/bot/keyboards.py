@@ -35,10 +35,10 @@ SKILL_FOCUS_RU = {
 
 
 def main_menu(*, continue_mode: bool = False) -> ReplyKeyboardMarkup:
-    """Две кнопки: урок (начать/продолжить) + тренировка."""
+    """Две кнопки в одну строку: урок + тренировка."""
     primary = BTN_CONTINUE if continue_mode else BTN_START
     return ReplyKeyboardMarkup(
-        [[primary], [BTN_TRAINING]],
+        [[primary, BTN_TRAINING]],
         resize_keyboard=True,
     )
 
