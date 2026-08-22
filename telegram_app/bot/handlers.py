@@ -1637,113 +1637,69 @@ def _format_daily_plan_text(plan: dict) -> str:
     from study_app.services.daily_plan import _display_title
     episode = plan.get('episode')
     ep_num = (episode or {}).get('episode_num', 0)
+    total_m = plan.get('progress_minutes_total', 0)
+
     if plan.get('is_rest_day'):
-        header = '🌿 <b>День отдыха</b>'
+        lines = [
+            '🌿 <b>День отдыха</b>',
+            '',
+            'Короткая разминка ~5 мин — серия дней не прервётся.',
+            '',
+            '▶️ <b>Начать</b>',
+        ]
+        return '\n'.join(lines)
+
+    if episode:
+        title = _esc(episode.get('subtitle') or episode.get('title', 'Эпизод'))
+        header = f'📖 <b>Эпизод {ep_num}</b> · {title}' if ep_num else f'📖 <b>{title}</b>'
     else:
         header = '📖 <b>Глава дня</b>'
-        if ep_num:
-            header += f' · Эпизод {ep_num}'
+    if total_m:
+        header += f' · ~{total_m} мин'
 
-    lines = [header, _esc(plan.get('greeting', '')), '']
+    parts: list[str] = []
 
-    if plan.get('is_rest_day'):
-        lines.append('Сегодня без нового эпизода — только лёгкая разминка (~5 мин).')
-        lines.append('Серия дней не прервётся 🔥')
-        lines.append('')
-
-    steps: list[str] = []
-    total_mins = plan.get('progress_minutes_total', 0)
-    total_xp = 0
-
-    def _mark(done: bool, icon: str) -> str:
-        # One symbol per step: ✅ when done, otherwise the type icon.
-        return '✅' if done else icon
+    def _step(done: bool, icon: str) -> str:
+        return f'✅{icon}' if done else icon
 
     warmup = plan.get('warmup')
     if warmup:
-        from study_app.daily_facts import warmup_label
-        icon, label = warmup_label(warmup.get('kind', 'fact'))
-        steps.append(f'{_mark(warmup.get("done"), icon)} {label} — ~3 мин')
-
+        parts.append(_step(warmup.get('done'), '💬'))
     if episode:
-        mins = episode.get('minutes') or 8
-        xp = episode.get('xp_reward') or 0
-        title = episode.get('subtitle') or episode.get('title', 'Эпизод')
-        meta = f'~{mins} мин'
-        if xp:
-            meta += f' · +{xp} XP'
-            total_xp += xp
-        steps.append(f'{_mark(episode.get("done"), "📺")} {_esc(title)} — {meta}')
-    elif not plan.get('has_episode') and not plan.get('is_rest_day'):
-        lines.append('📚 Сегодня без эпизода — новая глава скоро в программе')
-        lines.append('')
-
+        parts.append(_step(episode.get('done'), '📺'))
     listening = plan.get('listening')
     if listening:
-        lm = listening.get('target_minutes') or listening.get('minutes') or 4
-        title = _display_title(listening.get('title', ''), 'Аудирование')
-        steps.append(
-            f'{_mark(listening.get("done"), "🎧")} '
-            f'{_esc(title)} — ~{lm} мин'
-        )
-
+        parts.append(_step(listening.get('done'), '🎧'))
     speaking = plan.get('speaking')
     if speaking:
-        sm = speaking.get('target_minutes') or speaking.get('minutes') or 4
-        title = _display_title(speaking.get('title', ''), 'Говорение')
-        steps.append(
-            f'{_mark(speaking.get("done"), "🎙")} '
-            f'{_esc(title)} — ~{sm} мин'
-        )
-
+        parts.append(_step(speaking.get('done'), '🎙'))
     bonus = plan.get('bonus_words')
     if bonus:
-        cnt = bonus.get('count', 0)
-        est = bonus.get('target_minutes') or max(2, min(cnt, 8))
-        steps.append(f'{_mark(bonus.get("done"), "🗂")} Повторить {cnt} слов — ~{est} мин')
-
+        parts.append(_step(bonus.get('done'), '🗂'))
     drill = plan.get('rule_drill')
     if drill:
-        steps.append(f'{_mark(drill.get("done"), "📖")} Тренировка правил — ~5 мин')
+        parts.append(_step(drill.get('done'), '📖'))
 
-    if steps:
-        summary = f'<b>Маршрут на сегодня</b> (~{total_mins} мин'
-        if total_xp:
-            summary += f' · +{total_xp} XP'
-        summary += '):'
-        lines.append(summary)
-        lines.append('')
-        for i, step in enumerate(steps, 1):
-            lines.append(f'{i}. {step}')
-        lines.append('')
-
-    pct = plan.get('progress_percent', 0)
-    done_m = plan.get('progress_minutes_done', 0)
-    total_m = plan.get('progress_minutes_total', 1)
-    if total_m > 0:
-        bar = _progress_bar_percent(pct)
-        lines.append(f'{bar}  {pct}%  ·  ~{done_m} из {total_m} мин')
+    lines = [header, '']
+    if parts:
+        lines.append(' → '.join(parts))
+        lines.append('<i>разминка · урок · аудирование · говорение</i>')
         lines.append('')
 
     if plan.get('all_done'):
-        if plan.get('is_rest_day'):
-            lines.append('🌿 Отдых засчитан! Завтра — новая глава.')
-        else:
-            lines.append('🎉 Глава дня закрыта! Завтра — новое приключение.')
+        lines.append('🎉 Глава закрыта. Завтра — новое.')
     else:
         cta = plan.get('continue_label') or (
             'Продолжить' if plan.get('progress_done', 0) > 0 else 'Начать'
         )
-        lines.append(f'Нажми <b>▶️ {cta}</b> — поведу по шагам, без выбора.')
+        lines.append(f'▶️ <b>{cta}</b> — поведу по шагам, без выбора.')
 
     if not plan.get('premium'):
         if plan.get('access_tier') == 'trial':
             left = plan.get('trial_days_left', 0)
-            lines.append(f'\n<i>🎁 Пробный период: {left} дн. — всё открыто</i>')
+            lines.append(f'\n<i>🎁 Пробный период: {left} дн.</i>')
         else:
-            lines.append(
-                '\n<i>🆓 Бесплатно: эпизоды 1–3 · словарь · правила · 🔊</i>'
-            )
+            lines.append('\n<i>🆓 Free: эпизоды 1–3 · /subscribe</i>')
 
     return '\n'.join(lines)
 
@@ -3627,13 +3583,20 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
 async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from billing_app.plans_catalog import format_subscription_compact
 
+    profile_id = context.user_data.get('profile_id')
+    if profile_id:
+        has_sub = await db.has_active_subscription(profile_id)
+    else:
+        has_sub = False
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
     text = format_subscription_compact(sub_plans, access_tier='free')
     await _send(
         context, _chat_id(update),
         text,
-        reply_markup=keyboards.paywall_kb(sub_plans, show_free=True),
+        reply_markup=keyboards.paywall_kb(
+            sub_plans, show_free=True, has_subscription=has_sub,
+        ),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3650,11 +3613,14 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tier = detail.get('access_tier', 'free')
 
     if limits.get('has_subscription'):
+        from billing_app.plans_catalog import PLAN_NAMES_RU
+        plan_code = (detail.get('plan_code') or '').lower()
+        plan_ru = PLAN_NAMES_RU.get(plan_code, limits['plan_name'])
         text = (
-            f'<b>{limits["plan_name"]}</b>\n'
-            f'Голос: ~{limits["voice_remaining_minutes"]} мин · '
-            f'наставник: ~{limits["tutor_messages_remaining"]} сообщ.\n'
-            'Полная программа активна.'
+            f'<b>{plan_ru}</b>\n'
+            f'Голос наставника: ~{limits["voice_remaining_minutes"]} мин · '
+            f'сообщений: ~{limits["tutor_messages_remaining"]}\n'
+            'Вся программа открыта.'
         )
         await _send(
             context, _chat_id(update),
@@ -3673,7 +3639,10 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send(
         context, _chat_id(update),
         text,
-        reply_markup=keyboards.paywall_kb(sub_plans, show_free=True),
+        reply_markup=keyboards.paywall_kb(
+            sub_plans, show_free=True,
+            has_subscription=limits.get('has_subscription', False),
+        ),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3992,6 +3961,22 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=keyboards.warmup_kb(quiz),
                     parse_mode=ParseMode.HTML,
                 )
+    elif data == 'reminder:listen':
+        profile = await _ensure_profile(update, context)
+        plan = await db.get_daily_plan(profile['id'])
+        warmup = plan.get('warmup') or {}
+        speak = (warmup.get('fact_en') or '').strip()
+        if speak:
+            await _play_tts(context, _chat_id(update), speak)
+        else:
+            await _ack_callback(query, 'Нечего озвучить', show_alert=True)
+    elif data == 'addon:info':
+        await _ack_callback(
+            query,
+            '➕ +100 мин — докупка голоса наставника (290 ₽). '
+            'Доступна после оформления Базового, Активного или Про.',
+            show_alert=True,
+        )
     elif data == 'plan:warmup:next':
         await query.answer('Сначала ответь на вопрос 👇')
         await _show_warmup(update, context)
@@ -4148,16 +4133,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await _begin_diagnostic(update, context, retake=True)
     elif data == 'tier:free':
-        from billing_app.plans_catalog import FREE_TIER_BLOCK
         await _send(
             context, _chat_id(update),
-            FREE_TIER_BLOCK + '\nЭто ваш базовый тариф. Для полной программы и голоса 🎙️ — '
-            'выберите Basic, Active или Pro ниже.',
+            '🆓 <b>Бесплатный тариф</b> — 0 ₽ навсегда.\n\n'
+            '• эпизоды 1–3 сериала\n'
+            '• словарь и карта грамматики\n'
+            '• озвучка 🔊 всего английского\n'
+            '• наставник — текстом\n'
+            '• <i>без голосового ввода 🎙️</i>\n\n'
+            'Для всей программы и голоса — тарифы ниже 👇',
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.paywall_kb(
                 [p for p in await db.get_subscription_plans()
                  if p.get('plan_kind') == 'subscription'],
                 show_free=True,
+                has_subscription=await db.has_active_subscription(
+                    context.user_data['profile_id'],
+                ),
             ),
         )
     elif data.startswith('intr:toggle:'):

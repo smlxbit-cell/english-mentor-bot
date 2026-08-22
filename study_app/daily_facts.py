@@ -271,6 +271,53 @@ def pick_plan_greeting(
     return f'{display}, {time_phrase}! {body}'
 
 
+def format_compact_reminder(
+    user_id: int,
+    day: date,
+    plan: dict,
+) -> dict:
+    """Motivational reminder: phrase/fact first, no plan canvas. Returns text + tts."""
+    warmup = plan.get('warmup') or {}
+    fact_en = (warmup.get('fact_en') or '').strip()
+    fact_ru = (warmup.get('fact_ru') or '').strip()
+    kind = warmup.get('kind', 'phrase')
+    icon, label = warmup_label(kind)
+
+    episode = plan.get('episode') or {}
+    ep_num = episode.get('episode_num')
+    ep_title = (episode.get('subtitle') or episode.get('title') or '').strip()
+    total_m = plan.get('progress_minutes_total', 0)
+
+    if plan.get('is_rest_day'):
+        text = (
+            f'{icon} <b>{label}</b>\n\n'
+            f'{fact_ru}\n\n'
+            f'🇬🇧 <i>{fact_en}</i>\n\n'
+            '🌿 Сегодня отдых — короткая разминка ~5 мин.'
+        )
+        return {'text': text, 'tts_text': fact_en, 'cta': '▶️ Начать'}
+
+    hook = f'{icon} <b>{label}</b>'
+    if ep_num and ep_title:
+        hook += f' · эпизод {ep_num}'
+    elif total_m:
+        hook += f' · ~{total_m} мин'
+
+    lines = [hook, '']
+    if fact_ru:
+        lines.append(fact_ru)
+    if fact_en:
+        lines.append(f'🇬🇧 <i>{fact_en}</i>')
+    lines.append('')
+    lines.append('▶️ Жми «Начать» — сразу в тренировку, без длинного плана.')
+
+    return {
+        'text': '\n'.join(lines),
+        'tts_text': fact_en,
+        'cta': '▶️ Начать',
+    }
+
+
 def pick_reminder_lines(
     name: str,
     user_id: int,

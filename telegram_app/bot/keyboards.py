@@ -691,30 +691,53 @@ def practice_again_kb() -> InlineKeyboardMarkup:
     )
 
 
-def paywall_kb(plans: list[dict], *, show_free: bool = True) -> InlineKeyboardMarkup:
+def paywall_kb(
+    plans: list[dict],
+    *,
+    show_free: bool = True,
+    has_subscription: bool = False,
+) -> InlineKeyboardMarkup:
+    from billing_app.plans_catalog import PLAN_NAMES_RU
+
     rows = []
     if show_free:
         rows.append([
-            InlineKeyboardButton('🆓 Free — 0 ₽', callback_data='tier:free'),
+            InlineKeyboardButton(
+                '🆓 Бесплатно — эп.1–3, текст, 🔊',
+                callback_data='tier:free',
+            ),
         ])
     for plan in plans:
         if plan.get('plan_kind') != 'subscription':
             continue
-        label = f'{plan["name"]} — {plan["price_rub"]} ₽'
+        code = plan.get('code', '')
+        ru_name = PLAN_NAMES_RU.get(code, plan.get('name', code))
+        mins = plan.get('voice_minutes_monthly', 0)
+        price = plan.get('price_rub', 0)
+        label = f'{price}₽ {ru_name} · {mins} мин голос/мес'
+        if len(label) > 64:
+            label = f'{price}₽ {ru_name} · {mins} мин/мес'
         rows.append([
-            InlineKeyboardButton(label, callback_data=f'buy:{plan["code"]}'),
+            InlineKeyboardButton(label, callback_data=f'buy:{code}'),
         ])
-    rows.append([InlineKeyboardButton('ℹ️ Условия', callback_data='terms')])
+    addon_cb = 'buy:voice_100' if has_subscription else 'addon:info'
+    rows.append([
+        InlineKeyboardButton('+100 мин голоса · 290₽', callback_data=addon_cb),
+    ])
+    rows.append([InlineKeyboardButton('ℹ️ Подробные условия', callback_data='terms')])
     return InlineKeyboardMarkup(rows)
 
 
 def subscription_kb(*, has_subscription: bool, voice_remaining: int = 0) -> InlineKeyboardMarkup:
     rows = []
-    if has_subscription and voice_remaining <= 15:
+    if has_subscription:
         rows.append([
-            InlineKeyboardButton('+100 мин голоса — 290 ₽', callback_data='buy:voice_100'),
+            InlineKeyboardButton('+100 мин голоса · 290₽', callback_data='buy:voice_100'),
         ])
-    if not has_subscription:
+    else:
         rows.append([InlineKeyboardButton('⭐️ Выбрать тариф', callback_data='paywall:plans')])
-    rows.append([InlineKeyboardButton('ℹ️ Условия', callback_data='terms')])
+        rows.append([
+            InlineKeyboardButton('+100 мин голоса · 290₽', callback_data='addon:info'),
+        ])
+    rows.append([InlineKeyboardButton('ℹ️ Подробные условия', callback_data='terms')])
     return InlineKeyboardMarkup(rows)

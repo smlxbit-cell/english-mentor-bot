@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from django.test import TestCase
 
 from study_app.daily_facts import (
+    format_compact_reminder,
     pick_plan_greeting,
     pick_reminder_lines,
     time_greeting_ru,
@@ -40,6 +41,23 @@ class DailyGreetingsTests(TestCase):
         a = pick_reminder_lines('Мария', 1, day, 10)
         b = pick_reminder_lines('Мария', 2, day, 10)
         self.assertNotEqual('\n'.join(a), '\n'.join(b))
+
+    def test_compact_reminder_starts_with_phrase_not_plan(self):
+        plan = {
+            'warmup': {
+                'kind': 'phrase',
+                'fact_ru': '«Would like» мягче, чем «want».',
+                'fact_en': '"Would like" sounds softer than "want".',
+            },
+            'episode': {'episode_num': 2, 'title': 'Small talk'},
+            'progress_minutes_total': 19,
+        }
+        payload = format_compact_reminder(1, date(2026, 7, 12), plan)
+        self.assertIn('Would like', payload['text'])
+        self.assertIn('🇬🇧', payload['text'])
+        self.assertNotIn('План на день', payload['text'])
+        self.assertNotIn('Привет', payload['text'])
+        self.assertEqual(payload['cta'], '▶️ Начать')
 
     def test_reminder_includes_quote(self):
         lines = pick_reminder_lines('Мария', 5, date(2026, 7, 12), 10)

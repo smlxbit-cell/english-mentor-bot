@@ -7,8 +7,7 @@ from django.utils import timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config.settings import TELEGRAM_BOT_TOKEN
-from study_app.daily_facts import pick_reminder_lines
-from study_app.services.daily_plan import format_plan_reminder_summary
+from study_app.daily_facts import format_compact_reminder
 from telegram_app.bot import db
 from telegram_app.bot.telegram_client import make_bot
 
@@ -49,29 +48,25 @@ class Command(BaseCommand):
         today = timezone.localdate()
         for u in users:
             plan = u['plan']
-            warmup = plan.get('warmup')
-            name = u.get('first_name') or 'друг'
-            lines = pick_reminder_lines(
-                name, u['profile_id'], today, hour, include_quote=True,
-            )
-            lines.extend(['', format_plan_reminder_summary(plan)])
-            if warmup:
-                lines.append('')
-                lines.append(f'💡 {warmup.get("fact_ru", "")}')
-                lines.append(f'🇬🇧 {warmup.get("fact_en", "")}')
-
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton('📚 Открыть план дня', callback_data='plan:menu')],
+            payload = format_compact_reminder(u['profile_id'], today, plan)
+            rows = []
+            if payload.get('tts_text'):
+                rows.append([
+                    InlineKeyboardButton('🔊 Слушать', callback_data='reminder:listen'),
+                ])
+            rows.append([
+                InlineKeyboardButton(
+                    payload.get('cta', '▶️ Начать'),
+                    callback_data='plan:continue',
+                ),
             ])
+            kb = InlineKeyboardMarkup(rows)
             try:
-                clip = await db.get_character_media('Spirit', 'pause')
-                note_id = (clip or {}).get('note_file_id')
-                if note_id:
-                    await bot.send_video_note(chat_id=u['telegram_id'], video_note=note_id)
                 await bot.send_message(
                     chat_id=u['telegram_id'],
-                    text='\n'.join(lines),
+                    text=payload['text'],
                     reply_markup=kb,
+                    parse_mode='HTML',
                 )
                 sent += 1
             except Exception as exc:
