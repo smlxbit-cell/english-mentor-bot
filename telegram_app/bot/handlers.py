@@ -1369,6 +1369,7 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
     body = diag_flow.result_message(claimed, level_code, diag)
     if retake:
         body += '\n\n✅ Прогресс, XP и уроки сохранены — обновили только уровень.'
+        await send_mentor_reaction(context, chat_id, 'diagnostic_done')
         await _send(
             context, chat_id, body,
             parse_mode=ParseMode.HTML,
@@ -1376,6 +1377,7 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    await send_mentor_reaction(context, chat_id, 'diagnostic_done')
     await _send(context, chat_id, body, parse_mode=ParseMode.HTML)
     context.user_data['onboarding'] = True
     await db.clear_learning_goal(profile_id)
@@ -3971,8 +3973,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'addon:info':
         await _ack_callback(
             query,
-            '➕ +100 мин — докупка голоса наставника (290 ₽). '
-            'Доступна после оформления Базового, Активного или Про.',
+            '➕ 290 ₽ — докупка 100 минут голоса наставника.\n'
+            'Сначала нужен платный тариф (Базовый, Активный или Про).',
             show_alert=True,
         )
     elif data == 'plan:warmup:next':
@@ -4133,13 +4135,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'tier:free':
         await _send(
             context, _chat_id(update),
-            '🆓 <b>Бесплатный тариф</b> — 0 ₽ навсегда.\n\n'
-            '• эпизоды 1–3 сериала\n'
-            '• словарь и карта грамматики\n'
-            '• озвучка 🔊 всего английского\n'
-            '• наставник — текстом\n'
-            '• <i>без голосового ввода 🎙️</i>\n\n'
-            'Для всей программы и голоса — тарифы ниже 👇',
+            '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n'
+            '🆓 <b>БЕСПЛАТНО</b> · 0 ₽\n'
+            '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n'
+            '📺 Эпизоды 1–3 сериала\n'
+            '📖 Словарь и карта грамматики\n'
+            '🔊 Озвучка всего английского\n'
+            '💬 Наставник — только текст\n'
+            '🚫 Нельзя говорить боту голосом\n\n'
+            'Для всех эпизодов и голоса 🎙 — платные тарифы ниже 👇',
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.paywall_kb(
                 [p for p in await db.get_subscription_plans()

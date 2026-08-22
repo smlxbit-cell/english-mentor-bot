@@ -87,18 +87,24 @@ async def send_media_by_key(
 
     if compact:
         note_id = clip.get('note_file_id')
-        if not note_id:
-            return False
-        try:
-            await context.bot.send_video_note(chat_id, note_id)
-            return True
-        except Exception as exc:  # noqa: BLE001
-            logger.warning('mentor note %s/%s failed: %s', character, key, exc)
-            return False
+        if note_id:
+            try:
+                await context.bot.send_video_note(chat_id, note_id)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                logger.warning('mentor note %s/%s failed: %s', character, key, exc)
+        # Если кружок недоступен — показываем анимацию, а не молчим.
+        if clip.get('file_id'):
+            return await _send_clip_file(context, chat_id, clip)
+        return False
 
     if not clip.get('file_id'):
         return False
 
+    return await _send_clip_file(context, chat_id, clip)
+
+
+async def _send_clip_file(context, chat_id: int, clip: dict) -> bool:
     file_id = clip['file_id']
     kind = clip.get('kind', 'animation')
     try:
@@ -113,7 +119,7 @@ async def send_media_by_key(
                 await context.bot.send_video(chat_id, file_id)
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning('mentor clip %s/%s failed: %s', character, key, exc)
+        logger.warning('mentor clip failed: %s', exc)
         return False
 
 
