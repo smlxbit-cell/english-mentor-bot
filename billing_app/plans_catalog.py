@@ -22,6 +22,21 @@ TARIFF_INCLUDES_PLAIN = (
     'Тарифы отличаются в основном минутами голоса.'
 )
 
+FREE_TIER_BLOCK = (
+    '<b>🆓 Free — 0 ₽ навсегда</b>\n'
+    '• эпизоды 1–3 сериала, словарь, карта правил\n'
+    '• тесты и тренировки <b>текстом</b>\n'
+    '• 🔊 озвучка всего английского в уроках\n'
+    '• наставник — текст (лимит в месяц)\n'
+    '• <i>без голосового ввода 🎙️ (экономим ваши минуты STT)</i>\n\n'
+    '<b>+ 2 дня пробного периода</b> — всё открыто, включая голос.\n\n'
+)
+
+FREE_TIER_PLAIN = (
+    'Free 0 ₽: эпизоды 1–3, словарь, правила, озвучка, наставник текстом. '
+    'Без голосового ввода. 2 дня полного trial.'
+)
+
 PLANS: tuple[dict, ...] = (
     {
         'code': 'basic',
@@ -98,9 +113,15 @@ def format_subscription_plans_message(
     header: str,
     sub_plans: list[dict],
     days: int,
+    show_free: bool = True,
+    free_active: bool = False,
 ) -> str:
     """HTML text for paywall / subscription picker."""
-    lines = [header, f'Подписка на {days} дней, без автопродления:\n']
+    lines = [header]
+    if show_free:
+        prefix = '✅ ' if free_active else ''
+        lines.append(prefix + FREE_TIER_BLOCK.strip())
+    lines.append(f'<b>Платные тарифы</b> — {days} дней, без автопродления:\n')
     for plan in sub_plans:
         mins = plan.get('voice_minutes_monthly', 0)
         stt_note = ''

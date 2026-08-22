@@ -646,11 +646,20 @@ def heal_diagnostic_if_needed(profile_id: int) -> bool:
 
 
 @sync_to_async
-def reset_diagnostic(profile_id: int) -> None:
+def reset_diagnostic(profile_id: int) -> bool:
+    """Legacy hook — does not wipe level or progress (protected). Returns False."""
+    return False
+
+
+def diagnostic_is_locked(profile: UserProfile) -> bool:
+    """True when level is set — re-test must not wipe progress."""
+    return bool(profile.diagnostic_completed and (profile.cefr_level or '').strip())
+
+
+@sync_to_async
+def diagnostic_locked(profile_id: int) -> bool:
     profile = UserProfile.objects.get(id=profile_id)
-    profile.diagnostic_completed = False
-    profile.trial_lessons_used = 0
-    profile.save(update_fields=['diagnostic_completed', 'trial_lessons_used', 'updated_at'])
+    return diagnostic_is_locked(profile)
 
 
 # --------------------------------------------------------------------------- #

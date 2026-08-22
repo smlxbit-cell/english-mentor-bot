@@ -557,7 +557,6 @@ def profile_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton('💪 Фокус практики', callback_data='profile:focus')],
             [InlineKeyboardButton('🗺 Карта пути', callback_data='profile:roadmap')],
             [InlineKeyboardButton('🔔 Напоминания', callback_data='profile:notify')],
-            [InlineKeyboardButton('🔁 Пройти диагностику заново', callback_data='profile:rediag')],
         ]
     )
 
@@ -673,8 +672,12 @@ def practice_again_kb() -> InlineKeyboardMarkup:
     )
 
 
-def paywall_kb(plans: list[dict]) -> InlineKeyboardMarkup:
+def paywall_kb(plans: list[dict], *, show_free: bool = True) -> InlineKeyboardMarkup:
     rows = []
+    if show_free:
+        rows.append([
+            InlineKeyboardButton('🆓 Free — 0 ₽', callback_data='tier:free'),
+        ])
     for plan in plans:
         if plan.get('plan_kind') != 'subscription':
             continue

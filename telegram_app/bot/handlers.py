@@ -887,6 +887,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def diagnostic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _ensure_profile(update, context)
+    if await db.diagnostic_locked(context.user_data['profile_id']):
+        profile = await db.get_or_create_profile(update.effective_user)
+        await _send(
+            context, _chat_id(update),
+            f'Диагностика уже пройдена ✅ Твой уровень: <b>{profile["cefr_level"]}</b>.\n'
+            'Повторный тест не сбрасывает прогресс — смотри 👤 Профиль.',
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboards.main_menu(),
+        )
+        return
     await _begin_diagnostic(update, context)
 
 
@@ -910,6 +920,17 @@ async def tutor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _begin_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile_id = context.user_data.get('profile_id')
+    if profile_id and await db.diagnostic_locked(profile_id):
+        profile = await db.get_or_create_profile(update.effective_user)
+        await _send(
+            context, _chat_id(update),
+            f'Диагностика уже пройдена ✅ Уровень: <b>{profile["cefr_level"]}</b>.\n'
+            'Прогресс и достижения сохранены.',
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboards.main_menu(),
+        )
+        return
     items = await db.get_diagnostic_items()
     chat_id = _chat_id(update)
     if not items:
@@ -3610,15 +3631,15 @@ async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = format_subscription_plans_message(
         header=(
             'Дальше — полная программа и голос с наставником 🎙️\n'
-            'Бесплатно остаются эпизоды 1–3, словарь, правила и 🔊 озвучка.\n'
         ),
         sub_plans=sub_plans,
         days=days,
+        free_active=True,
     )
     await _send(
         context, _chat_id(update),
         text,
-        reply_markup=keyboards.paywall_kb(sub_plans),
+        reply_markup=keyboards.paywall_kb(sub_plans, show_free=True),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3651,18 +3672,25 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from billing_app.plans_catalog import format_subscription_plans_message
 
+    detail = await db.get_profile_detail(profile_id)
+    tier = detail.get('access_tier', 'free')
+
     days = settings.SUBSCRIPTION_DAYS
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
+    header = 'Тарифы English Mentor 👇\n'
+    if tier == 'trial':
+        header = '🎁 Сейчас пробный период — всё открыто.\n\n' + header
     text = format_subscription_plans_message(
-        header='Тарифы English Mentor 👇\n',
+        header=header,
         sub_plans=sub_plans,
         days=days,
+        free_active=(tier == 'free'),
     )
     await _send(
         context, _chat_id(update),
         text,
-        reply_markup=keyboards.paywall_kb(sub_plans),
+        reply_markup=keyboards.paywall_kb(sub_plans, show_free=True),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3824,8 +3852,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _ensure_profile(update, context)
 
     if data == 'diag:start':
+        if await db.diagnostic_locked(context.user_data['profile_id']):
+            profile = await db.get_or_create_profile(update.effective_user)
+            await _ack_callback(
+                query,
+                f'Уровень уже {profile["cefr_level"]} — прогресс сохранён',
+                show_alert=True,
+            )
+            return
         await _begin_diagnostic(update, context)
     elif data.startswith('diag:claim:'):
+        if await db.diagnostic_locked(context.user_data['profile_id']):
+            await _ack_callback(query, 'Диагностика уже пройдена ✅', show_alert=True)
+            return
         claimed = data.rsplit(':', 1)[1]
         await _start_diagnostic_test(update, context, claimed)
     elif data == 'diag:challenge:yes':
@@ -4109,8 +4148,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'profile:goal':
         await show_goal(update, context)
     elif data == 'profile:rediag':
-        await db.reset_diagnostic(context.user_data['profile_id'])
-        await _begin_diagnostic(update, context)
+        await _ack_callback(
+            query,
+            'Повторная диагностика отключена — уровень и прогресс не сбрасываются.',
+            show_alert=True,
+        )
+    elif data == 'tier:free':
+        from billing_app.plans_catalog import FREE_TIER_BLOCK
+        await _send(
+            context, _chat_id(update),
+            FREE_TIER_BLOCK + '\nЭто ваш базовый тариф. Для полной программы и голоса 🎙️ — '
+            'выберите Basic, Active или Pro ниже.',
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboards.paywall_kb(
+                [p for p in await db.get_subscription_plans()
+                 if p.get('plan_kind') == 'subscription'],
+                show_free=True,
+            ),
+        )
     elif data.startswith('intr:toggle:'):
         try:
             item_id = int(data.rsplit(':', 1)[1])
