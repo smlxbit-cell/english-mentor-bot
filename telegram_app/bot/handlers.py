@@ -3973,8 +3973,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'addon:info':
         await _ack_callback(
             query,
-            '➕ 290 ₽ — докупка 100 минут голоса наставника.\n'
-            'Сначала нужен платный тариф (Базовый, Активный или Про).',
+            '➕ 290 ₽ — добавить 100 минут разговора с наставником.\n\n'
+            'Работает, когда уже есть платный тариф (Базовый, Активный или Про). '
+            'Минуты прибавляются к вашему лимиту на месяц.',
             show_alert=True,
         )
     elif data == 'plan:warmup:next':
@@ -4133,17 +4134,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await _begin_diagnostic(update, context, retake=True)
     elif data == 'tier:free':
+        from billing_app.plans_catalog import TARIFF_UTP_BLOCK
         await _send(
             context, _chat_id(update),
+            TARIFF_UTP_BLOCK + '\n\n'
             '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n'
             '🆓 <b>БЕСПЛАТНО</b> · 0 ₽\n'
             '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n'
             '📺 Эпизоды 1–3 сериала\n'
             '📖 Словарь и карта грамматики\n'
-            '🔊 Озвучка всего английского\n'
-            '💬 Наставник — только текст\n'
-            '🚫 Нельзя говорить боту голосом\n\n'
-            'Для всех эпизодов и голоса 🎙 — платные тарифы ниже 👇',
+            '🔊 <b>Озвучка всего английского</b> — кнопка 🔊 везде\n'
+            '💬 Наставник AI — текстом, с объяснениями и переводом\n'
+            '🚫 Голосом боту говорить нельзя\n\n'
+            'Все эпизоды и разговор 🎙 — в платных тарифах ниже 👇',
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.paywall_kb(
                 [p for p in await db.get_subscription_plans()
