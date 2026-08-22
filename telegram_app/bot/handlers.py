@@ -976,8 +976,7 @@ async def _begin_diagnostic(
 
     context.user_data['mode'] = 'diagnostic'
     context.user_data['diag'] = {'group': group}
-    # Animation (not video note) — меньше занимает экран, чем круг на весь чат.
-    await send_mentor_reaction(context, chat_id, 'diagnostic_start', compact=False)
+    # Во время диагностики Spirit не показываем — отвлекает и занимает экран.
     await _send(
         context, chat_id,
         'Диагностика уровня 🎯\n\n'
@@ -1367,7 +1366,6 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['mode'] = None
     context.user_data['diag'] = None
 
-    await send_mentor_reaction(context, chat_id, 'diagnostic_done', compact=False)
     body = diag_flow.result_message(claimed, level_code, diag)
     if retake:
         body += '\n\n✅ Прогресс, XP и уроки сохранены — обновили только уровень.'

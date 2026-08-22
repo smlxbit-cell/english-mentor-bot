@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from content_app.diagnostic_explanations import context_block, diagnostic_deep_dive
+from content_app.diagnostic_explanations import (
+    context_block,
+    diagnostic_deep_dive,
+    translation_block,
+)
 
 LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1']
 LEVEL_LABELS = {
@@ -207,6 +211,11 @@ def explanation_detail(item: dict, user_answer: str = '', *, was_correct: bool =
         lines.append('')
         prefix = '<b>Почему так:</b> ' if was_correct else ''
         lines.append(f'{prefix}{tip}')
+
+    trans = translation_block(item)
+    if trans and trans not in '\n'.join(lines):
+        lines.append('')
+        lines.append(trans)
 
     return '\n'.join(lines)
 

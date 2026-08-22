@@ -128,10 +128,10 @@ def diagnostic_text_kb(item_id: int, *, with_listen: bool = False) -> InlineKeyb
 
 
 def diagnostic_review_kb(item_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton('💡 Объяснить', callback_data=f'diag:explain:{item_id}')],
-        [InlineKeyboardButton('➡️ Дальше', callback_data='diag:continue')],
-    ])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton('💡 Объяснить', callback_data=f'diag:explain:{item_id}'),
+        InlineKeyboardButton('➡️ Дальше', callback_data='diag:continue'),
+    ]])
 
 
 def diagnostic_wrong_kb(item_id: int) -> InlineKeyboardMarkup:

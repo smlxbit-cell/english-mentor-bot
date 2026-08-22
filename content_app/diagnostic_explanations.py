@@ -12,22 +12,60 @@ def _bilingual(en: str, ru: str) -> str:
 
 def context_block(item: dict) -> str:
     """Pull Russian «…» and the English task line into the explanation."""
+    en, ru = sentence_pair(item)
+    if en and ru:
+        return f'<b>Задание:</b>\n{_bilingual(en, ru)}\n'
     prompt = item.get('prompt') or ''
     ru_match = re.search(r'«([^»]+)»', prompt)
-    if not ru_match:
-        return ''
-    ru = ru_match.group(1).strip()
-    en_line = ''
+    if ru_match:
+        ru = ru_match.group(1).strip()
+        if en:
+            return f'<b>Задание:</b>\n{_bilingual(en, ru)}\n'
+        return f'<b>Задание:</b> 🇷🇺 «{ru}»\n'
+    if en:
+        return f'<b>Задание:</b>\n🇬🇧 <i>{en}</i>\n'
+    return ''
+
+
+def sentence_pair(item: dict) -> tuple[str, str]:
+    """Build full English sentence + Russian gloss from prompt and correct answer."""
+    prompt = item.get('prompt') or ''
+    ru_match = re.search(r'«([^»]+)»', prompt)
+    ru = ru_match.group(1).strip() if ru_match else ''
+    correct = (item.get('correct') or [''])[0]
+    en = ''
     for line in prompt.split('\n'):
         line = line.strip()
         if not line or line.startswith('Вопрос') or line.startswith('🎧'):
             continue
-        if re.search(r'[A-Za-z]', line) and ('___' in line or len(line) > 12):
-            en_line = line
+        if '___' in line and re.search(r'[A-Za-z]', line):
+            en = line.replace('___', correct).strip()
             break
-    if en_line:
-        return f'<b>Задание:</b>\n🇷🇺 «{ru}»\n🇬🇧 <i>{en_line}</i>\n'
-    return f'<b>Задание:</b> 🇷🇺 «{ru}»\n'
+        if not en and re.search(r'^[A-Za-z]', line) and len(line) > 8:
+            en = line.strip()
+    if not ru and item.get('item_type') == 'translation_ru_en':
+        ru = re.sub(r'^Переведи[^\n]*\n+', '', prompt, flags=re.I).strip()
+    return en, ru
+
+
+def translation_block(item: dict) -> str:
+    """Always show EN → RU for the answer sentence (all levels)."""
+    en, ru = sentence_pair(item)
+    if en and ru:
+        return f'<b>Перевод:</b>\n{_bilingual(en, ru)}'
+    if en:
+        return f'<b>Фраза:</b> 🇬🇧 <i>{en}</i>'
+    options = item.get('options') or []
+    correct = _correct_set(item)
+    if options and correct:
+        lines = ['<b>Перевод вариантов:</b>']
+        for opt in options:
+            if opt.lower().strip() in correct:
+                lines.append(f'✅ <b>{opt}</b>')
+            else:
+                lines.append(f'• <b>{opt}</b>')
+        return '\n'.join(lines)
+    return ''
 
 
 def _correct_set(item: dict) -> set[str]:
@@ -239,17 +277,70 @@ def _third_conditional(item: dict) -> str:
     return f'{body}\n\n{extra}' if extra else body
 
 
+_TO_BE_GUIDE: dict[str, dict] = {
+    'I': {
+        'form': 'am',
+        'rule': (
+            'Глагол <b>to be</b> (быть) согласуется с подлежащим:\n'
+            '• <b>I am</b> — я …\n'
+            '• <b>he/she/it is</b> — он/она/оно …\n'
+            '• <b>you/we/they are</b> — ты/вы/мы/они …'
+        ),
+        'en': 'I am a student.',
+        'ru': 'Я — студент.',
+        'wrong': {
+            'is': (
+                '<b>is</b> — с <b>he/she/it</b>: <i>He is a student</i> «он — студент», '
+                '<i>She is happy</i> «она счастлива». С <b>I</b> так не говорят.'
+            ),
+            'are': (
+                '<b>are</b> — с <b>you/we/they</b>: <i>You are a student</i> «ты — студент», '
+                '<i>We are friends</i> «мы — друзья». С <b>I</b> нужно <b>am</b>.'
+            ),
+        },
+    },
+    'she': {
+        'form': 'is',
+        'rule': (
+            'В Present Simple глагол <b>to be</b> для <b>she/he/it</b> → <b>is</b>:\n'
+            '<i>She is happy</i> — «Она счастлива».'
+        ),
+        'en': 'She is happy.',
+        'ru': 'Она счастлива.',
+        'wrong': {
+            'am': '<b>am</b> — только с <b>I</b>: <i>I am happy</i> «я счастлив(а)».',
+            'are': (
+                '<b>are</b> — с <b>you/we/they</b>: <i>They are happy</i> «они счастливы». '
+                'Для <b>she</b> → <b>is</b>.'
+            ),
+        },
+    },
+}
+
+
 def _to_be(item: dict, subject: str, form: str) -> str:
-    others = _wrong_options(item)
-    if not others:
-        return f'С <b>{subject}</b> глагол <b>to be</b> — <b>{form}</b>.'
+    guide = _TO_BE_GUIDE.get(subject) or _TO_BE_GUIDE.get(subject.lower())
+    if not guide:
+        return (
+            f'<b>Грамматика:</b> с местоимением <b>{subject}</b> '
+            f'глагол <b>to be</b> → <b>{form}</b>.'
+        )
     lines = [
-        f'<b>Грамматика:</b> местоимение <b>{subject}</b> → форма <b>{form}</b> (to be).',
+        f'<b>Грамматика:</b> {guide["rule"]}',
         '',
-        '<b>Почему не другие варианты:</b>',
+        _bilingual(guide['en'], guide['ru']),
     ]
-    for opt in others:
-        lines.append(f'❌ <b>{opt}</b> — для <b>{subject}</b> не подходит.')
+    wrong = _wrong_options(item)
+    notes = guide.get('wrong') or {}
+    if wrong and notes:
+        lines.append('')
+        lines.append('<b>Почему не другие варианты:</b>')
+        for opt in wrong:
+            note = notes.get(opt.lower()) or notes.get(opt)
+            if note:
+                lines.append(f'❌ <b>{opt}</b> — {note}')
+            else:
+                lines.append(f'❌ <b>{opt}</b> — не сочетается с <b>{subject}</b>.')
     return '\n'.join(lines)
 
 

@@ -75,6 +75,29 @@ class DiagnosticFlowTests(TestCase):
         self.assertIn('✅', text)
         self.assertIn('второе условное', text.lower())
 
+    def test_explanation_to_be_teaches_why_not_is(self):
+        item = {
+            'prompt': '«Я — студент»\n\nI ___ a student.',
+            'options': ['am', 'is', 'are'],
+            'correct': ['am'],
+            'explanation_ru': 'short',
+        }
+        text = diag_flow.explanation_detail(item, 'am', was_correct=True)
+        self.assertIn('he/she/it', text.lower())
+        self.assertIn('He is', text)
+        self.assertNotIn('не подходит.', text)  # lazy «не подходит» without reason
+
+    def test_explanation_includes_translation_all_levels(self):
+        item = {
+            'prompt': '«Я — студент»\n\nI ___ a student.',
+            'options': ['am', 'is', 'are'],
+            'correct': ['am'],
+            'explanation_ru': 'x',
+        }
+        text = diag_flow.explanation_detail(item, 'is', was_correct=False)
+        self.assertIn('Я — студент', text)
+        self.assertIn('I am a student', text)
+
     def test_explanation_c1_inversion(self):
         item = {
             'prompt': 'Had I known about the deadline, I ___ the report sooner.',
