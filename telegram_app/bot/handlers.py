@@ -806,6 +806,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'Сначала короткая диагностика — подберём программу под твой уровень.',
             reply_markup=keyboards.start_diagnostic_kb(),
         )
+        await _send(
+            context, chat_id,
+            'Можешь посмотреть тарифы: ⭐️ Подписка в меню ниже.',
+            reply_markup=keyboards.main_menu(),
+        )
         return
 
     if not profile.get('onboarding_complete'):
