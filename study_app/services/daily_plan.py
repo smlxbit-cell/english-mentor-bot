@@ -519,6 +519,7 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
     structured = _structured_plan(items, daily_minutes=minutes)
 
     from django.conf import settings
+    from billing_app.trial_access import access_tier_label, trial_days_remaining
 
     trial_left = max(0, settings.TRIAL_LESSONS_LIMIT - profile.trial_lessons_used)
 
@@ -528,6 +529,8 @@ def build_or_get_daily_plan(profile: UserProfile, *, day: date | None = None) ->
         'greeting': full_intro,
         'premium': premium,
         'trial_left': trial_left,
+        'access_tier': access_tier_label(profile),
+        'trial_days_left': trial_days_remaining(profile),
         'daily_minutes': minutes,
         'study_days_per_week': profile.study_days_per_week or 5,
         'is_rest_day': rest,

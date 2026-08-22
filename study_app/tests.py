@@ -69,13 +69,15 @@ class BotFunnelTests(TestCase):
         gate2 = sync(db.can_start_lesson)(self.profile.id, self.paid.id)
         self.assertTrue(gate2['allowed'])
 
-        # After the trial window expires, non-premium users hit the paywall.
+        # After the trial window expires, paid lessons blocked; trial episodes stay free.
         from datetime import timedelta
         self.profile.refresh_from_db()
         self.profile.trial_started_at = timezone.now() - timedelta(days=5)
         self.profile.save()
         gate3 = sync(db.can_start_lesson)(self.profile.id, self.paid.id)
         self.assertFalse(gate3['allowed'])
+        gate4 = sync(db.can_start_lesson)(self.profile.id, self.trial.id)
+        self.assertTrue(gate4['allowed'])
 
     def test_complete_lesson_flags_paywall_after_trial_expiry(self):
         from datetime import timedelta
@@ -84,8 +86,10 @@ class BotFunnelTests(TestCase):
         self.profile.save()
         sync(db.start_or_resume_lesson)(self.profile.id, self.trial.id)
         summary = sync(db.complete_lesson)(self.profile.id, self.trial.id)
-        self.assertTrue(summary['need_paywall'])
+        self.assertFalse(summary['need_paywall'])
         self.assertGreaterEqual(summary['xp_earned'], 50)
+        summary_paid = sync(db.complete_lesson)(self.profile.id, self.paid.id)
+        self.assertTrue(summary_paid['need_paywall'])
 
 
 class AdaptiveInterestTests(TestCase):

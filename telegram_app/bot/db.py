@@ -286,6 +286,11 @@ def get_profile_detail(profile_id: int) -> dict:
     )
 
     from billing_app.limits import get_user_limits, voice_remaining_minutes
+    from billing_app.trial_access import (
+        access_tier_label,
+        has_active_subscription as has_paid_sub,
+        trial_days_remaining,
+    )
 
     limits = get_user_limits(profile)
     plan_name = limits['plan_name']
@@ -320,6 +325,9 @@ def get_profile_detail(profile_id: int) -> dict:
         'target_cefr_level': profile.target_cefr_level or '',
         'skill_focus_ru': [SKILL_RU.get(s, s) for s in (profile.skill_focus or [])],
         'achievements': achievements,
+        'access_tier': access_tier_label(profile),
+        'trial_days_left': trial_days_remaining(profile),
+        'has_paid_subscription': has_paid_sub(profile),
     }
 
 
@@ -604,6 +612,40 @@ def finish_diagnostic(profile_id: int, level_code: str, weak_skills: list[str]) 
 
 
 @sync_to_async
+def persist_diagnostic_primary(profile_id: int, level_code: str) -> None:
+    """Save level after primary round so /start survives bot restarts."""
+    profile = UserProfile.objects.get(id=profile_id)
+    profile.cefr_level = level_code.upper()
+    profile.diagnostic_completed = True
+    if profile.onboarding_status == UserProfile.OnboardingStatus.NOT_STARTED:
+        profile.onboarding_status = UserProfile.OnboardingStatus.IN_PROGRESS
+    profile.save(
+        update_fields=[
+            'cefr_level', 'diagnostic_completed', 'onboarding_status', 'updated_at',
+        ],
+    )
+
+
+@sync_to_async
+def heal_diagnostic_if_needed(profile_id: int) -> bool:
+    """Fix rows where level was saved but diagnostic_completed stayed False."""
+    profile = UserProfile.objects.get(id=profile_id)
+    if profile.diagnostic_completed:
+        return False
+    if not profile.cefr_level:
+        return False
+    profile.diagnostic_completed = True
+    if profile.onboarding_status == UserProfile.OnboardingStatus.NOT_STARTED:
+        profile.onboarding_status = UserProfile.OnboardingStatus.IN_PROGRESS
+    profile.save(
+        update_fields=[
+            'diagnostic_completed', 'onboarding_status', 'updated_at',
+        ],
+    )
+    return True
+
+
+@sync_to_async
 def reset_diagnostic(profile_id: int) -> None:
     profile = UserProfile.objects.get(id=profile_id)
     profile.diagnostic_completed = False
@@ -805,10 +847,12 @@ def can_start_lesson(profile_id: int, lesson_id: int) -> dict:
         status=LessonProgress.Status.COMPLETED,
     ).exists()
 
-    # 2-day full trial (or active subscription) opens the whole app.
-    # After it ends, everything is behind the paywall.
+    # Paid / 2-day trial opens the whole app; free tier keeps trial episodes.
     if premium or already_completed:
         return {'allowed': True, 'premium': premium}
+
+    if lesson.is_trial:
+        return {'allowed': True, 'premium': False, 'free_tier': True}
 
     return {'allowed': False, 'reason': 'paywall', 'premium': premium}
 
@@ -912,7 +956,7 @@ def complete_lesson(profile_id: int, lesson_id: int) -> dict:
         'is_trial': lesson.is_trial,
         'premium': premium,
         'trial_left': trial_left,
-        'need_paywall': not premium,
+        'need_paywall': not premium and not lesson.is_trial,
     }
 
 
@@ -1702,6 +1746,22 @@ def get_or_create_plan() -> dict:
 @sync_to_async
 def has_active_subscription(profile_id: int) -> bool:
     return _has_active_subscription(profile_id)
+
+
+@sync_to_async
+def has_paid_subscription(profile_id: int) -> bool:
+    from billing_app.trial_access import has_active_subscription as _paid
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return _paid(profile)
+
+
+@sync_to_async
+def check_can_use_stt(profile_id: int) -> tuple[bool, str]:
+    from billing_app.trial_access import can_use_stt
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return can_use_stt(profile)
 
 
 @sync_to_async

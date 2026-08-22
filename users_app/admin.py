@@ -1,6 +1,7 @@
 from django.contrib import admin
+from django.utils import timezone
 
-from billing_app.models import Subscription
+from billing_app.models import Payment, Subscription
 from gamification_app.models import UserAchievement, UserStats
 from study_app.models import LessonProgress, StepAttempt
 
@@ -59,6 +60,18 @@ class UserAchievementInline(admin.TabularInline):
         return False
 
 
+class PaymentInline(admin.TabularInline):
+    model = Payment
+    extra = 0
+    can_delete = False
+    fields = ('plan', 'amount_rub', 'provider', 'status', 'created_at')
+    readonly_fields = fields
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 class SubscriptionInline(admin.TabularInline):
     model = Subscription
     extra = 0
@@ -69,6 +82,27 @@ class SubscriptionInline(admin.TabularInline):
 
     def has_add_permission(self, request, obj=None):
         return False
+
+
+def billing_tier(profile: UserProfile) -> str:
+    from billing_app.trial_access import access_tier_label
+
+    return access_tier_label(profile)
+
+
+def active_sub_until(profile: UserProfile) -> str:
+    sub = Subscription.objects.filter(
+        user_id=profile.id,
+        status=Subscription.Status.ACTIVE,
+        expires_at__gt=timezone.now(),
+    ).order_by('-expires_at').first()
+    if not sub:
+        return '—'
+    return f'{sub.plan.code} → {sub.expires_at:%d.%m.%Y}'
+
+
+billing_tier.short_description = 'Тариф'
+active_sub_until.short_description = 'Подписка до'
 
 
 @admin.register(Interest)
@@ -90,6 +124,8 @@ class UserProfileAdmin(admin.ModelAdmin):
         'profession',
         'onboarding_status',
         'diagnostic_completed',
+        billing_tier,
+        active_sub_until,
         'trial_lessons_used',
         'is_active',
         'last_seen',
@@ -116,6 +152,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         UserInterestInline,
         UserStatsInline,
         SubscriptionInline,
+        PaymentInline,
         LessonProgressInline,
         StepAttemptInline,
         UserAchievementInline,

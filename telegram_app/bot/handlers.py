@@ -791,6 +791,8 @@ def _days_ru(n: int) -> str:
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
+    if await db.heal_diagnostic_if_needed(profile['id']):
+        profile = await db.get_or_create_profile(update.effective_user)
     name = profile['first_name'] or 'друг'
     chat_id = _chat_id(update)
 
@@ -1009,6 +1011,10 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
         elif diag_flow.should_offer_challenge({**diag, 'phase': 'primary_done'}):
             diag['phase'] = 'primary_done'
             diag['confirmed_idx'] = diag_flow.confirmed_primary_level(diag)
+            primary_level = diag_flow.LEVELS[diag['confirmed_idx']]
+            await db.persist_diagnostic_primary(
+                context.user_data['profile_id'], primary_level,
+            )
             await send_mentor_reaction(context, chat_id, 'answer_correct')
             await _send(
                 context, chat_id,
@@ -1258,12 +1264,46 @@ async def _begin_challenge_round(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    diag = context.user_data.get('diag', {})
+    diag = context.user_data.get('diag') or {}
     chat_id = _chat_id(update)
-    level_code = diag_flow.finalize_level(diag)
-    claimed = diag.get('claimed', 'unsure')
+    profile_id = context.user_data.get('profile_id')
+    if not profile_id:
+        profile = await _ensure_profile(update, context)
+        profile_id = profile['id']
 
-    profile_id = context.user_data['profile_id']
+    if not diag.get('band'):
+        healed = await db.heal_diagnostic_if_needed(profile_id)
+        if healed:
+            context.user_data['mode'] = None
+            context.user_data['diag'] = None
+            profile = await db.get_or_create_profile(update.effective_user)
+            if not profile.get('onboarding_complete'):
+                context.user_data['onboarding'] = True
+                await show_goal(update, context)
+            else:
+                await _send(
+                    context, chat_id,
+                    f'Диагностика уже пройдена ✅ Уровень: {profile["cefr_level"]}.',
+                    reply_markup=keyboards.main_menu(),
+                )
+            return
+        await _send(
+            context, chat_id,
+            'Сессия диагностики прервалась — начнём заново 🙂',
+            reply_markup=keyboards.start_diagnostic_kb(),
+        )
+        return
+
+    try:
+        level_code = diag_flow.finalize_level(diag)
+    except (KeyError, IndexError, TypeError):
+        logger.exception('Diagnostic finalize failed; using primary level')
+        idx = diag.get('confirmed_idx')
+        if idx is None:
+            idx = diag_flow.confirmed_primary_level(diag)
+        level_code = diag_flow.LEVELS[max(0, min(idx, diag_flow.MAX_LEVEL_IDX))]
+
+    claimed = diag.get('claimed', 'unsure')
     # Level test decides the LEVEL only. Practice focus is set later by the
     # dedicated per-skill test, so we don't guess weak skills from a few items.
     await db.finish_diagnostic(profile_id, level_code, [])
@@ -1632,8 +1672,13 @@ def _format_daily_plan_text(plan: dict) -> str:
         lines.append(f'Нажми <b>▶️ {cta}</b> — поведу по шагам, без выбора.')
 
     if not plan.get('premium'):
-        left = plan.get('trial_left', 0)
-        lines.append(f'\n<i>Бесплатных эпизодов: {left}</i>')
+        if plan.get('access_tier') == 'trial':
+            left = plan.get('trial_days_left', 0)
+            lines.append(f'\n<i>🎁 Пробный период: {left} дн. — всё открыто</i>')
+        else:
+            lines.append(
+                '\n<i>🆓 Бесплатно: эпизоды 1–3 · словарь · правила · 🔊</i>'
+            )
 
     return '\n'.join(lines)
 
@@ -3049,6 +3094,8 @@ async def _handle_word_review_answer(update, context, answer_text: str):
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     chat_id = _chat_id(update)
+    if await db.heal_diagnostic_if_needed(profile['id']):
+        profile = await db.get_or_create_profile(update.effective_user)
 
     if not profile['diagnostic_completed']:
         await _send(context, chat_id,
@@ -3078,12 +3125,20 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
         )
     else:
-        sub = (
-            'нет активной (2 пробных урока)\n'
-            f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин '
-            f'(пробный лимит {d["voice_minutes_monthly"]} мин/мес)\n'
-            f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
-        )
+        tier = d.get('access_tier', 'free')
+        if tier == 'trial':
+            days_left = d.get('trial_days_left', 0)
+            sub = (
+                f'пробный период ({days_left} дн.) — всё открыто\n'
+                f'   🎙️ Голос: ~{d["voice_remaining_minutes"]} мин осталось\n'
+                f'   💬 Наставник: ~{d["tutor_messages_remaining"]} вопросов в месяце'
+            )
+        else:
+            sub = (
+                'бесплатный тариф — эпизоды 1–3, словарь, правила, 🔊 озвучка\n'
+                '   🎙️ Голосовой ввод — после подписки\n'
+                f'   💬 Наставник текстом: ~{d["tutor_messages_remaining"]} вопросов в месяце'
+            )
     interests = ', '.join(d['interests']) if d['interests'] else 'не выбраны'
     weak = ', '.join(d['weak_skills_ru']) if d['weak_skills_ru'] else '—'
 
@@ -3548,7 +3603,10 @@ async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
     text = format_subscription_plans_message(
-        header='Ты прошёл бесплатные уроки — здорово! 👏\n',
+        header=(
+            'Дальше — полная программа и голос с наставником 🎙️\n'
+            'Бесплатно остаются эпизоды 1–3, словарь, правила и 🔊 озвучка.\n'
+        ),
         sub_plans=sub_plans,
         days=days,
     )
@@ -4366,6 +4424,22 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = _chat_id(update)
     _restore_tutor_mode_if_active(context, voice_turn=True)
 
+    mode = context.user_data.get('mode')
+    stt_free_modes = {'diagnostic', 'skill_test'}
+    if mode not in stt_free_modes:
+        ok_stt, stt_msg = await db.check_can_use_stt(context.user_data['profile_id'])
+        if not ok_stt:
+            await _send(
+                context, chat_id, stt_msg,
+                reply_markup=keyboards.subscription_kb(
+                    has_subscription=await db.has_paid_subscription(
+                        context.user_data['profile_id'],
+                    ),
+                    voice_remaining=0,
+                ),
+            )
+            return
+
     if not _voice_allowed(context):
         await _send(
             context, chat_id,
@@ -4376,7 +4450,6 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     voice = update.message.voice
-    mode = context.user_data.get('mode')
     if voice and voice.duration < 1 and mode != 'review':
         await _send(
             context, chat_id,

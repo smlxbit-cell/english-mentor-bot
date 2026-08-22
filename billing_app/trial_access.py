@@ -43,6 +43,25 @@ def has_premium_access(profile: UserProfile) -> bool:
     return has_active_subscription(profile) or is_full_trial_active(profile)
 
 
+def can_use_stt(profile: UserProfile) -> tuple[bool, str]:
+    """Speech-to-text costs money — paid sub or short full-app trial only."""
+    if has_premium_access(profile):
+        return True, ''
+    return False, (
+        '🎙️ Голосовой ввод — в платных тарифах (или в 2-дневном пробном периоде).\n\n'
+        'В бесплатном режиме: 🔊 слушай английский, читай истории, тесты и словарь — '
+        'текстом. Голос с наставником откроется после подписки ⭐️'
+    )
+
+
+def access_tier_label(profile: UserProfile) -> str:
+    if has_active_subscription(profile):
+        return 'paid'
+    if is_full_trial_active(profile):
+        return 'trial'
+    return 'free'
+
+
 def trial_days_remaining(profile: UserProfile) -> int:
     if not profile.trial_started_at or has_active_subscription(profile):
         return 0

@@ -962,7 +962,7 @@ CURRICULUM = [
                  'level': 'a2', 'order': 2,
                  'description': 'Заселение, номер, ориентирование в отеле.'},
         'lessons': [
-            {'title': 'Hotel Check-in', 'order': 1, 'is_trial': False,
+            {'title': 'Hotel Check-in', 'order': 1, 'is_trial': True,
              'subtitle': 'Заселение в отель',
              'intro': '▶️ Эпизод 3 — Hotel Check-in',
              'xp': 90, 'minutes': 12,
