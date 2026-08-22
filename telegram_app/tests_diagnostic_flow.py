@@ -75,6 +75,17 @@ class DiagnosticFlowTests(TestCase):
         self.assertIn('✅', text)
         self.assertIn('второе условное', text.lower())
 
+    def test_explanation_c1_inversion(self):
+        item = {
+            'prompt': 'Had I known about the deadline, I ___ the report sooner.',
+            'options': ['would have finished', 'will finish', 'finished', 'would finish'],
+            'correct': ['would have finished'],
+            'explanation_ru': 'short',
+        }
+        text = diag_flow.explanation_detail(item, 'will finish', was_correct=False)
+        self.assertIn('would have finished', text)
+        self.assertIn('Если бы я знал', text)
+
     def test_b2_primary_strong_stays_b2_without_challenge(self):
         diag = {
             'claimed': 'b2', 'claimed_idx': 3,

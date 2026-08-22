@@ -207,11 +207,14 @@ class Command(BaseCommand):
                  explanation_ru='Coffee, please.'),
             dict(level='b1', skill='grammar', item_type='fill_gap', order=5,
                  prompt=(
-                     '«Если бы у меня было больше времени, я бы путешествовал»\n\n'
-                     'If I ___ more time, I would travel.'
+                     '«Он сказал, что уже закончил»\n\n'
+                     'He said he ___ already finished the work.'
                  ),
                  correct=['had'],
-                 explanation_ru='Нереальное сейчас: <b>If I had</b> more time…'),
+                 explanation_ru=(
+                     'Косвенная речь: He said he <b>had finished</b> '
+                     '(Past Perfect = «уже закончил» до момента «сказал»).'
+                 )),
             dict(level='b1', skill='vocabulary', item_type='translation_ru_en', order=6,
                  prompt='Переведи на английский:\n\n«Мне нужна помощь»',
                  correct=['i need help', 'i need some help'],
@@ -299,7 +302,10 @@ class Command(BaseCommand):
                  ),
                  options=['would have finished', 'will finish', 'finished', 'would finish'],
                  correct=['would have finished'],
-                 explanation_ru='Инверсия третьего условного: Had I known… → would have finished.'),
+                 explanation_ru=(
+                     'Инверсия 3-го условного: <b>Had I known</b> = If I had known. '
+                     'Ответ: <b>would have finished</b> = «закончил(а) бы» (о прошлом).'
+                 )),
             dict(level='c1', skill='vocabulary', item_type='multiple_choice', order=2,
                  prompt=(
                      'Выбери подходящее слово:\n\n'
@@ -307,7 +313,11 @@ class Command(BaseCommand):
                  ),
                  options=['corroborate', 'confuse', 'consist', 'complain'],
                  correct=['corroborate'],
-                 explanation_ru='Corroborate = подтверждать (научный/формальный стиль).'),
+                 explanation_ru=(
+                     '<b>Corroborate</b> = подтверждать (факты, гипотезу). '
+                     'The findings corroborate our hypothesis = '
+                     '«Результаты подтверждают нашу гипотезу».'
+                 )),
             dict(level='c1', skill='reading', item_type='multiple_choice', order=3,
                  prompt=(
                      'Что подразумевает автор?\n\n'
@@ -319,7 +329,11 @@ class Command(BaseCommand):
                      'It is not ambitious enough',
                  ],
                  correct=['It ignores the real difficulties'],
-                 explanation_ru='Gloss over = обходить стороной, замалчивать трудности.'),
+                 explanation_ru=(
+                     '<b>Gloss over</b> = замалчивать, обходить трудности. '
+                     'Proposal is ambitious, but glosses over hurdles = '
+                     '«амбициозно, но не учитывает практические сложности».'
+                 )),
             dict(level='c1', skill='listening', item_type='listening', order=4,
                  prompt=(
                      '🎧 Listen: «We should have looped in the client before signing off.»\n\n'
@@ -331,7 +345,32 @@ class Command(BaseCommand):
                      'The client was on the call',
                  ],
                  correct=['The client should have been involved earlier'],
-                 explanation_ru='Loop in = подключить/проинформировать; should have = сожаление о прошлом.'),
+                 explanation_ru=(
+                     '<b>Loop in</b> = подключить к процессу. '
+                     'Should have looped in = «нужно было вовлечь раньше» (сожаление).'
+                 )),
+            dict(level='c1', skill='grammar', item_type='multiple_choice', order=6,
+                 prompt=(
+                     'Выбери самый естественный вариант:\n\n'
+                     '«Hardly ___ the meeting started when the fire alarm went off.»'
+                 ),
+                 options=['had', 'has', 'was', 'did'],
+                 correct=['had'],
+                 explanation_ru=(
+                     'Инверсия с <b>Hardly had</b>… when = «едва … как». '
+                     'Hardly had the meeting started = «едва началось собрание».'
+                 )),
+            dict(level='c1', skill='vocabulary', item_type='multiple_choice', order=7,
+                 prompt=(
+                     'Выбери слово:\n\n'
+                     'The team needs to ___ the risks before launching.'
+                 ),
+                 options=['mitigate', 'aggravate', 'migrate', 'militate'],
+                 correct=['mitigate'],
+                 explanation_ru=(
+                     '<b>Mitigate</b> = смягчить, снизить (риски). '
+                     'Migrate = мигрировать; militate = препятствовать (militate against).'
+                 )),
             dict(level='c1', skill='writing', item_type='fill_gap', order=5,
                  prompt='Заполни пропуск (формальный стиль):\n\n'
                         '«I am writing to ___ my concern about the delay.»',

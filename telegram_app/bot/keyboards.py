@@ -91,7 +91,7 @@ def diagnostic_self_assess_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('B1 — средний', callback_data='diag:claim:b1'),
             InlineKeyboardButton('B2 — выше среднего', callback_data='diag:claim:b2'),
         ],
-        [InlineKeyboardButton('C1 — продвинутый', callback_data='diag:claim:c1')],
+        [InlineKeyboardButton('C1 — продвинутый+', callback_data='diag:claim:c1')],
         [InlineKeyboardButton('🤷 Не уверен(а)', callback_data='diag:claim:unsure')],
     ])
 

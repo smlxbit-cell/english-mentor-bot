@@ -976,7 +976,8 @@ async def _begin_diagnostic(
 
     context.user_data['mode'] = 'diagnostic'
     context.user_data['diag'] = {'group': group}
-    await send_mentor_reaction(context, chat_id, 'diagnostic_start')
+    # Animation (not video note) — меньше занимает экран, чем круг на весь чат.
+    await send_mentor_reaction(context, chat_id, 'diagnostic_start', compact=False)
     await _send(
         context, chat_id,
         'Диагностика уровня 🎯\n\n'
@@ -1074,7 +1075,6 @@ async def _ask_next_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYP
             await db.persist_diagnostic_primary(
                 context.user_data['profile_id'], primary_level,
             )
-            await send_mentor_reaction(context, chat_id, 'answer_correct')
             await _send(
                 context, chat_id,
                 diag_flow.challenge_offer_text(diag),
@@ -1243,7 +1243,6 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
             reply_markup=keyboards.diagnostic_review_kb(item['id']),
             parse_mode=ParseMode.HTML,
         )
-        asyncio.create_task(send_mentor_reaction(context, chat_id, 'answer_correct'))
         return
 
     diag['level_idx'] = max(min_i, diag['level_idx'] - 1)
@@ -1266,8 +1265,6 @@ async def _handle_diagnostic_answer(update, context, answer_text: str, *, dont_k
         reply_markup=keyboards.diagnostic_review_kb(item['id']),
         parse_mode=ParseMode.HTML,
     )
-    asyncio.create_task(send_mentor_reaction(context, chat_id, 'answer_wrong'))
-
 
 async def _diagnostic_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diag = context.user_data.get('diag')
@@ -1316,7 +1313,6 @@ async def _begin_challenge_round(update: Update, context: ContextTypes.DEFAULT_T
     diag['challenge_correct'] = 0
     chat_id = _chat_id(update)
     nxt = diag_flow.LEVELS[diag['band'][0]].upper()
-    await send_mentor_reaction(context, chat_id, 'lesson_start')
     await _send(context, chat_id, f'Проверка уровня <b>{nxt}</b> — {diag_flow.CHALLENGE_QUESTIONS} вопроса.',
                 parse_mode=ParseMode.HTML)
     await _ask_next_diagnostic(update, context)
@@ -1371,7 +1367,7 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['mode'] = None
     context.user_data['diag'] = None
 
-    await send_mentor_reaction(context, chat_id, 'diagnostic_done')
+    await send_mentor_reaction(context, chat_id, 'diagnostic_done', compact=False)
     body = diag_flow.result_message(claimed, level_code, diag)
     if retake:
         body += '\n\n✅ Прогресс, XP и уроки сохранены — обновили только уровень.'

@@ -56,8 +56,11 @@ async def send_mentor_reaction(
     *,
     character: str = DEFAULT_MENTOR,
     compact: bool | None = None,
+    skip: bool = False,
 ) -> bool:
     """Send mood clip for a configured moment or a raw file key."""
+    if skip:
+        return False
     spec = SPIRIT_MOMENTS.get(moment)
     if spec:
         key = spec['key']

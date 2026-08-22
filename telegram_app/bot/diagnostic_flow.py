@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_app.diagnostic_explanations import diagnostic_deep_dive
+from content_app.diagnostic_explanations import context_block, diagnostic_deep_dive
 
 LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1']
 LEVEL_LABELS = {
@@ -185,6 +185,9 @@ def explanation_detail(item: dict, user_answer: str = '', *, was_correct: bool =
     correct = (item.get('correct') or [''])[0]
     ua = (user_answer or '').strip()
     lines = ['💡 <b>Разбор</b>']
+    ctx = context_block(item)
+    if ctx:
+        lines.append(ctx)
     if was_correct:
         if ua:
             lines.append(f'Твой ответ: <b>{ua}</b> ✅')
