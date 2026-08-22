@@ -888,14 +888,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def diagnostic_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _ensure_profile(update, context)
     if await db.diagnostic_locked(context.user_data['profile_id']):
-        profile = await db.get_or_create_profile(update.effective_user)
+        context.user_data['diag_retake'] = True
         await _send(
             context, _chat_id(update),
-            f'Диагностика уже пройдена ✅ Твой уровень: <b>{profile["cefr_level"]}</b>.\n'
-            'Повторный тест не сбрасывает прогресс — смотри 👤 Профиль.',
+            '🎯 Запускаем тест уровня заново.\n'
+            'XP, уроки и достижения <b>сохранятся</b> — обновится только уровень по результату.',
             parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.main_menu(),
         )
+        await _begin_diagnostic(update, context, retake=True)
         return
     await _begin_diagnostic(update, context)
 
@@ -919,18 +919,26 @@ async def tutor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await start_tutor(update, context)
 
 
-async def _begin_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _begin_diagnostic(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    retake: bool = False,
+):
     profile_id = context.user_data.get('profile_id')
-    if profile_id and await db.diagnostic_locked(profile_id):
+    if profile_id and await db.diagnostic_locked(profile_id) and not retake:
         profile = await db.get_or_create_profile(update.effective_user)
         await _send(
             context, _chat_id(update),
-            f'Диагностика уже пройдена ✅ Уровень: <b>{profile["cefr_level"]}</b>.\n'
-            'Прогресс и достижения сохранены.',
+            f'Диагностика уже пройдена ✅ Уровень: <b>{profile["cefr_level"]}</b>.\n\n'
+            'Чтобы пройти тест заново: 👤 Профиль → «🎯 Тест уровня заново» '
+            'или команда /diagnostic',
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.main_menu(),
         )
         return
+    if retake:
+        context.user_data['diag_retake'] = True
     items = await db.get_diagnostic_items()
     chat_id = _chat_id(update)
     if not items:
@@ -1330,15 +1338,25 @@ async def _finish_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE)
         level_code = diag_flow.LEVELS[max(0, min(idx, diag_flow.MAX_LEVEL_IDX))]
 
     claimed = diag.get('claimed', 'unsure')
-    # Level test decides the LEVEL only. Practice focus is set later by the
-    # dedicated per-skill test, so we don't guess weak skills from a few items.
-    await db.finish_diagnostic(profile_id, level_code, [])
+    retake = context.user_data.pop('diag_retake', False)
+    await db.finish_diagnostic(
+        profile_id, level_code, [], preserve_progress=retake,
+    )
 
     context.user_data['mode'] = None
     context.user_data['diag'] = None
 
     await send_mentor_reaction(context, chat_id, 'diagnostic_done')
     body = diag_flow.result_message(claimed, level_code, diag)
+    if retake:
+        body += '\n\n✅ Прогресс, XP и уроки сохранены — обновили только уровень.'
+        await _send(
+            context, chat_id, body,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboards.main_menu(),
+        )
+        return
+
     await _send(context, chat_id, body, parse_mode=ParseMode.HTML)
     context.user_data['onboarding'] = True
     await db.clear_learning_goal(profile_id)
@@ -3853,16 +3871,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == 'diag:start':
         if await db.diagnostic_locked(context.user_data['profile_id']):
-            profile = await db.get_or_create_profile(update.effective_user)
-            await _ack_callback(
-                query,
-                f'Уровень уже {profile["cefr_level"]} — прогресс сохранён',
-                show_alert=True,
-            )
+            context.user_data['diag_retake'] = True
+            await _begin_diagnostic(update, context, retake=True)
             return
         await _begin_diagnostic(update, context)
     elif data.startswith('diag:claim:'):
-        if await db.diagnostic_locked(context.user_data['profile_id']):
+        if (
+            await db.diagnostic_locked(context.user_data['profile_id'])
+            and not context.user_data.get('diag_retake')
+        ):
             await _ack_callback(query, 'Диагностика уже пройдена ✅', show_alert=True)
             return
         claimed = data.rsplit(':', 1)[1]
@@ -4147,12 +4164,16 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_interests(update, context)
     elif data == 'profile:goal':
         await show_goal(update, context)
-    elif data == 'profile:rediag':
-        await _ack_callback(
-            query,
-            'Повторная диагностика отключена — уровень и прогресс не сбрасываются.',
-            show_alert=True,
+    elif data == 'profile:retest':
+        context.user_data['diag_retake'] = True
+        await _send(
+            context, _chat_id(update),
+            '🎯 Тест уровня заново.\n'
+            'XP, уроки и достижения сохранятся — изменится только уровень по результату.',
         )
+        await _begin_diagnostic(update, context, retake=True)
+    elif data == 'profile:rediag':
+        await _begin_diagnostic(update, context, retake=True)
     elif data == 'tier:free':
         from billing_app.plans_catalog import FREE_TIER_BLOCK
         await _send(

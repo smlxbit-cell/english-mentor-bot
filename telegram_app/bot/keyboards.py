@@ -557,6 +557,7 @@ def profile_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton('💪 Фокус практики', callback_data='profile:focus')],
             [InlineKeyboardButton('🗺 Карта пути', callback_data='profile:roadmap')],
             [InlineKeyboardButton('🔔 Напоминания', callback_data='profile:notify')],
+            [InlineKeyboardButton('🎯 Тест уровня заново', callback_data='profile:retest')],
         ]
     )
 

@@ -600,11 +600,18 @@ def get_diagnostic_items() -> list[dict]:
 
 
 @sync_to_async
-def finish_diagnostic(profile_id: int, level_code: str, weak_skills: list[str]) -> None:
+def finish_diagnostic(
+    profile_id: int,
+    level_code: str,
+    weak_skills: list[str],
+    *,
+    preserve_progress: bool = False,
+) -> None:
     profile = UserProfile.objects.get(id=profile_id)
     profile.cefr_level = level_code.upper()
     profile.diagnostic_completed = True
-    profile.trial_lessons_used = 0
+    if not preserve_progress:
+        profile.trial_lessons_used = 0
     profile.weak_skills = weak_skills
     if profile.onboarding_status == UserProfile.OnboardingStatus.NOT_STARTED:
         profile.onboarding_status = UserProfile.OnboardingStatus.IN_PROGRESS
