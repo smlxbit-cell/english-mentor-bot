@@ -1188,9 +1188,13 @@ def get_dictionary_words(profile_id: int, limit: int = 12) -> list[dict]:
 
 
 @sync_to_async
-def get_due_words(profile_id: int, limit: int = 8) -> list[dict]:
+def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
+    from learning.models import WordBankEntry
+    from learning.word_bank.service import DAILY_NEW_WORDS
     from progress_app.models import UserWordProgress
 
+    if limit is None:
+        limit = DAILY_NEW_WORDS
     now = timezone.now()
     qs = (
         UserWordProgress.objects.filter(user_id=profile_id)
@@ -1199,15 +1203,44 @@ def get_due_words(profile_id: int, limit: int = 8) -> list[dict]:
         .select_related('word')
         .order_by('next_review_at')[:limit]
     )
-    return [
-        {
+    out: list[dict] = []
+    for uwp in qs:
+        entry = WordBankEntry.objects.filter(
+            english__iexact=uwp.word.english,
+            is_active=True,
+        ).first()
+        out.append({
             'word_id': uwp.word_id,
+            'bank_entry_id': entry.id if entry else None,
             'english': uwp.word.english,
-            'translation': uwp.word.translation,
-            'example': uwp.word.example,
-        }
-        for uwp in qs
-    ]
+            'translation': uwp.word.translation or (entry.translation if entry else ''),
+            'example': uwp.word.example or (entry.example if entry else ''),
+            'cefr_level': entry.cefr_level if entry else '',
+        })
+    return out
+
+
+@sync_to_async
+def mark_word_known_by_id(profile_id: int, word_id: int) -> None:
+    from learning.models import Word, WordBankEntry
+    from learning.word_bank.service import mark_bank_entry
+
+    word = Word.objects.filter(id=word_id).first()
+    if word:
+        entry = WordBankEntry.objects.filter(
+            english__iexact=word.english,
+            is_active=True,
+        ).first()
+        if entry:
+            mark_bank_entry(profile_id, entry.id, 'known')
+            return
+    from progress_app.models import UserWordProgress
+
+    UserWordProgress.objects.filter(user_id=profile_id, word_id=word_id).update(
+        status=UserWordProgress.Status.KNOWN,
+        next_review_at=None,
+        strength=1.0,
+    )
 
 
 @sync_to_async

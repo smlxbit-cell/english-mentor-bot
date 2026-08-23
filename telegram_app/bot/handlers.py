@@ -3029,6 +3029,8 @@ async def _show_word_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('daily_intro_selected', None)
     context.user_data.pop('daily_intro_total', None)
     context.user_data.pop('daily_intro_known_count', None)
+    context.user_data.pop('daily_intro_source', None)
+    context.user_data.pop('drill_from_plan', None)
     context.user_data['words_overview'] = overview
     await _send(
         context, _chat_id(update), text,
@@ -3076,14 +3078,18 @@ async def _show_word_new_pick_section(update: Update, context: ContextTypes.DEFA
 
 
 async def _show_word_repeat_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.service import DAILY_NEW_WORDS
+
     profile = await _ensure_profile(update, context)
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     summary = await db.get_personal_dict_summary(profile['id'])
     text = await db.format_word_repeat_section_text(overview, summary)
+    due = summary.get('due', 0)
+    batch = min(due, DAILY_NEW_WORDS) if due else 0
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_repeat_section_kb(due=summary.get('due', 0)),
+        reply_markup=keyboards.word_repeat_section_kb(due=batch),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3496,6 +3502,7 @@ async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAUL
     context.user_data['daily_intro_selected'] = []
     context.user_data['daily_intro_known_count'] = 0
     context.user_data['daily_intro_total'] = len(intro)
+    context.user_data['daily_intro_source'] = 'new'
     await _show_daily_intro_card(update, context)
 
 
@@ -3515,7 +3522,7 @@ async def _show_daily_intro_card(update: Update, context: ContextTypes.DEFAULT_T
     text = format_intro_card(
         pos=pos,
         total=total,
-        level=word['cefr_level'],
+        level=word.get('cefr_level') or '—',
         english=_esc(word['english']),
         translation=_esc(word['translation']),
         learn_count=learn_count,
@@ -3529,7 +3536,7 @@ async def _show_daily_intro_card(update: Update, context: ContextTypes.DEFAULT_T
     )
     await _send(
         context, chat_id, text,
-        reply_markup=keyboards.word_daily_intro_card_kb(word['bank_entry_id']),
+        reply_markup=keyboards.word_daily_intro_card_kb(),
         parse_mode=ParseMode.HTML,
     )
     await _play_tts(context, chat_id, context.user_data['tts_text'])
@@ -3551,16 +3558,21 @@ async def _daily_intro_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _daily_intro_known(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, bank_entry_id: int,
+    update: Update, context: ContextTypes.DEFAULT_TYPE, word: dict,
 ):
     profile_id = context.user_data.get('profile_id')
     if profile_id:
-        await db.mark_word_bank_entry(profile_id, bank_entry_id, 'known')
+        if word.get('bank_entry_id'):
+            await db.mark_word_bank_entry(profile_id, word['bank_entry_id'], 'known')
+        elif word.get('word_id'):
+            await db.mark_word_known_by_id(profile_id, word['word_id'])
     context.user_data['daily_intro_known_count'] = (
         int(context.user_data.get('daily_intro_known_count', 0)) + 1
     )
     queue = context.user_data.get('daily_intro_queue') or []
-    if queue and queue[0].get('bank_entry_id') == bank_entry_id:
+    if queue and queue[0] is word:
+        queue.pop(0)
+    elif queue and queue[0].get('english', '').lower() == word.get('english', '').lower():
         queue.pop(0)
     context.user_data['daily_intro_queue'] = queue
     if queue:
@@ -3572,7 +3584,7 @@ async def _daily_intro_known(
 async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from learning.word_bank.drill import format_intro_summary
 
-    selected = context.user_data.get('daily_intro_selected') or []
+    selected = context.user_data.pop('daily_intro_selected', None) or []
     known_count = int(context.user_data.pop('daily_intro_known_count', 0))
     context.user_data['mode'] = None
     context.user_data.pop('daily_intro_queue', None)
@@ -3591,7 +3603,11 @@ async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE
         format_intro_summary(learn_count=len(selected), known_count=known_count),
         parse_mode=ParseMode.HTML,
     )
-    await _start_word_drill_from_intro(update, context)
+    source = context.user_data.pop('daily_intro_source', 'new')
+    if source == 'training':
+        await _start_word_drill(update, context, selected, new_words=True)
+    else:
+        await _start_word_drill_from_intro(update, context)
 
 
 async def _start_word_drill_from_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3885,13 +3901,16 @@ async def _start_daily_word_quiz(update, context):
 
 async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
                             *, from_plan: bool = False):
+    from learning.word_bank.service import DAILY_NEW_WORDS
+
     profile = await _ensure_profile(update, context)
     chat_id = _chat_id(update)
 
-    if context.user_data.get('mode') == 'word_drill' and context.user_data.get('drill_words'):
-        return
+    if context.user_data.get('mode') in ('word_drill', 'daily_intro'):
+        if context.user_data.get('drill_words') or context.user_data.get('daily_intro_queue'):
+            return
 
-    due = await db.get_due_words(profile['id'], limit=8)
+    due = await db.get_due_words(profile['id'], limit=DAILY_NEW_WORDS)
     if not due:
         if from_plan:
             plan = context.user_data.get('daily_plan') or await db.get_daily_plan(profile['id'])
@@ -3903,7 +3922,13 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await show_daily_plan(update, context)
         return
     context.user_data['drill_from_plan'] = from_plan
-    await _start_word_drill(update, context, due, new_words=False)
+    context.user_data['mode'] = 'daily_intro'
+    context.user_data['daily_intro_source'] = 'training'
+    context.user_data['daily_intro_queue'] = list(due)
+    context.user_data['daily_intro_selected'] = []
+    context.user_data['daily_intro_known_count'] = 0
+    context.user_data['daily_intro_total'] = len(due)
+    await _show_daily_intro_card(update, context)
 
 
 async def _ask_next_word(update, context):
@@ -4863,15 +4888,27 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'words:intro:next':
         await _daily_intro_next(update, context)
     elif data == 'words:intro:stop':
+        source = context.user_data.pop('daily_intro_source', None)
         context.user_data.pop('daily_intro_queue', None)
         context.user_data.pop('daily_intro_selected', None)
         context.user_data.pop('daily_intro_total', None)
         context.user_data.pop('daily_intro_known_count', None)
+        context.user_data.pop('drill_from_plan', None)
         context.user_data['mode'] = None
-        await _show_word_hub(update, context)
+        if source == 'training':
+            await _show_word_repeat_section(update, context)
+        else:
+            await _show_word_hub(update, context)
+    elif data == 'words:intro:known':
+        queue = context.user_data.get('daily_intro_queue') or []
+        if queue:
+            await _daily_intro_known(update, context, queue[0])
     elif data.startswith('words:intro:known:'):
         bid = int(data.rsplit(':', 1)[1])
-        await _daily_intro_known(update, context, bid)
+        queue = context.user_data.get('daily_intro_queue') or []
+        word = next((w for w in queue if w.get('bank_entry_id') == bid), None)
+        if word:
+            await _daily_intro_known(update, context, word)
     elif data == 'words:learn:quiz':
         await _start_daily_word_quiz(update, context)
     elif data.startswith('wd:pick:'):

@@ -247,12 +247,12 @@ def word_new_pick_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def word_daily_intro_card_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
+def word_daily_intro_card_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
         [
             InlineKeyboardButton('Учить', callback_data='words:intro:next'),
-            InlineKeyboardButton('Знаю ✅', callback_data=f'words:intro:known:{bank_entry_id}'),
+            InlineKeyboardButton('Знаю ✅', callback_data='words:intro:known'),
         ],
         [InlineKeyboardButton('← Выход', callback_data='words:intro:stop')],
     ])

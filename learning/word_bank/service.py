@@ -341,7 +341,8 @@ def format_word_repeat_section_text(
         )
     stats = format_word_stats_line(summary)
     if due:
-        tail = f'\n\nК тренировке сейчас: <b>{words_count_ru(due)}</b>.'
+        batch = min(due, DAILY_NEW_WORDS)
+        tail = f'\n\nСейчас: <b>{words_count_ru(due)}</b> · за раз — <b>{batch}</b>.'
     else:
         tail = '\n\nСлов к тренировке пока нет — загляните позже.'
     return f'🎯 <b>Тренировка</b>\n\n{stats}{tail}'
