@@ -251,10 +251,31 @@ def word_daily_intro_card_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
         [
-            InlineKeyboardButton('Дальше →', callback_data='words:intro:next'),
+            InlineKeyboardButton('Учить', callback_data='words:intro:next'),
             InlineKeyboardButton('Знаю ✅', callback_data=f'words:intro:known:{bank_entry_id}'),
         ],
         [InlineKeyboardButton('← Выход', callback_data='words:intro:stop')],
+    ])
+
+
+def word_drill_choice_kb(options: list[str], *, step: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton('🔊 Ещё раз', callback_data='tts:say')]]
+    for i, opt in enumerate(options):
+        label = opt if len(opt) <= 36 else f'{opt[:35]}…'
+        rows.append([InlineKeyboardButton(label, callback_data=f'wd:pick:{step}:{i}')])
+    return InlineKeyboardMarkup(rows)
+
+
+def word_drill_continue_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('Дальше →', callback_data='wd:cont')],
+    ])
+
+
+def word_drill_recall_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
+        [InlineKeyboardButton('💡 Подсказка', callback_data='wd:hint')],
     ])
 
 

@@ -539,7 +539,7 @@ def _restore_tutor_mode_if_active(context, *, voice_turn: bool = False) -> None:
     """Keep mentor mode across turns when session history is still active."""
     if not context.user_data.get('tutor_history'):
         return
-    hard_block = {'lesson', 'diagnostic', 'dialogue', 'review', 'practice'}
+    hard_block = {'lesson', 'diagnostic', 'dialogue', 'review', 'word_drill', 'practice'}
     if context.user_data.get('mode') in hard_block:
         return
     if voice_turn:
@@ -554,9 +554,9 @@ def _voice_allowed(context) -> bool:
     mode = context.user_data.get('mode')
     expect = context.user_data.get('expect')
     if context.user_data.get('tutor_history'):
-        if mode not in ('lesson', 'diagnostic', 'dialogue', 'review'):
+        if mode not in ('lesson', 'diagnostic', 'dialogue', 'review', 'word_drill'):
             return True
-    if mode in ('diagnostic', 'dialogue', 'tutor', 'review', 'plan_speaking', 'skill_test'):
+    if mode in ('diagnostic', 'dialogue', 'tutor', 'review', 'word_drill', 'plan_speaking', 'skill_test'):
         return True
     if context.user_data.get('lesson_help_return'):
         return True
@@ -587,7 +587,9 @@ def _stt_langs_for_context(context) -> list[str]:
     mode = context.user_data.get('mode')
     if mode == 'tutor':
         return ['ru-RU', 'en-US']
-    if mode == 'review':
+    if mode == 'review' or (
+        mode == 'word_drill' and context.user_data.get('drill_step') == 'recall'
+    ):
         return ['en-US']
     if mode == 'lesson':
         return ['en-US']
@@ -3026,6 +3028,7 @@ async def _show_word_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('daily_intro_queue', None)
     context.user_data.pop('daily_intro_selected', None)
     context.user_data.pop('daily_intro_total', None)
+    context.user_data.pop('daily_intro_known_count', None)
     context.user_data['words_overview'] = overview
     await _send(
         context, _chat_id(update), text,
@@ -3491,16 +3494,14 @@ async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAUL
     context.user_data['mode'] = 'daily_intro'
     context.user_data['daily_intro_queue'] = list(intro)
     context.user_data['daily_intro_selected'] = []
+    context.user_data['daily_intro_known_count'] = 0
     context.user_data['daily_intro_total'] = len(intro)
-    await _send(
-        context, _chat_id(update),
-        await db.format_daily_intro_start(len(intro)),
-        parse_mode=ParseMode.HTML,
-    )
     await _show_daily_intro_card(update, context)
 
 
 async def _show_daily_intro_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.drill import format_intro_card
+
     queue = context.user_data.get('daily_intro_queue') or []
     chat_id = _chat_id(update)
     if not queue:
@@ -3509,20 +3510,25 @@ async def _show_daily_intro_card(update: Update, context: ContextTypes.DEFAULT_T
     word = queue[0]
     total = context.user_data.get('daily_intro_total') or len(queue)
     pos = total - len(queue) + 1
-    lines = [
-        f'📘 {pos}/{total} · {word["cefr_level"].upper()}',
-        '',
-        f'🇬🇧 <b>{_esc(word["english"])}</b>',
-        f'🇷🇺 {_esc(word["translation"])}',
-    ]
+    learn_count = len(context.user_data.get('daily_intro_selected') or [])
+    known_count = context.user_data.get('daily_intro_known_count', 0)
+    text = format_intro_card(
+        pos=pos,
+        total=total,
+        level=word['cefr_level'],
+        english=_esc(word['english']),
+        translation=_esc(word['translation']),
+        learn_count=learn_count,
+        known_count=known_count,
+    )
     if word.get('example'):
-        lines.append(f'\n📝 {_esc(word["example"])}')
+        text += f'\n📝 {_esc(word["example"])}'
     context.user_data['tts_text'] = (
         word['english'] if not word.get('example')
         else f'{word["english"]}. {word["example"]}'
     )
     await _send(
-        context, chat_id, '\n'.join(lines),
+        context, chat_id, text,
         reply_markup=keyboards.word_daily_intro_card_kb(word['bank_entry_id']),
         parse_mode=ParseMode.HTML,
     )
@@ -3550,6 +3556,9 @@ async def _daily_intro_known(
     profile_id = context.user_data.get('profile_id')
     if profile_id:
         await db.mark_word_bank_entry(profile_id, bank_entry_id, 'known')
+    context.user_data['daily_intro_known_count'] = (
+        int(context.user_data.get('daily_intro_known_count', 0)) + 1
+    )
     queue = context.user_data.get('daily_intro_queue') or []
     if queue and queue[0].get('bank_entry_id') == bank_entry_id:
         queue.pop(0)
@@ -3561,7 +3570,10 @@ async def _daily_intro_known(
 
 
 async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.drill import format_intro_summary
+
     selected = context.user_data.get('daily_intro_selected') or []
+    known_count = int(context.user_data.pop('daily_intro_known_count', 0))
     context.user_data['mode'] = None
     context.user_data.pop('daily_intro_queue', None)
     context.user_data.pop('daily_intro_total', None)
@@ -3569,45 +3581,259 @@ async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not selected:
         await _send(
             context, chat_id,
-            'Отлично — все эти слова уже знаешь ✅',
+            'Все слова уже знаете ✅',
             reply_markup=keyboards.word_new_section_kb(),
         )
         context.user_data.pop('daily_intro_selected', None)
         return
-    speak_chunks = [
-        w['english'] if not w.get('example') else f'{w["english"]}. {w["example"]}'
-        for w in selected
-    ]
-    context.user_data['tts_text'] = '. '.join(speak_chunks)
     await _send(
         context, chat_id,
-        await db.format_daily_intro_finish(len(selected)),
-        reply_markup=keyboards.word_daily_intro_finish_kb(count=len(selected)),
+        format_intro_summary(learn_count=len(selected), known_count=known_count),
         parse_mode=ParseMode.HTML,
     )
+    await _start_word_drill_from_intro(update, context)
+
+
+async def _start_word_drill_from_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    selected = context.user_data.pop('daily_intro_selected', None) or []
+    if not selected:
+        await _show_word_new_section(update, context)
+        return
+    words = await db.start_daily_word_quiz(profile['id'], selected)
+    await _start_word_drill(update, context, words, new_words=True)
+
+
+def _current_drill_word(context) -> dict | None:
+    words = context.user_data.get('drill_words') or []
+    idx = int(context.user_data.get('drill_word_index', 0))
+    if idx < 0 or idx >= len(words):
+        return None
+    return words[idx]
+
+
+async def _start_word_drill(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    words: list[dict],
+    *,
+    new_words: bool,
+):
+    from learning.word_bank.drill import steps_for
+
+    if not words:
+        await _send(
+            context, _chat_id(update),
+            'Нет слов для тренировки.',
+            reply_markup=keyboards.word_repeat_section_kb(),
+        )
+        return
+    steps = steps_for(new_words=new_words)
+    context.user_data['mode'] = 'word_drill'
+    context.user_data['drill_words'] = words
+    context.user_data['drill_word_index'] = 0
+    context.user_data['drill_step'] = steps[0]
+    context.user_data['drill_new'] = new_words
+    context.user_data['drill_total'] = len(words)
+    context.user_data.pop('drill_choice_words', None)
+    context.user_data.pop('drill_choice_options', None)
+    context.user_data.pop('drill_correct_idx', None)
+    context.user_data.pop('drill_await_continue', None)
+    if new_words:
+        await send_mentor_reaction(context, _chat_id(update), 'lesson_start')
+    await _show_drill_step(update, context)
+
+
+async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.drill import (
+        build_english_choice,
+        build_translation_choice,
+        format_drill_header,
+        format_drill_listen_prompt,
+        format_drill_meaning_prompt,
+        format_drill_recall_prompt,
+        option_button_label,
+    )
+
+    word = _current_drill_word(context)
+    chat_id = _chat_id(update)
+    if not word:
+        await _finish_word_drill(update, context)
+        return
+    step = context.user_data.get('drill_step', 'recall')
+    word_pos = int(context.user_data.get('drill_word_index', 0)) + 1
+    word_total = int(context.user_data.get('drill_total') or len(context.user_data.get('drill_words') or []))
+    header = format_drill_header(word_pos=word_pos, word_total=word_total, step=step)
+    pool = context.user_data.get('drill_words') or []
+
+    if step == 'listen':
+        options_words, correct_idx = build_english_choice(word, pool)
+        context.user_data['drill_choice_words'] = options_words
+        context.user_data['drill_correct_idx'] = correct_idx
+        labels = [option_button_label(w['english']) for w in options_words]
+        context.user_data['drill_choice_options'] = labels
+        speak = word['english'] if not word.get('example') else f'{word["english"]}. {word["example"]}'
+        context.user_data['tts_text'] = speak
+        await _send(
+            context, chat_id,
+            format_drill_listen_prompt(header),
+            reply_markup=keyboards.word_drill_choice_kb(labels, step='listen'),
+            parse_mode=ParseMode.HTML,
+        )
+        await _play_tts(context, chat_id, speak)
+        return
+
+    if step == 'meaning':
+        options, correct_idx = build_translation_choice(word, pool)
+        context.user_data['drill_choice_options'] = options
+        context.user_data['drill_correct_idx'] = correct_idx
+        context.user_data.pop('drill_choice_words', None)
+        labels = [option_button_label(o) for o in options]
+        await _send(
+            context, chat_id,
+            format_drill_meaning_prompt(header, _esc(word['english'])),
+            reply_markup=keyboards.word_drill_choice_kb(labels, step='meaning'),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    context.user_data.pop('drill_choice_words', None)
+    context.user_data.pop('drill_choice_options', None)
+    context.user_data.pop('drill_correct_idx', None)
+    await _send(
+        context, chat_id,
+        format_drill_recall_prompt(header, _esc(word['translation'])),
+        reply_markup=keyboards.word_drill_recall_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+def _advance_drill(context) -> bool | None:
+    from learning.word_bank.drill import steps_for
+
+    steps = steps_for(new_words=bool(context.user_data.get('drill_new')))
+    step = context.user_data.get('drill_step', steps[-1])
+    try:
+        step_idx = steps.index(step)
+    except ValueError:
+        step_idx = len(steps) - 1
+    if step_idx + 1 < len(steps):
+        context.user_data['drill_step'] = steps[step_idx + 1]
+        return True
+    next_idx = int(context.user_data.get('drill_word_index', 0)) + 1
+    words = context.user_data.get('drill_words') or []
+    if next_idx >= len(words):
+        return None
+    context.user_data['drill_word_index'] = next_idx
+    context.user_data['drill_step'] = steps[0]
+    return True
+
+
+async def _handle_drill_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop('drill_await_continue', None)
+    advanced = _advance_drill(context)
+    if advanced is None:
+        await _finish_word_drill(update, context)
+    else:
+        await _show_drill_step(update, context)
+
+
+async def _handle_drill_pick(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    step: str,
+    option_idx: int,
+):
+    from learning.word_bank.drill import (
+        format_choice_correct,
+        format_choice_wrong,
+        format_translation_choice_wrong,
+    )
+
+    word = _current_drill_word(context)
+    if not word or context.user_data.get('drill_await_continue'):
+        return
+    correct_idx = int(context.user_data.get('drill_correct_idx', -1))
+    if option_idx == correct_idx:
+        msg = format_choice_correct(word)
+    elif step == 'listen':
+        options_words = context.user_data.get('drill_choice_words') or []
+        picked = options_words[option_idx] if 0 <= option_idx < len(options_words) else {}
+        msg = format_choice_wrong(picked=picked, correct=word)
+    else:
+        options = context.user_data.get('drill_choice_options') or []
+        picked = options[option_idx] if 0 <= option_idx < len(options) else '?'
+        msg = format_translation_choice_wrong(picked=picked, correct=word)
+    context.user_data['drill_await_continue'] = True
+    context.user_data['tts_text'] = (
+        word['english'] if not word.get('example')
+        else f'{word["english"]}. {word["example"]}'
+    )
+    await _send(
+        context, _chat_id(update), msg,
+        reply_markup=keyboards.word_drill_continue_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_drill_recall(update, context, answer_text: str):
+    from learning.word_bank.drill import format_recall_correct, format_recall_wrong
+
+    word = _current_drill_word(context)
+    chat_id = _chat_id(update)
+    if not word or context.user_data.get('drill_await_continue'):
+        return
+
+    correct, guess, _ratio = score_word_review(answer_text, word['english'])
+    await db.record_word_review(context.user_data['profile_id'], word['word_id'], correct)
+
+    if correct:
+        msg = format_recall_correct(word, heard=guess or answer_text)
+    else:
+        msg = format_recall_wrong(word, heard=answer_text)
+    if word.get('example'):
+        msg += f'\n📝 {word["example"]}'
+
+    context.user_data['drill_await_continue'] = True
+    context.user_data['tts_text'] = (
+        word['english'] if not word.get('example')
+        else f'{word["english"]}. {word["example"]}'
+    )
+    await _send(
+        context, chat_id, msg,
+        reply_markup=keyboards.word_drill_continue_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _finish_word_drill(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from_plan = context.user_data.pop('drill_from_plan', False)
+    context.user_data['mode'] = None
+    context.user_data.pop('drill_words', None)
+    context.user_data.pop('drill_word_index', None)
+    context.user_data.pop('drill_step', None)
+    context.user_data.pop('drill_new', None)
+    context.user_data.pop('drill_total', None)
+    context.user_data.pop('drill_choice_words', None)
+    context.user_data.pop('drill_choice_options', None)
+    context.user_data.pop('drill_correct_idx', None)
+    context.user_data.pop('drill_await_continue', None)
+    chat_id = _chat_id(update)
+    await send_mentor_reaction(context, chat_id, 'lesson_complete')
+    await _send(context, chat_id, '🎉 Тренировка завершена!')
+    if from_plan:
+        plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
+            context.user_data['profile_id'],
+        )
+        await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'words')
+        await show_daily_plan(update, context)
+    else:
+        await _show_word_hub(update, context)
 
 
 async def _start_daily_word_quiz(update, context):
-    profile = await _ensure_profile(update, context)
-    selected = context.user_data.pop('daily_intro_selected', None)
-    if selected:
-        review = await db.start_daily_word_quiz(profile['id'], selected)
-    else:
-        review = context.user_data.pop('daily_word_review', None) or []
-    if not review:
-        await start_word_review(update, context)
-        return
-    context.user_data['mode'] = 'review'
-    context.user_data['review_from_plan'] = False
-    context.user_data['review_queue'] = review
-    context.user_data['review_total'] = len(review)
-    await send_mentor_reaction(context, _chat_id(update), 'word_review')
-    await _send(
-        context, _chat_id(update),
-        await db.format_word_review_intro(len(review)),
-        parse_mode=ParseMode.HTML,
-    )
-    await _ask_next_word(update, context)
+    await _start_word_drill_from_intro(update, context)
 
 
 # --------------------------------------------------------------------------- #
@@ -3619,7 +3845,7 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
     profile = await _ensure_profile(update, context)
     chat_id = _chat_id(update)
 
-    if context.user_data.get('mode') == 'review' and context.user_data.get('review_queue'):
+    if context.user_data.get('mode') == 'word_drill' and context.user_data.get('drill_words'):
         return
 
     due = await db.get_due_words(profile['id'], limit=8)
@@ -3628,58 +3854,23 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
             plan = context.user_data.get('daily_plan') or await db.get_daily_plan(profile['id'])
             await _mark_plan_item_by_type(profile['id'], plan, 'words')
         await _send(context, chat_id,
-                    'Сейчас нет слов к повторению 👍 Загляни позже или '
-                    'пройди «👀 Что знаешь?», чтобы добавить слова.',
+                    'Сейчас нет слов к повторению 👍',
                     reply_markup=keyboards.word_repeat_section_kb())
         if from_plan:
             await show_daily_plan(update, context)
         return
-    context.user_data['mode'] = 'review'
-    context.user_data['review_from_plan'] = from_plan
-    context.user_data['review_queue'] = due
-    context.user_data['review_total'] = len(due)
-    await send_mentor_reaction(context, chat_id, 'word_review')
-    await _send(
-        context, chat_id,
-        await db.format_word_review_intro(len(due)),
-        parse_mode=ParseMode.HTML,
-    )
-    await _ask_next_word(update, context)
+    context.user_data['drill_from_plan'] = from_plan
+    await _start_word_drill(update, context, due, new_words=False)
 
 
 async def _ask_next_word(update, context):
-    queue = context.user_data.get('review_queue') or []
-    chat_id = _chat_id(update)
-    if not queue:
-        context.user_data['mode'] = None
-        context.user_data.pop('review_total', None)
-        from_plan = context.user_data.pop('review_from_plan', False)
-        await _send(context, chat_id, '🎉 Тренировка завершена!')
-        if from_plan:
-            plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
-                context.user_data['profile_id'],
-            )
-            await _mark_plan_item_by_type(context.user_data['profile_id'], plan, 'words')
-            await show_daily_plan(update, context)
-        else:
-            await _show_word_hub(update, context)
-        return
-    word = queue.pop(0)
-    context.user_data['review_current'] = word
-    total = context.user_data.get('review_total') or (len(queue) + 1)
-    pos = total - len(queue)
-    await _send(
-        context, chat_id,
-        await db.format_word_review_prompt(
-            pos=pos,
-            total=total,
-            translation=_esc(word['translation']),
-        ),
-        parse_mode=ParseMode.HTML,
-    )
+    await _handle_drill_continue(update, context)
 
 
 async def _handle_word_review_answer(update, context, answer_text: str):
+    if context.user_data.get('mode') == 'word_drill':
+        await _handle_drill_recall(update, context, answer_text)
+        return
     word = context.user_data.get('review_current')
     chat_id = _chat_id(update)
     if not word:
@@ -3700,7 +3891,6 @@ async def _handle_word_review_answer(update, context, answer_text: str):
     if word.get('example'):
         msg += f'\n📝 {word["example"]}'
 
-    # Voice the English word (+ example) so the learner hears it.
     context.user_data['tts_text'] = (
         word['english'] if not word.get('example')
         else f'{word["english"]}. {word["example"]}'
@@ -4633,6 +4823,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('daily_intro_queue', None)
         context.user_data.pop('daily_intro_selected', None)
         context.user_data.pop('daily_intro_total', None)
+        context.user_data.pop('daily_intro_known_count', None)
         context.user_data['mode'] = None
         await _show_word_hub(update, context)
     elif data.startswith('words:intro:known:'):
@@ -4640,6 +4831,22 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _daily_intro_known(update, context, bid)
     elif data == 'words:learn:quiz':
         await _start_daily_word_quiz(update, context)
+    elif data.startswith('wd:pick:'):
+        parts = data.split(':')
+        if len(parts) >= 4:
+            step = parts[2]
+            opt_idx = int(parts[3])
+            await _handle_drill_pick(update, context, step=step, option_idx=opt_idx)
+    elif data == 'wd:cont':
+        await _handle_drill_continue(update, context)
+    elif data == 'wd:hint':
+        word = _current_drill_word(context)
+        if word:
+            await _ack_callback(
+                query,
+                f'🇬🇧 {word["english"]} — {word["translation"]}',
+                show_alert=True,
+            )
     elif data.startswith('words:level:'):
         level = data.rsplit(':', 1)[1]
         await _show_word_level_detail(update, context, level)
@@ -5001,7 +5208,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'srs:start':
         await start_word_review(update, context)
     elif data == 'srs:next':
-        await _ask_next_word(update, context)
+        await _handle_drill_continue(update, context)
     elif data == 'profile:interests':
         await show_interests(update, context)
     elif data == 'profile:goal':
@@ -5349,7 +5556,11 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'practice' and context.user_data.get('practice_expect') == 'text':
         await _deliver_practice_feedback(update, context, text)
         return
-    if mode == 'review':
+    if mode == 'review' or (
+        mode == 'word_drill'
+        and context.user_data.get('drill_step') == 'recall'
+        and not context.user_data.get('drill_await_continue')
+    ):
         await _handle_word_review_answer(update, context, text)
         return
     if mode == 'plan_speaking':
@@ -5397,7 +5608,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     voice = update.message.voice
-    if voice and voice.duration < 1 and mode != 'review':
+    if voice and voice.duration < 1 and mode not in ('review', 'word_drill'):
         await _send(
             context, chat_id,
             'Запись слишком короткая 🎙️\n'
@@ -5441,12 +5652,14 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _send(context, chat_id, heard)
         else:
             lang_note = ' (EN)' if context.user_data.get('mode') in (
-                'lesson', 'review', 'dialogue',
+                'lesson', 'review', 'word_drill', 'dialogue',
             ) else ''
             await _send(context, chat_id, f'🎙️ Услышал{lang_note}: «{transcript_text}»')
     else:
         extra = ''
-        if mode == 'review':
+        if mode == 'review' or (
+            mode == 'word_drill' and context.user_data.get('drill_step') == 'recall'
+        ):
             extra = '\n\nНапиши слово текстом ✍️ или скажи голосом 🎙️ (1–2 сек).'
         elif mode in ('lesson',):
             extra = '\n\nГовори по-английски чётко, 2–3 секунды.'
@@ -5472,7 +5685,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_tutor_turn(update, context, transcript_text, from_voice=True)
     elif mode == 'rule_drill' and context.user_data.get('expect') == 'rule_text':
         await _grade_rule_training_answer(update, context, transcript_text)
-    elif mode == 'review':
+    elif mode == 'review' or (
+        mode == 'word_drill'
+        and context.user_data.get('drill_step') == 'recall'
+        and not context.user_data.get('drill_await_continue')
+    ):
         await _handle_word_review_answer(update, context, transcript_text)
     elif mode == 'plan_speaking':
         await _handle_plan_speaking_answer(update, context, transcript_text)

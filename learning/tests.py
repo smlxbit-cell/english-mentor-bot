@@ -134,3 +134,26 @@ class SeedWordBankCommandTests(TestCase):
         count_first = WordBankEntry.objects.count()
         call_command('seed_word_bank', include_remote=True)
         self.assertEqual(WordBankEntry.objects.count(), count_first)
+
+
+class WordDrillTests(SimpleTestCase):
+    def test_build_english_choice_includes_target(self):
+        from learning.word_bank.drill import build_english_choice
+
+        target = {'english': 'coffee', 'translation': 'кофе'}
+        pool = [
+            target,
+            {'english': 'tea', 'translation': 'чай'},
+            {'english': 'water', 'translation': 'вода'},
+            {'english': 'milk', 'translation': 'молоко'},
+        ]
+        options, idx = build_english_choice(target, pool)
+        self.assertEqual(len(options), 4)
+        self.assertEqual(options[idx]['english'], 'coffee')
+
+    def test_words_count_ru(self):
+        from learning.word_bank.service import words_count_ru
+
+        self.assertEqual(words_count_ru(1), '1 слово')
+        self.assertEqual(words_count_ru(3), '3 слова')
+        self.assertEqual(words_count_ru(43), '43 слова')
