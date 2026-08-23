@@ -202,22 +202,19 @@ def pick_daily_learning_entries(
 
 
 def format_word_hub_text(overview: dict[str, Any]) -> str:
-    lines = [
-        '📚 <b>Слова</b>',
-        '',
-    ]
+    lines = ['📚 <b>Слова</b>', '']
     for stat in overview['levels']:
         lvl = stat['level'].upper()
         lines.append(
             f"{lvl} {stat['bar']} "
             f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}"
         )
-    repeat = overview['due_count']
     lines.extend([
         '',
-        f"📝 Новых: <b>{overview['unseen_total']}</b> · "
-        f"🔄 Повтор: <b>{repeat}</b>",
-        f"На сегодня: <b>{overview['daily_new']}</b> новых + повтор.",
+        f"📝 Не смотрел: <b>{overview['unseen_total']}</b> · "
+        f"🔄 Повтор: <b>{overview['due_count']}</b>",
+        '',
+        '▶️ — учить 10 новых · 📗 — твой список · ➕ — выбрать из словаря',
     ])
     return '\n'.join(lines)
 
@@ -402,13 +399,14 @@ def search_bank_entries(
 def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
-            '🗂 <b>Мои слова</b>\n\n'
-            'Пока пусто — появятся из уроков или когда отметишь «📗 Учу».'
+            '📗 <b>Мои слова</b>\n\n'
+            'Пока пусто. Нажми «➕ Добавить» — выбери слова из словаря.'
         )
     return (
-        '🗂 <b>Мои слова</b>\n\n'
+        '📗 <b>Мои слова</b>\n\n'
         f"Всего <b>{summary['total']}</b> · "
-        f"📗 {summary['learning']} · ✅ {summary['known']} · 🌟 {summary['mastered']}\n"
+        f"📗 учу {summary['learning']} · "
+        f"✅ знаю {summary['known']} · 🌟 {summary['mastered']}\n"
         f"🔄 Повтор: <b>{summary['due']}</b>"
     )
 

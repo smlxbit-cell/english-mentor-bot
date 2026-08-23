@@ -3031,10 +3031,10 @@ async def _show_word_level_detail(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton('📝 Знаю/учу', callback_data='words:survey:start'),
-                InlineKeyboardButton('📖 Все', callback_data=f'words:bank:level:{level}:0'),
+                InlineKeyboardButton('📝 Пройти 10', callback_data='words:survey:start'),
+                InlineKeyboardButton('➕ Добавить', callback_data=f'words:bank:level:{level}:0'),
             ],
-            [InlineKeyboardButton('← Слова', callback_data='words:hub')],
+            [InlineKeyboardButton('← Назад', callback_data='words:hub')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3100,28 +3100,43 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
         )]
         for slug, count in topics[:12]
     ]
-    rows.append([InlineKeyboardButton('↩️ Назад', callback_data='words:mydict')])
+    rows.append([InlineKeyboardButton('← Мои слова', callback_data='words:mydict')])
     await _send(
         context, _chat_id(update),
-        '📁 <b>Мои · темы</b>\n\nВыбери группу:',
+        '📁 <b>Мои слова · темы</b>\n\nВыбери группу:',
         reply_markup=InlineKeyboardMarkup(rows),
         parse_mode=ParseMode.HTML,
     )
 
 
-async def _show_word_bank_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _show_word_add_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     user_level = profile.get('level_code') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Все слова</b>\n\n'
-        f'📝 Новых: <b>{overview["unseen_total"]}</b> · по 6 на экран'
+        '➕ <b>Добавить слова</b>\n\n'
+        f'📝 Не смотрел: <b>{overview["unseen_total"]}</b>\n'
+        'Открой список или пройди 10 слов подряд — '
+        'отметь ✅ знаю · 📗 учу · ⏭️ позже.'
     )
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_bank_hub_kb(),
+        reply_markup=keyboards.word_add_menu_kb(),
         parse_mode=ParseMode.HTML,
     )
+
+
+async def _show_word_dict_levels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _send(
+        context, _chat_id(update),
+        '📊 <b>Мои слова · по уровню</b>',
+        reply_markup=keyboards.word_dict_levels_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_word_bank_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _show_word_add_menu(update, context)
 
 
 async def _show_bank_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3178,7 +3193,7 @@ async def _show_bank_page(
     await _send(
         context, _chat_id(update), text,
         reply_markup=keyboards.word_list_page_kb(
-            prefix, page=data['page'], pages=data['pages'], back_data='words:bank',
+            prefix, page=data['page'], pages=data['pages'], back_data='words:add',
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -3198,7 +3213,7 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
     if entry_dict.get('example'):
         lines.append(f'📝 {_esc(entry_dict["example"])}')
     context.user_data['tts_text'] = entry_dict['english']
-    page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+    page_cb = context.user_data.get('bank_page_cb', 'words:add')
     await _send(
         context, _chat_id(update), '\n'.join(lines),
         reply_markup=keyboards.word_bank_entry_kb(
@@ -3217,7 +3232,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← Слова', callback_data='words:hub'),
+            InlineKeyboardButton('← Назад', callback_data='words:add'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3263,7 +3278,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['word_survey_queue'] = batch
     await _send(
         context, _chat_id(update),
-        f'📝 <b>Знаю / учу</b> — {len(batch)} слов\n'
+        f'📝 <b>Пройти 10 слов</b>\n'
         '✅ Знаю · 📗 Учу · ⏭️ Позже',
         parse_mode=ParseMode.HTML,
     )
@@ -4281,8 +4296,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bank_entry_id=int(data.rsplit(':', 1)[1]),
             status='skipped',
         )
+    elif data == 'words:add':
+        await _show_word_add_menu(update, context)
     elif data == 'words:bank':
-        await _show_word_bank_hub(update, context)
+        await _show_word_add_menu(update, context)
+    elif data == 'words:dict:levels':
+        await _show_word_dict_levels(update, context)
     elif data == 'words:bank:topics':
         await _show_bank_topics(update, context)
     elif data == 'words:search':
@@ -4303,7 +4322,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bid = int(data.rsplit(':', 1)[1])
         await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'skipped')
         await _ack_callback(query, 'Позже ⏭️')
-        page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+        page_cb = context.user_data.get('bank_page_cb', 'words:add')
         parts = page_cb.rsplit(':', 1)
         if len(parts) == 2 and parts[1].isdigit():
             prefix, page = parts[0], int(parts[1])
