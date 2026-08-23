@@ -44,13 +44,13 @@ def main_menu(*, continue_mode: bool = False) -> ReplyKeyboardMarkup:
 
 
 def training_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Тренировка»: слова, правила, наставник."""
+    """Подменю «Тренировка»: слова, правила, AI-наставник."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('Слова', callback_data='train:words'),
-            InlineKeyboardButton('Правила', callback_data='train:rules'),
+            InlineKeyboardButton('📚 Слова', callback_data='train:words'),
+            InlineKeyboardButton('🎓 Правила', callback_data='train:rules'),
         ],
-        [InlineKeyboardButton('Наставник', callback_data='train:tutor')],
+        [InlineKeyboardButton('💬 AI · Наставник', callback_data='train:tutor')],
     ])
 
 
