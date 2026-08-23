@@ -11,12 +11,13 @@ Reference dictionary for **🎯 Тренировка → Слова**.
 | **Personal + SRS** | `Word` + `UserWordProgress` | Training queue, spaced repetition |
 
 Flow:
-1. **Hub** — progress bars per level (A1…user level), counters «знаю / учу / осталось»
-2. **Разметка** — card flow: ✅ Знаю · 📗 Учить · ⏭️ Пропустить
-3. **Учить 10 новых** — intro + RU→EN quiz (SRS)
-4. **Повторить** — due words from personal SRS
+1. **Hub** — all levels A1–C1 vs CEFR targets (500 / 1k / 2k / 4k / 8k), user level marked
+2. **Учить новое** — 10 new, survey, bank, search, level pages
+3. **Повтор** — SRS + my dictionary
+4. **Разметка** — card flow: Знаю · Учу · Позже → `UserWordBankStatus`
 
-Lower levels are always checked (A2 user still sees A1 gaps).
+Integration with lessons/tutor: **`docs/WORD_BANK_INTEGRATION.md`**
+Navigation map: **`docs/WORD_BANK_NAV.md`**
 
 ## Seed the database
 
@@ -40,17 +41,9 @@ Sources (later overrides earlier for same slug):
 
 ## Telegram UX
 
-**🎯 Тренировка → Слова** — hub with full progress + all flows.
+**🎯 Тренировка → Слова** — hub: all level bars + **2 buttons** (Учить новое / Повтор).
 
-Navigation map: **`docs/WORD_BANK_NAV.md`** (do not remove flows without approval).
-
-Hub buttons:
-- **▶️ 10 новых** | **🔄 Повтор** — daily batch + SRS
-- **👀 Что знаешь?** — quick check: know / learn / later
-- **📗 Мой словарь** — groups + 6 words per page
-- **📖 Банк слов** — browse by level/topic, 6 per page
-- **🔍 Поиск** — find in bank by EN or RU
-- **A1…C1** — level stats + check + words for level
+Full button map: **`docs/WORD_BANK_NAV.md`**. Do not remove flows without approval.
 
 ## Phase 3 (later)
 

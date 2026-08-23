@@ -15,13 +15,14 @@ from progress_app.models import UserWordBankStatus, UserWordProgress
 CEFR_LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
 LEVEL_INDEX = {level: idx for idx, level in enumerate(CEFR_LEVELS)}
 
-# Approximate CEFR vocabulary targets (for display when bank is still growing).
+# CEFR vocabulary goals for progress display (known / target).
+# Bank corpus can be smaller while we seed; bar tracks learner vs goal.
 RECOMMENDED_TARGETS = {
     'a1': 500,
     'a2': 1000,
     'b1': 2000,
-    'b2': 3500,
-    'c1': 5000,
+    'b2': 4000,
+    'c1': 8000,
 }
 
 DAILY_NEW_WORDS = 10
@@ -122,7 +123,7 @@ def get_level_stats(user_id: int, level: str) -> dict[str, Any]:
     learning = counts['learning']
     marked = known + learning + counts['skipped']
     unseen = max(0, bank_total - marked)
-    target = max(bank_total, RECOMMENDED_TARGETS.get(level, bank_total))
+    target = RECOMMENDED_TARGETS.get(level, bank_total or 1)
     return {
         'level': level,
         'bank_total': bank_total,
@@ -137,8 +138,10 @@ def get_level_stats(user_id: int, level: str) -> dict[str, Any]:
 
 
 def get_word_bank_overview(user_id: int, user_level: str) -> dict[str, Any]:
-    levels = _levels_up_to(user_level)
-    level_stats = [get_level_stats(user_id, lvl) for lvl in levels]
+    level_stats = [get_level_stats(user_id, lvl) for lvl in CEFR_LEVELS]
+    stats_by_level = {s['level']: s for s in level_stats}
+    path_levels = _levels_up_to(user_level)
+    unseen_total = sum(stats_by_level[l]['unseen'] for l in path_levels if l in stats_by_level)
     due_count = UserWordProgress.objects.filter(
         user_id=user_id,
         status__in=(
@@ -148,12 +151,8 @@ def get_word_bank_overview(user_id: int, user_level: str) -> dict[str, Any]:
     ).filter(
         Q(next_review_at__lte=timezone.now()) | Q(next_review_at__isnull=True),
     ).count()
-    unseen_total = sum(s['unseen'] for s in level_stats)
     user_lvl = (user_level or 'a1').lower()
-    current_level = next(
-        (s for s in level_stats if s['level'] == user_lvl),
-        level_stats[-1] if level_stats else None,
-    )
+    current_level = stats_by_level.get(user_lvl) or (level_stats[-1] if level_stats else None)
     return {
         'user_level': user_lvl,
         'levels': level_stats,
@@ -223,13 +222,33 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
             f"{lvl} {stat['bar']} "
             f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}{here}"
         )
-    lines.extend([
-        '',
-        f"Не проверено: <b>{overview['unseen_total']}</b> · "
-        f"К повторению: <b>{overview['due_count']}</b>",
-        f"Сегодня: <b>{overview['daily_new']}</b> новых + повтор.",
-    ])
     return '\n'.join(lines)
+
+
+def format_word_new_section_text(overview: dict[str, Any]) -> str:
+    return (
+        '📘 <b>Учить новое</b>\n\n'
+        f'Сегодня: <b>{overview["daily_new"]}</b> слов с тренировкой.\n'
+        '«Что знаешь?» — отметить знаю / учу (статистика по уровням).\n'
+        '«Банк» — все слова по уровню и теме.'
+    )
+
+
+def format_word_repeat_section_text(
+    overview: dict[str, Any],
+    summary: dict[str, Any],
+) -> str:
+    due = summary.get('due', overview.get('due_count', 0))
+    if summary['total'] == 0:
+        return (
+            '🔄 <b>Повтор</b>\n\n'
+            'Пока нет слов в учёбе. Сначала «Учить новое» или слова из урока.'
+        )
+    return (
+        '🔄 <b>Повтор</b>\n\n'
+        f'В учёбе: <b>{summary["learning"]}</b> · '
+        f'к повторению: <b>{due}</b>'
+    )
 
 
 def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:

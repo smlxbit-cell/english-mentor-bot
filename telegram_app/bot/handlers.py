@@ -3025,6 +3025,31 @@ async def _show_my_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+async def _show_word_new_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    overview = await db.get_word_bank_overview(profile['id'], user_level)
+    text = await db.format_word_new_section_text(overview)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_new_section_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_word_repeat_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    overview = await db.get_word_bank_overview(profile['id'], user_level)
+    summary = await db.get_personal_dict_summary(profile['id'])
+    text = await db.format_word_repeat_section_text(overview, summary)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_repeat_section_kb(due=summary.get('due', 0)),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def _show_word_level_detail(
     update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
 ):
@@ -3046,7 +3071,7 @@ async def _show_word_level_detail(
                 InlineKeyboardButton('👀 Проверить 10', callback_data='words:survey:start'),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
-            [InlineKeyboardButton('← Слова', callback_data='words:hub')],
+            [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3237,7 +3262,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← Слова', callback_data='words:hub'),
+            InlineKeyboardButton('← Учить новое', callback_data='words:new'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3275,7 +3300,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send(
             context, _chat_id(update),
             'Все слова на твоих уровнях уже просмотрены 👍',
-            reply_markup=keyboards.word_hub_kb(),
+            reply_markup=keyboards.word_new_section_kb(),
         )
         return
     context.user_data['mode'] = 'word_survey'
@@ -3348,7 +3373,7 @@ async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAUL
         await _send(
             context, _chat_id(update),
             'Новых слов для изучения не осталось на твоих уровнях 🎉',
-            reply_markup=keyboards.word_hub_kb(),
+            reply_markup=keyboards.word_new_section_kb(),
         )
         return
     lines = [
@@ -3411,7 +3436,7 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await _send(context, chat_id,
                     'Сейчас нет слов к повторению 👍 Загляни позже или '
                     'пройди «👀 Что знаешь?», чтобы добавить слова.',
-                    reply_markup=keyboards.word_hub_kb())
+                    reply_markup=keyboards.word_repeat_section_kb())
         if from_plan:
             await show_daily_plan(update, context)
         return
@@ -4269,7 +4294,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['mode'] = None
         context.user_data['expect'] = None
         await _show_word_hub(update, context)
-    elif data in ('words:new', 'words:repeat', 'words:repeat:list', 'words:add'):
+    elif data == 'words:new':
+        await _show_word_new_section(update, context)
+    elif data == 'words:repeat':
+        await _show_word_repeat_section(update, context)
+    elif data in ('words:repeat:list', 'words:add'):
         await _show_word_hub(update, context)
     elif data == 'words:mydict':
         await _show_my_dictionary(update, context)

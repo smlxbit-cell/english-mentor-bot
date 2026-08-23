@@ -2,29 +2,41 @@
 
 **Entry:** 🎯 Тренировка → Слова → `words:hub`
 
-## Hub (one screen)
+## Screen 1 — Hub
 
-**Text shows:**
-- Твой уровень (из теста)
-- Progress bars **A1 … user level** (знаю / цель, учу)
-- Не проверено · К повторению · Сегодня
+**Text:**
+- Title + **твой уровень** (from diagnostic)
+- Progress **A1 … C1** — `знаю / CEFR-цель · учу` (targets: 500 / 1k / 2k / 4k / 8k)
+- Current level marked `← ты здесь`
+- No extra counters under bars (no «не проверено» line)
 
-**Buttons (4 rows):**
+**Buttons (2 only):**
 
-| Row | Buttons | Goes to |
-|-----|---------|---------|
-| 1 | ▶️ 10 новых · 🔄 Повтор | daily learning · SRS |
-| 2 | 👀 Что знаешь? · 📗 Мой словарь | survey cards · personal lists |
-| 3 | 📖 Банк слов · 🔍 Поиск | browse bank · text search |
-| 4 | A1 A2 B1 B2 C1 | level stats + check + words |
+| Button | Callback | Opens |
+|--------|----------|--------|
+| Учить новое | `words:new` | Screen 2 |
+| Повтор · N | `words:repeat` | Screen 3 |
 
-Do **not** remove these flows without explicit product approval.
+## Screen 2 — Учить новое
 
-## Sub-screens
+| Button | Action |
+|--------|--------|
+| ▶️ 10 новых | Daily intro + quiz |
+| 👀 Что знаешь? | Survey cards → level stats |
+| 📖 Банк слов · 🔍 Поиск | Full corpus browse |
+| A1 … C1 | Level stats + check + words |
+| ← Слова | Back to hub |
 
-- **👀 Что знаешь?** — 10 cards, Знаю / Учу / Позже → `UserWordBankStatus`
-- **📗 Мой словарь** — Учу / Знаю / Выучил / Темы / Уровни (6 слов на страницу)
-- **📖 Банк слов** — levels, темы, 6 слов на страницу
-- **Level (A1…)** — stats, проверить 10, открыть слова уровня
+## Screen 3 — Повтор
 
-Legacy callbacks `words:new`, `words:repeat` → redirect to hub.
+| Button | Action |
+|--------|--------|
+| 🔄 Повтор · N | SRS session (if due) |
+| 📗 Мой словарь | Учу / Знаю / Выучил / темы |
+| ← Слова | Back to hub |
+
+## Integration roadmap
+
+See **`docs/WORD_BANK_INTEGRATION.md`** (lessons, tutor, rules).
+
+Legacy: `words:add` → hub.
