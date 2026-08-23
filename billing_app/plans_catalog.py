@@ -8,6 +8,9 @@ PRO_PRICE_RUB = 990
 VOICE_ADDON_PRICE_RUB = 350
 VOICE_ADDON_MINUTES = 100
 
+# Keep in sync with config/settings.py → TRIAL_DAYS
+TRIAL_DAYS_LABEL = '3 дня'
+
 RETIRED_PLAN_CODES = frozenset({'active'})
 
 UPGRADE_PATHS: dict[tuple[str, str], int] = {
@@ -47,16 +50,17 @@ TARIFF_INCLUDES_PLAIN = (
 FREE_TIER_BLOCK = (
     '<b>🆓 Free — 0 ₽ навсегда</b>\n'
     '• 📚 <b>Слова</b> — весь банк, тренировка, 🔊 слушать\n'
-    '• 📖 <b>3 правила</b> — попробовать грамматику\n'
+    '• 📖 <b>Грамматика</b> — ознакомительный доступ (часть правил)\n'
     '• 🧪 Диагностика уровня\n'
     '• 💬 Наставник — <b>только текст</b> (20 сообщ./мес)\n'
-    '• 🚫 без 🎙 голосового ввода · без ▶️ плана дня\n\n'
-    '<b>+ 3 дня trial</b> — полный план дня, как Basic.\n\n'
+    '• 🚫 без 🎙 голоса · без ▶️ плана дня\n\n'
+    f'<b>🎁 Пробный период {TRIAL_DAYS_LABEL}</b> — вся программа как Basic '
+    '(план дня, все правила, голос).\n\n'
 )
 
 FREE_TIER_PLAIN = (
-    'Free: слова бесплатно, 3 правила, наставник текстом. '
-    'Trial 3 дня — полная программа.'
+    'Free: слова бесплатно, грамматика — ограниченный доступ, наставник текстом. '
+    f'Пробный период {TRIAL_DAYS_LABEL} — полная программа.'
 )
 
 PLANS: tuple[dict, ...] = (
@@ -96,7 +100,7 @@ PLANS: tuple[dict, ...] = (
     },
     {
         'code': 'voice_100',
-        'name': '+100 мин голоса',
+        'name': '+100 мин разговора',
         'price_rub': VOICE_ADDON_PRICE_RUB,
         'duration_days': 0,
         'plan_kind': 'voice_addon',
@@ -106,8 +110,8 @@ PLANS: tuple[dict, ...] = (
         'tutor_ai_monthly_limit': 0,
         'stt_model': '',
         'description': (
-            'Докупка <b>100 мин</b> 🎙 к текущему месяцу. '
-            'Нужна активная подписка Basic или Pro.'
+            f'Дополнительные <b>{VOICE_ADDON_MINUTES} мин</b> 🎙 разговора с ботом '
+            'к текущему месяцу. Нужна активная подписка Basic или Pro.'
         ),
         'sort_order': 10,
     },
@@ -118,7 +122,7 @@ DEFAULT_SUBSCRIPTION_CODE = 'basic'
 PLAN_NAMES_RU = {
     'basic': 'Basic',
     'pro': 'Pro',
-    'voice_100': '+100 мин 🎙',
+    'voice_100': '+100 мин разговора',
     'active': 'Active (архив)',
 }
 
@@ -157,8 +161,8 @@ def format_subscription_compact(
 ) -> str:
     """Тарифы — понятно с первого взгляда."""
     tier_note = {
-        'free': 'Сейчас: <b>Free</b> — слова и 3 правила',
-        'trial': 'Сейчас: <b>Trial</b> — полная программа (3 дня)',
+        'free': 'Сейчас: <b>Free</b> — слова бесплатно, грамматика — частично',
+        'trial': f'Сейчас: <b>Пробный период</b> — полная программа ({TRIAL_DAYS_LABEL})',
         'paid': 'Сейчас: платная подписка',
     }.get(access_tier, '')
     upgrade_line = ''
@@ -177,7 +181,7 @@ def format_subscription_compact(
         f'🆓 <b>FREE · 0 ₽</b>',
         '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
         '✅ Слова — весь банк, 🔊 слушать, повтор',
-        '✅ 3 правила · диагностика',
+        '✅ Грамматика — ознакомительный доступ',
         '✅ Наставник текст (20 сообщ./мес)',
         '❌ План дня · 🎙 говорить',
         '',
@@ -199,8 +203,8 @@ def format_subscription_compact(
         f'⬆️ <b>С Basic на Pro</b> — доплата <b>+{upgrade_price_rub("basic", "pro")} ₽</b>',
         f'<i>(не нужно платить {PRO_PRICE_RUB} ₽ заново)</i>',
         '',
-        f'➕ <b>+{VOICE_ADDON_MINUTES} мин 🎙 · {VOICE_ADDON_PRICE_RUB} ₽</b>',
-        '<i>Если минут не хватает — докупка (нужен Basic или Pro). '
+        f'➕ <b>Доп. минуты разговора</b> — +{VOICE_ADDON_MINUTES} мин 🎙 · {VOICE_ADDON_PRICE_RUB} ₽',
+        '<i>Если минут не хватает — дополнительные минуты (нужен Basic или Pro). '
         'Выгоднее Pro, если говоришь каждый день.</i>',
         '',
         '👇 Выбери тариф',
@@ -233,12 +237,12 @@ def format_subscriber_status(
             '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
             f'⬆️ <b>Нужно больше говорить?</b>',
             f'Pro — <b>+{diff} ₽</b> доплата (ещё +180 мин/мес)',
-            f'или +{VOICE_ADDON_MINUTES} мин за {VOICE_ADDON_PRICE_RUB} ₽',
+            f'или +{VOICE_ADDON_MINUTES} доп. мин за {VOICE_ADDON_PRICE_RUB} ₽',
         ])
     elif voice_remaining <= 15:
         lines.extend([
             '',
-            f'Минут мало — можно докупить +{VOICE_ADDON_MINUTES} мин '
+            f'Минут мало — можно добавить +{VOICE_ADDON_MINUTES} мин разговора '
             f'({VOICE_ADDON_PRICE_RUB} ₽) или перейти на Pro.',
         ])
     return '\n'.join(lines)

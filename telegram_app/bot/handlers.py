@@ -4194,6 +4194,7 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         BASIC_PRICE_RUB,
         PRO_PRICE_RUB,
         TARIFF_INCLUDES_PLAIN,
+        TRIAL_DAYS_LABEL,
         VOICE_ADDON_MINUTES,
         VOICE_ADDON_PRICE_RUB,
         upgrade_price_rub,
@@ -4207,10 +4208,11 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'• Basic: {BASIC_PRICE_RUB} ₽ / {days} дн · 60 мин 🎙/мес\n'
         f'• Pro: {PRO_PRICE_RUB} ₽ / {days} дн · 240 мин 🎙/мес\n'
         f'• Апгрейд Basic→Pro: +{diff} ₽ (доплата, не полная цена Pro)\n'
-        f'• Докупка: +{VOICE_ADDON_MINUTES} мин — {VOICE_ADDON_PRICE_RUB} ₽\n\n'
+        f'• Доп. минуты разговора: +{VOICE_ADDON_MINUTES} мин — {VOICE_ADDON_PRICE_RUB} ₽\n\n'
         f'{TARIFF_INCLUDES_PLAIN}\n\n'
         '• Без автопродления.\n'
-        '• Free: слова бесплатно, 3 правила, trial 3 дня.\n'
+        f'• Free: слова бесплатно, грамматика — ограниченный доступ.\n'
+        f'• Пробный период {TRIAL_DAYS_LABEL} — вся программа как Basic.\n'
         '• Оплата через ЮKassa (Telegram Payments).',
         reply_markup=_main_menu(context),
     )
@@ -4241,14 +4243,14 @@ async def buy_subscription(
                     reply_markup=_main_menu(context))
         return
 
-    from billing_app.plans_catalog import upgrade_price_rub
+    from billing_app.plans_catalog import BASIC_PRICE_RUB, upgrade_price_rub
 
     if plan['plan_kind'] == 'voice_addon':
         if not await db.has_active_subscription(profile_id):
             await _send(
                 context, chat_id,
-                'Докупка минут — только с активной подпиской Basic или Pro.\n'
-                'Сначала оформи Basic (349 ₽).',
+                'Дополнительные минуты — только с активной подпиской Basic или Pro.\n'
+                f'Сначала оформи Basic ({BASIC_PRICE_RUB} ₽).',
                 reply_markup=keyboards.paywall_kb(
                     [p for p in await db.get_subscription_plans()],
                     has_subscription=False,
@@ -4269,7 +4271,7 @@ async def buy_subscription(
         await _send(
             context, chat_id,
             'У тебя уже есть подписка ✅\n'
-            'Нужно больше минут? — «↑ Pro +641₽» или докупка +100 мин.',
+            'Нужно больше минут? — «↑ Pro +641₽» или доп. минуты разговора (+100 мин).',
             reply_markup=keyboards.subscription_kb(
                 has_subscription=True,
                 plan_code=await db.get_active_plan_code(profile_id) or '',
@@ -4289,7 +4291,7 @@ async def buy_subscription(
         if not result.get('ok'):
             reason = result.get('reason', '')
             if reason == 'no_subscription':
-                msg = 'Нужна активная подписка для докупки минут.'
+                msg = 'Нужна активная подписка для дополнительных минут.'
             elif reason == 'upgrade_not_allowed':
                 msg = 'Апгрейд сейчас недоступен для этого тарифа.'
             else:
@@ -4341,7 +4343,7 @@ async def buy_subscription(
     elif plan['plan_kind'] == 'voice_addon':
         payload = f'addon:{profile_id}:{target_code}'
         title = f'English Mentor — {plan["name"]}'
-        description = plan.get('description') or 'Докупка минут голоса.'
+        description = plan.get('description') or 'Дополнительные минуты разговора с ботом.'
         charge_rub = plan['price_rub']
     else:
         payload = f'sub:{profile_id}:{target_code}'
