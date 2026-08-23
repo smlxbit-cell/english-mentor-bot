@@ -300,7 +300,7 @@ def word_dict_levels_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('B2', callback_data='words:dict:level:b2:0'),
             InlineKeyboardButton('C1', callback_data='words:dict:level:c1:0'),
         ],
-        [InlineKeyboardButton('← Назад', callback_data='words:repeat')],
+        [InlineKeyboardButton('← Назад', callback_data='words:repeat:list')],
     ])
 
 
