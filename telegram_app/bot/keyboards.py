@@ -239,12 +239,14 @@ def word_new_section_kb(*, daily: int = 10) -> InlineKeyboardMarkup:
 
 def word_new_pick_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:menu')],
+        [
+            InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:menu'),
+            InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
+        ],
         [
             InlineKeyboardButton('📁 Темы', callback_data='words:bank:topics'),
             InlineKeyboardButton('📊 Уровни', callback_data='words:bank'),
         ],
-        [InlineKeyboardButton('🔍 Поиск', callback_data='words:search')],
         [InlineKeyboardButton('← Новые слова', callback_data='words:new')],
     ])
 
