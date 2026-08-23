@@ -7,11 +7,7 @@ import logging
 from django.conf import settings
 from telegram.ext import ContextTypes
 
-from billing_app.owner_dashboard import (
-    new_user_alert_text,
-    owner_dashboard_text,
-    payment_alert_text,
-)
+from billing_app.owner_dashboard import payment_alert_text
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +45,10 @@ async def notify_bot_owners(context: ContextTypes.DEFAULT_TYPE, text: str) -> No
 async def notify_new_user(context: ContextTypes.DEFAULT_TYPE, profile: dict) -> None:
     if not profile.get('just_created'):
         return
-    from users_app.models import UserProfile
+    from telegram_app.bot import db
 
-    try:
-        user = UserProfile.objects.get(id=profile['id'])
-    except UserProfile.DoesNotExist:
-        return
-    await notify_bot_owners(context, new_user_alert_text(user))
+    text = await db.get_new_user_alert_text(profile['id'])
+    await notify_bot_owners(context, text)
 
 
 async def notify_payment(

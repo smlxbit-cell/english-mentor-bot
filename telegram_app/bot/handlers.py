@@ -941,15 +941,15 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Owner-only dashboard — list users without SSH."""
-    from billing_app.owner_dashboard import owner_dashboard_text
     from telegram_app.bot.owner import is_bot_owner
 
     if not is_bot_owner(update.effective_user.id):
         return
+    text = await db.get_owner_dashboard_text()
     await _send(
         context,
         _chat_id(update),
-        owner_dashboard_text(),
+        text,
         parse_mode=ParseMode.HTML,
         reply_markup=_main_menu(context),
     )

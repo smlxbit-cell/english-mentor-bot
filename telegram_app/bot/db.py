@@ -212,6 +212,21 @@ def _profile_dict(profile: UserProfile) -> dict:
 # --------------------------------------------------------------------------- #
 
 @sync_to_async
+def get_owner_dashboard_text(recent_limit: int = 12) -> str:
+    from billing_app.owner_dashboard import owner_dashboard_text
+
+    return owner_dashboard_text(recent_limit=recent_limit)
+
+
+@sync_to_async
+def get_new_user_alert_text(profile_id: int) -> str:
+    from billing_app.owner_dashboard import new_user_alert_text
+
+    profile = UserProfile.objects.get(id=profile_id)
+    return new_user_alert_text(profile)
+
+
+@sync_to_async
 def get_or_create_profile(tg_user) -> dict:
     profile, created = UserProfile.objects.get_or_create(
         telegram_id=tg_user.id,
