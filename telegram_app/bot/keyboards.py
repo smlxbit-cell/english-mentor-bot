@@ -361,9 +361,11 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
 
 def word_intro_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🎓 Начать тренировку', callback_data='words:learn:quiz')],
-        [InlineKeyboardButton('🔊 Слушать все', callback_data='tts:say')],
-        [InlineKeyboardButton('← Слова', callback_data='words:hub')],
+        [
+            InlineKeyboardButton('🎓 Тренировка', callback_data='words:learn:quiz'),
+            InlineKeyboardButton('🔊', callback_data='tts:say'),
+            InlineKeyboardButton('← Слова', callback_data='words:hub'),
+        ],
     ])
 
 
