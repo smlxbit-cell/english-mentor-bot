@@ -40,14 +40,17 @@ Sources (later overrides earlier for same slug):
 
 ## Telegram UX
 
-**🎯 Тренировка → Слова** opens the hub (not empty-state only).
+**🎯 Тренировка → Слова** — hub with full progress + all flows.
 
-Buttons:
+Navigation map: **`docs/WORD_BANK_NAV.md`** (do not remove flows without approval).
+
+Hub buttons:
 - **▶️ 10 новых** | **🔄 Повтор** — daily batch + SRS
-- **👀 Что знаешь?** — quick check: know / learn / later (not «разметка»)
-- **🗂 Мой словарь** — groups + 6 words per page (no long canvas)
+- **👀 Что знаешь?** — quick check: know / learn / later
+- **📗 Мой словарь** — groups + 6 words per page
 - **📖 Банк слов** — browse by level/topic, 6 per page
 - **🔍 Поиск** — find in bank by EN or RU
+- **A1…C1** — level stats + check + words for level
 
 ## Phase 3 (later)
 
