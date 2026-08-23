@@ -3106,7 +3106,7 @@ async def _show_word_level_detail(
                 InlineKeyboardButton('👀 Проверить 10', callback_data=f'words:survey:level:{level}'),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
-            [InlineKeyboardButton('← В словарь', callback_data='words:new:pick')],
+            [InlineKeyboardButton('← Добавить слова', callback_data='words:new:pick')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3175,9 +3175,10 @@ async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Словарь</b>\n\n'
+        '📖 <b>Банк слов</b>\n\n'
         f'Твой уровень: <b>{overview["user_level"].upper()}</b>\n'
-        'По 6 слов на экран. На слове — Знаю / Учу / Позже.'
+        'Нажми <b>слово</b> в списке → Знаю / Учу / Позже.\n'
+        '«Учу» попадёт в «Повтор» → тренировка.'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3236,10 +3237,11 @@ async def _show_bank_page(
     from learning.word_bank.navigation import topic_label
 
     profile = await _ensure_profile(update, context)
-    user_level = profile.get('level_code') or 'a1'
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     data = await db.browse_bank_entries(
         profile['id'], user_level, level=level, topic=topic, page=page,
     )
+    summary = await db.get_personal_dict_summary(profile['id'])
     if level:
         title = f'📖 {level.upper()}'
     elif topic:
@@ -3253,11 +3255,22 @@ async def _show_bank_page(
         pages=data['pages'],
         total=data['total'],
     )
+    if topic == 'general':
+        text += (
+            '\n\n<i>Базовые слова без узкой темы. '
+            'Удобнее смотреть по темам или уровню.</i>'
+        )
+    text += '\n\n<i>Нажми кнопку со словом ниже.</i>'
     context.user_data['bank_page_cb'] = f'{prefix}:{page}'
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_list_page_kb(
-            prefix, page=data['page'], pages=data['pages'], back_data='words:bank',
+        reply_markup=keyboards.word_bank_list_page_kb(
+            data['items'],
+            prefix,
+            page=data['page'],
+            pages=data['pages'],
+            back_data='words:bank',
+            learning_count=summary.get('learning', 0),
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -3269,6 +3282,8 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
         if update.callback_query:
             await _ack_callback(update.callback_query, 'Слово не найдено', show_alert=True)
         return
+    profile_id = context.user_data.get('profile_id')
+    summary = await db.get_personal_dict_summary(profile_id) if profile_id else {}
     lines = [
         f'📝 <b>{_esc(entry_dict["english"])}</b> · '
         f'{entry_dict["cefr_level"].upper()}',
@@ -3276,12 +3291,17 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
     ]
     if entry_dict.get('example'):
         lines.append(f'📝 {_esc(entry_dict["example"])}')
+    lines.append('\n<i>«Учу» → тренировка в «Повтор»</i>')
     context.user_data['tts_text'] = entry_dict['english']
     page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+    learning = summary.get('learning', 0)
     await _send(
         context, _chat_id(update), '\n'.join(lines),
         reply_markup=keyboards.word_bank_entry_kb(
-            bank_entry_id, page_cb=page_cb,
+            bank_entry_id,
+            page_cb=page_cb,
+            show_train=True,
+            learning_count=learning,
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -3296,7 +3316,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← В словарь', callback_data='words:new:pick'),
+            InlineKeyboardButton('← Добавить слова', callback_data='words:new:pick'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
