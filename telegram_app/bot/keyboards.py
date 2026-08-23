@@ -217,11 +217,13 @@ def dict_listen_kb(has_words: bool = True) -> InlineKeyboardMarkup:
 
 
 def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardMarkup:
-    """Hub: три кнопки на всю ширину — Telegram не обрезает текст на телефоне."""
+    """Hub: Практика | Новые | Мои слова — одна строка, короткие подписи."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🎯 Практика', callback_data='words:repeat')],
-        [InlineKeyboardButton('📘 Новые', callback_data='words:new')],
-        [InlineKeyboardButton('📗 Мои слова', callback_data='words:mydict')],
+        [
+            InlineKeyboardButton('🎯 Практика', callback_data='words:repeat'),
+            InlineKeyboardButton('📘 Новые', callback_data='words:new'),
+            InlineKeyboardButton('📗 Мои слова', callback_data='words:mydict'),
+        ],
     ])
 
 
