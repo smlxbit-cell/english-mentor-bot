@@ -1,0 +1,2 @@
+# Bulk-import word bank files go here (*.json, *.csv).
+# Run: python manage.py seed_word_bank

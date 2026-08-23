@@ -50,6 +50,44 @@ class UserWordProgress(models.Model):
         return f'{self.user} — {self.word}'
 
 
+class UserWordBankStatus(models.Model):
+    """Learner's mark on a reference bank entry (know / learning / skip)."""
+
+    class Status(models.TextChoices):
+        KNOWN = 'known', 'Known'
+        LEARNING = 'learning', 'Learning'
+        SKIPPED = 'skipped', 'Skipped'
+
+    user = models.ForeignKey(
+        'users_app.UserProfile',
+        on_delete=models.CASCADE,
+        related_name='word_bank_status',
+    )
+    bank_entry = models.ForeignKey(
+        'learning.WordBankEntry',
+        on_delete=models.CASCADE,
+        related_name='user_status',
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'bank_entry'],
+                name='unique_user_word_bank_status',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.bank_entry} ({self.status})'
+
+
 class SkillProgress(models.Model):
     class Skill(models.TextChoices):
         VOCABULARY = 'vocabulary', 'Vocabulary'

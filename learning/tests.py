@@ -1,3 +1,103 @@
+import json
+import tempfile
+from pathlib import Path
+
+from django.conf import settings
+from django.core.management import call_command
 from django.test import TestCase
 
-# Create your tests here.
+from learning.management.commands.seed_word_bank import collect_word_bank_rows
+from learning.models import WordBankEntry
+from learning.word_bank.loader import load_json_file, parse_row
+from learning.word_bank.normalize import word_slug
+from learning.word_bank.seed_words import iter_builtin_rows
+
+
+class WordSlugTests(TestCase):
+    def test_slug_basic(self):
+        self.assertEqual(word_slug('Thank you'), 'thank-you')
+
+    def test_slug_strips_punctuation(self):
+        self.assertEqual(word_slug("don't"), 'dont')
+
+
+class ParseRowTests(TestCase):
+    def test_minimal_row(self):
+        row = parse_row({'english': 'hello', 'translation': 'привет', 'cefr_level': 'a1'})
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row['slug'], 'hello')
+        self.assertEqual(row['cefr_level'], 'a1')
+
+    def test_skips_incomplete(self):
+        self.assertIsNone(parse_row({'english': 'hello'}))
+
+
+class LoaderTests(TestCase):
+    def test_load_json_array(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'sample.json'
+            path.write_text(
+                json.dumps([{'english': 'tea', 'translation': 'чай', 'level': 'a1'}]),
+                encoding='utf-8',
+            )
+            rows = load_json_file(path)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['english'], 'tea')
+
+
+class SeedCorpusTests(TestCase):
+    def test_builtin_has_all_levels(self):
+        rows = iter_builtin_rows()
+        levels = {r['cefr_level'] for r in rows}
+        self.assertEqual(levels, {'a1', 'a2', 'b1', 'b2', 'c1'})
+        self.assertGreaterEqual(len(rows), 250)
+
+    def test_collect_includes_builtin(self):
+        merged = collect_word_bank_rows()
+        self.assertIn('hello', merged)
+        self.assertIn('coffee', merged)
+
+    def test_collect_with_remote_cache(self):
+        data_dir = Path(settings.BASE_DIR) / 'learning' / 'data' / 'word_bank'
+        if not (data_dir / 'remote.json').is_file():
+            self.skipTest('remote.json not cached')
+        merged = collect_word_bank_rows(data_dir=data_dir, include_remote=True)
+        self.assertGreater(len(merged), 500)
+
+
+class WordBankServiceTests(TestCase):
+    def setUp(self):
+        from users_app.models import UserProfile
+        call_command('seed_word_bank', include_remote=True)
+        self.profile = UserProfile.objects.create(telegram_id=999001, first_name='Test')
+
+    def test_mark_known_updates_stats(self):
+        from learning.word_bank.service import get_level_stats, mark_bank_entry
+        from learning.models import WordBankEntry
+        from progress_app.models import UserWordBankStatus
+
+        entry = WordBankEntry.objects.filter(cefr_level='a1').first()
+        self.assertIsNotNone(entry)
+        mark_bank_entry(self.profile.id, entry.id, UserWordBankStatus.Status.KNOWN)
+        stat = get_level_stats(self.profile.id, 'a1')
+        self.assertGreaterEqual(stat['known'], 1)
+
+
+class SeedWordBankCommandTests(TestCase):
+    def test_seed_creates_entries(self):
+        from django.core.management import call_command
+
+        call_command('seed_word_bank', include_remote=True)
+        self.assertGreater(WordBankEntry.objects.count(), 500)
+        hello = WordBankEntry.objects.get(slug='hello')
+        self.assertEqual(hello.translation, 'привет')
+        self.assertEqual(hello.cefr_level, 'a1')
+
+    def test_seed_is_idempotent(self):
+        from django.core.management import call_command
+
+        call_command('seed_word_bank', include_remote=True)
+        count_first = WordBankEntry.objects.count()
+        call_command('seed_word_bank', include_remote=True)
+        self.assertEqual(WordBankEntry.objects.count(), count_first)

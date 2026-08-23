@@ -1179,6 +1179,7 @@ def get_due_words(profile_id: int, limit: int = 8) -> list[dict]:
     qs = (
         UserWordProgress.objects.filter(user_id=profile_id)
         .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
+        .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
         .select_related('word')
         .order_by('next_review_at')[:limit]
     )
@@ -1219,6 +1220,58 @@ def record_word_review(profile_id: int, word_id: int, correct: bool) -> None:
         uwp.strength = max(0.0, uwp.strength - 0.2)
         uwp.status = UserWordProgress.Status.LEARNING
     uwp.save()
+
+
+@sync_to_async
+def get_word_bank_overview(profile_id: int, user_level: str) -> dict:
+    from learning.word_bank.service import get_word_bank_overview as _overview
+
+    return _overview(profile_id, user_level)
+
+
+@sync_to_async
+def format_word_hub_text(overview: dict) -> str:
+    from learning.word_bank.service import format_word_hub_text as _fmt
+
+    return _fmt(overview)
+
+
+@sync_to_async
+def pick_word_survey_batch(profile_id: int, user_level: str, limit: int = 10) -> list[dict]:
+    from learning.word_bank.service import entry_to_dict, pick_unseen_entries
+
+    entries = pick_unseen_entries(profile_id, user_level, limit=limit)
+    return [entry_to_dict(e) for e in entries]
+
+
+@sync_to_async
+def mark_word_bank_entry(profile_id: int, bank_entry_id: int, status: str) -> bool:
+    from learning.word_bank.service import mark_bank_entry
+
+    return mark_bank_entry(profile_id, bank_entry_id, status) is not None
+
+
+@sync_to_async
+def start_daily_word_learning(profile_id: int, user_level: str, limit: int = 10) -> list[dict]:
+    from learning.word_bank.service import (
+        entry_to_dict,
+        get_review_words_for_entries,
+        pick_daily_learning_entries,
+    )
+
+    entries = pick_daily_learning_entries(profile_id, user_level, limit=limit)
+    review = get_review_words_for_entries(profile_id, entries)
+    return {
+        'intro': [entry_to_dict(e) for e in entries],
+        'review': review,
+    }
+
+
+@sync_to_async
+def get_level_word_stats(profile_id: int, level: str) -> dict:
+    from learning.word_bank.service import get_level_stats
+
+    return get_level_stats(profile_id, level)
 
 
 # --------------------------------------------------------------------------- #
