@@ -3021,18 +3021,20 @@ async def _show_word_level_detail(
     text = (
         f'📊 <b>Уровень {level.upper()}</b>\n\n'
         f'{stat["bar"]} {stat["known"]}/{stat["target"]} ({stat["pct"]}%)\n\n'
-        f'✅ Знаю: <b>{stat["known"]}</b>\n'
+        f'✅ Знаю: <b>{stat["known"]}</b> · '
         f'📗 Учу: <b>{stat["learning"]}</b>\n'
-        f'👀 Не проверено: <b>{stat["unseen"]}</b>\n'
+        f'📝 Новых: <b>{stat["unseen"]}</b> · '
         f'🎯 До цели: <b>{stat["remaining"]}</b>'
     )
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     await _send(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:start')],
-            [InlineKeyboardButton('📖 Банк', callback_data=f'words:bank:level:{level}:0')],
-            [InlineKeyboardButton('↩️ К словам', callback_data='words:hub')],
+            [
+                InlineKeyboardButton('📝 Знаю/учу', callback_data='words:survey:start'),
+                InlineKeyboardButton('📖 Все', callback_data=f'words:bank:level:{level}:0'),
+            ],
+            [InlineKeyboardButton('← Слова', callback_data='words:hub')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3101,7 +3103,7 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
     rows.append([InlineKeyboardButton('↩️ Назад', callback_data='words:mydict')])
     await _send(
         context, _chat_id(update),
-        '📁 <b>Мой словарь · темы</b>\n\nВыбери группу:',
+        '📁 <b>Мои · темы</b>\n\nВыбери группу:',
         reply_markup=InlineKeyboardMarkup(rows),
         parse_mode=ParseMode.HTML,
     )
@@ -3112,9 +3114,8 @@ async def _show_word_bank_hub(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_level = profile.get('level_code') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Банк слов</b>\n\n'
-        f'👀 Не проверено: <b>{overview["unseen_total"]}</b>\n'
-        'Выбери уровень или тему — по 6 слов на экран.'
+        '📖 <b>Все слова</b>\n\n'
+        f'📝 Новых: <b>{overview["unseen_total"]}</b> · по 6 на экран'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3136,7 +3137,7 @@ async def _show_bank_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboards.word_bank_hub_kb(),
         )
         return
-    text = '📁 <b>Банк · темы</b>\n\nСлова, которые ты ещё не оценивал:'
+    text = '📁 <b>Темы</b>\n\nСлова, которые ещё не смотрел:'
     await _send(
         context, _chat_id(update), text,
         reply_markup=keyboards.word_bank_topics_kb(topics),
@@ -3161,11 +3162,11 @@ async def _show_bank_page(
         profile['id'], user_level, level=level, topic=topic, page=page,
     )
     if level:
-        title = f'📖 Банк · {level.upper()}'
+        title = f'📖 {level.upper()}'
     elif topic:
-        title = f'📖 Банк · {topic_label(topic)}'
+        title = f'📖 {topic_label(topic)}'
     else:
-        title = '📖 Банк слов'
+        title = '📖 Все слова'
     text = await db.format_word_list_page(
         title=title,
         items=data['items'],
@@ -3190,7 +3191,7 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
             await _ack_callback(update.callback_query, 'Слово не найдено', show_alert=True)
         return
     lines = [
-        f'👀 <b>{_esc(entry_dict["english"])}</b> · '
+        f'📝 <b>{_esc(entry_dict["english"])}</b> · '
         f'{entry_dict["cefr_level"].upper()}',
         f'🇷🇺 {_esc(entry_dict["translation"])}',
     ]
@@ -3213,10 +3214,10 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['expect'] = 'word_search'
     await _send(
         context, _chat_id(update),
-        '🔍 <b>Поиск в банке</b>\n\n'
-        'Напиши слово на английском или по-русски (от 2 букв).',
+        '🔍 <b>Поиск</b>\n\n'
+        'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('↩️ К словам', callback_data='words:hub'),
+            InlineKeyboardButton('← Слова', callback_data='words:hub'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3253,7 +3254,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not batch:
         await _send(
             context, _chat_id(update),
-            'Все слова на твоих уровнях уже проверены 👍',
+            'Все слова на твоих уровнях уже просмотрены 👍',
             reply_markup=keyboards.word_hub_kb(),
         )
         return
@@ -3262,7 +3263,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['word_survey_queue'] = batch
     await _send(
         context, _chat_id(update),
-        f'👀 <b>Что уже знаешь?</b> — {len(batch)} слов\n'
+        f'📝 <b>Знаю / учу</b> — {len(batch)} слов\n'
         '✅ Знаю · 📗 Учу · ⏭️ Позже',
         parse_mode=ParseMode.HTML,
     )
@@ -3283,7 +3284,7 @@ async def _show_word_survey_card(update, context):
     context.user_data['word_survey_total'] = total
     pos = total - len(queue) + 1
     lines = [
-        f'👀 {pos}/{total} · {word["cefr_level"].upper()}',
+        f'📝 {pos}/{total} · {word["cefr_level"].upper()}',
         '',
         f'🇬🇧 <b>{_esc(word["english"])}</b>',
         f'🇷🇺 {_esc(word["translation"])}',

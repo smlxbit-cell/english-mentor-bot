@@ -205,7 +205,6 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
     lines = [
         '📚 <b>Слова</b>',
         '',
-        'Прогресс (знаю / цель по уровню):',
     ]
     for stat in overview['levels']:
         lvl = stat['level'].upper()
@@ -213,15 +212,12 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
             f"{lvl} {stat['bar']} "
             f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}"
         )
+    repeat = overview['due_count']
     lines.extend([
         '',
-        f"👀 <b>Не проверено:</b> {overview['unseen_total']} "
-        f'(ещё не смотрел в банке) · '
-        f"🔄 <b>К повторению:</b> {overview['due_count']}",
-        '',
-        f"Сегодня: <b>{overview['daily_new']}</b> новых + повторение.",
-        '',
-        '<i>«Что знаешь?» — быстро отметить: знаю / учу / позже.</i>',
+        f"📝 Новых: <b>{overview['unseen_total']}</b> · "
+        f"🔄 Повтор: <b>{repeat}</b>",
+        f"На сегодня: <b>{overview['daily_new']}</b> новых + повтор.",
     ])
     return '\n'.join(lines)
 
@@ -406,17 +402,14 @@ def search_bank_entries(
 def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
-            '🗂 <b>Мой словарь</b>\n\n'
-            'Пока пусто. Слова появятся из уроков или когда отметишь «📗 Учу» в банке.'
+            '🗂 <b>Мои слова</b>\n\n'
+            'Пока пусто — появятся из уроков или когда отметишь «📗 Учу».'
         )
     return (
-        '🗂 <b>Мой словарь</b>\n\n'
-        f"Всего: <b>{summary['total']}</b> · "
-        f"📗 учу {summary['learning']} · "
-        f"✅ знаю {summary['known']} · "
-        f"🌟 {summary['mastered']}\n"
-        f"🔄 К повторению: <b>{summary['due']}</b>\n\n"
-        '<i>Выбери группу — покажем по 6 слов, без длинной простыни.</i>'
+        '🗂 <b>Мои слова</b>\n\n'
+        f"Всего <b>{summary['total']}</b> · "
+        f"📗 {summary['learning']} · ✅ {summary['known']} · 🌟 {summary['mastered']}\n"
+        f"🔄 Повтор: <b>{summary['due']}</b>"
     )
 
 
