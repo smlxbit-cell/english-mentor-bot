@@ -232,6 +232,7 @@ def get_or_create_profile(tg_user) -> dict:
     UserStats.objects.get_or_create(user=profile)
     data = _profile_dict(profile)
     data['previous_last_seen'] = previous_last_seen
+    data['just_created'] = created
     return data
 
 

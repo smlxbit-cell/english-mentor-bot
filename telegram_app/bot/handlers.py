@@ -111,6 +111,10 @@ async def _ensure_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data['personalization_topic'] = profile.get('personalization_topic', '')
     unfinished = await db.get_in_progress_lesson(profile['id'])
     context.user_data['use_continue_btn'] = bool(unfinished)
+    if profile.get('just_created'):
+        from telegram_app.bot.owner import notify_new_user
+
+        await notify_new_user(context, profile)
     return profile
 
 
@@ -933,6 +937,22 @@ async def plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mode'] = None
     await show_subscription(update, context)
+
+
+async def owner_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only dashboard — list users without SSH."""
+    from billing_app.owner_dashboard import owner_dashboard_text
+    from telegram_app.bot.owner import is_bot_owner
+
+    if not is_bot_owner(update.effective_user.id):
+        return
+    await _send(
+        context,
+        _chat_id(update),
+        owner_dashboard_text(),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_main_menu(context),
+    )
 
 
 async def progress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4420,6 +4440,16 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             f'активен до {result.get("expires_at", "")}.',
             reply_markup=_main_menu(context),
         )
+    from telegram_app.bot.owner import notify_payment
+
+    payer = update.effective_user
+    payer_name = payer.first_name or payer.username or '—'
+    await notify_payment(
+        context,
+        user_name=payer_name,
+        plan_code=plan_code,
+        amount_rub=int(update.message.successful_payment.total_amount // 100),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -5435,6 +5465,7 @@ def build_application():
     app.add_handler(CommandHandler('profile', profile_command))
     app.add_handler(CommandHandler('progress', progress_command))
     app.add_handler(CommandHandler('subscribe', subscribe_command))
+    app.add_handler(CommandHandler('owner', owner_command))
     app.add_handler(CommandHandler('lessons', lessons_command))
     app.add_handler(CommandHandler('plan', plan_command))
     app.add_handler(CommandHandler('tutor', tutor_command))

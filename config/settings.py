@@ -32,6 +32,10 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+# Comma-separated Telegram user IDs — /owner dashboard + new-user alerts.
+BOT_OWNER_TELEGRAM_IDS = os.getenv('BOT_OWNER_TELEGRAM_IDS', '').strip()
+
+
 # -------------------------------------------------------------------
 # Telegram
 # -------------------------------------------------------------------
