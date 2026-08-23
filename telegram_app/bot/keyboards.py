@@ -255,8 +255,8 @@ def word_daily_intro_card_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
         [
-            InlineKeyboardButton('Учить', callback_data='words:intro:next'),
-            InlineKeyboardButton('Знаю ✅', callback_data='words:intro:known'),
+            InlineKeyboardButton('🎯 Учить', callback_data='words:intro:next'),
+            InlineKeyboardButton('✅ Знаю', callback_data='words:intro:known'),
         ],
         [InlineKeyboardButton('← Выход', callback_data='words:intro:stop')],
     ])
@@ -456,8 +456,8 @@ def word_bank_entry_kb(
     bid = bank_entry_id
     rows = [
         [
-            InlineKeyboardButton('Знаю', callback_data=f'words:bank:known:{bid}'),
-            InlineKeyboardButton('Учить', callback_data=f'words:bank:learn:{bid}'),
+            InlineKeyboardButton('✅ Знаю', callback_data=f'words:bank:known:{bid}'),
+            InlineKeyboardButton('🎯 Учить', callback_data=f'words:bank:learn:{bid}'),
         ],
         [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
     ]
@@ -486,8 +486,8 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
     bid = bank_entry_id
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('Знаю', callback_data=f'words:survey:known:{bid}'),
-            InlineKeyboardButton('Учить', callback_data=f'words:survey:learn:{bid}'),
+            InlineKeyboardButton('✅ Знаю', callback_data=f'words:survey:known:{bid}'),
+            InlineKeyboardButton('🎯 Учить', callback_data=f'words:survey:learn:{bid}'),
         ],
         [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
     ])

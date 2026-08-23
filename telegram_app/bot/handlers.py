@@ -3387,7 +3387,7 @@ async def start_word_survey_for_level(
     await _send(
         context, _chat_id(update),
         f'👀 <b>{level.upper()}</b> · {len(batch)} слов\n'
-        'Знаю · Учить',
+        '✅ Знаю · 🎯 Учить',
         parse_mode=ParseMode.HTML,
     )
     await _show_word_survey_card(update, context)
