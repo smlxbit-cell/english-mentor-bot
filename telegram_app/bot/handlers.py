@@ -3080,7 +3080,7 @@ async def _show_word_level_detail(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton('👀 Проверить 10', callback_data='words:survey:start'),
+                InlineKeyboardButton('👀 Проверить 10', callback_data=f'words:survey:level:{level}'),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
             [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
@@ -3152,9 +3152,8 @@ async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Банк слов</b>\n\n'
-        f'Твой уровень: <b>{overview["user_level"].upper()}</b> · '
-        f'не проверено: <b>{overview["unseen_total"]}</b>\n'
+        '📖 <b>Словарь</b>\n\n'
+        f'Твой уровень: <b>{overview["user_level"].upper()}</b>\n'
         'По 6 слов на экран. На слове — Знаю / Учу / Позже.'
     )
     await _send(
@@ -3304,27 +3303,46 @@ async def _handle_word_search(update, context, query: str):
     )
 
 
-async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _show_survey_level_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    user_level = profile.get('level_code') or 'a1'
-    batch = await db.pick_word_survey_batch(profile['id'], user_level, limit=10)
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    text = await db.format_word_survey_levels_text(user_level)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_survey_levels_kb(user_level),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def start_word_survey_for_level(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
+):
+    profile = await _ensure_profile(update, context)
+    batch = await db.pick_word_survey_batch_for_level(profile['id'], level, limit=10)
     if not batch:
         await _send(
             context, _chat_id(update),
-            'Все слова на твоих уровнях уже просмотрены 👍',
-            reply_markup=keyboards.word_new_pick_kb(),
+            f'На уровне {level.upper()} все слова уже отмечены 👍',
+            reply_markup=keyboards.word_survey_levels_kb(
+                profile.get('level_code') or profile.get('cefr_level') or 'a1',
+            ),
         )
         return
     context.user_data['mode'] = 'word_survey'
     context.user_data['word_survey_total'] = len(batch)
     context.user_data['word_survey_queue'] = batch
+    context.user_data['word_survey_level'] = level.lower()
     await _send(
         context, _chat_id(update),
-        f'👀 <b>Что знаешь?</b> — {len(batch)} слов\n'
-        'Знаю · Учу · Позже — собираем статистику по уровням.',
+        f'👀 <b>{level.upper()}</b> · {len(batch)} слов\n'
+        'Знаю · Учу · Позже',
         parse_mode=ParseMode.HTML,
     )
     await _show_word_survey_card(update, context)
+
+
+async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _show_survey_level_menu(update, context)
 
 
 async def _show_word_survey_card(update, context):
@@ -3333,8 +3351,9 @@ async def _show_word_survey_card(update, context):
     if not queue:
         context.user_data['mode'] = None
         context.user_data.pop('word_survey_total', None)
+        context.user_data.pop('word_survey_level', None)
         await _send(context, chat_id, 'Готово 👍')
-        await _show_word_hub(update, context)
+        await _show_survey_level_menu(update, context)
         return
     word = queue[0]
     total = context.user_data.get('word_survey_total') or len(queue)
@@ -4316,8 +4335,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_word_hub(update, context)
     elif data == 'words:mydict':
         await _show_my_dictionary(update, context)
+    elif data == 'words:survey:menu':
+        await _show_survey_level_menu(update, context)
     elif data == 'words:survey:start':
-        await start_word_survey(update, context)
+        await _show_survey_level_menu(update, context)
+    elif data.startswith('words:survey:level:'):
+        level = data.rsplit(':', 1)[1]
+        await start_word_survey_for_level(update, context, level)
     elif data == 'words:learn:daily':
         await start_daily_word_learning(update, context)
     elif data == 'words:learn:quiz':

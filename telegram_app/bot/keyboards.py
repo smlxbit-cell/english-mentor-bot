@@ -237,19 +237,29 @@ def word_new_section_kb(*, daily: int = 10) -> InlineKeyboardMarkup:
 
 def word_new_pick_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:start')],
+        [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:menu')],
         [
-            InlineKeyboardButton('📖 Банк слов', callback_data='words:bank'),
+            InlineKeyboardButton('📖 Словарь', callback_data='words:bank'),
             InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
         ],
-        [
-            InlineKeyboardButton('A1', callback_data='words:level:a1'),
-            InlineKeyboardButton('A2', callback_data='words:level:a2'),
-            InlineKeyboardButton('B1', callback_data='words:level:b1'),
-            InlineKeyboardButton('B2', callback_data='words:level:b2'),
-            InlineKeyboardButton('C1', callback_data='words:level:c1'),
-        ],
         [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+    ])
+
+
+def word_survey_levels_kb(user_level: str) -> InlineKeyboardMarkup:
+    def lbl(level: str) -> str:
+        u = level.upper()
+        return f'{u} ★' if level.lower() == (user_level or 'a1').lower() else u
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(lbl('a1'), callback_data='words:survey:level:a1'),
+            InlineKeyboardButton(lbl('a2'), callback_data='words:survey:level:a2'),
+            InlineKeyboardButton(lbl('b1'), callback_data='words:survey:level:b1'),
+            InlineKeyboardButton(lbl('b2'), callback_data='words:survey:level:b2'),
+            InlineKeyboardButton(lbl('c1'), callback_data='words:survey:level:c1'),
+        ],
+        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
     ])
 
 
@@ -359,7 +369,7 @@ def word_bank_topics_kb(topics: list[tuple[str, int]]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton('← Банк слов', callback_data='words:bank')])
+    rows.append([InlineKeyboardButton('← Словарь', callback_data='words:bank')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -386,7 +396,7 @@ def word_search_result_kb(results: list[dict]) -> InlineKeyboardMarkup:
             label,
             callback_data=f'words:bank:open:{item["bank_entry_id"]}',
         )])
-    rows.append([InlineKeyboardButton('← Банк слов', callback_data='words:bank')])
+    rows.append([InlineKeyboardButton('← Словарь', callback_data='words:bank')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -401,7 +411,7 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton('Позже', callback_data=f'words:survey:skip:{bid}'),
             InlineKeyboardButton('Слушать', callback_data='tts:say'),
         ],
-        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← Уровни', callback_data='words:survey:menu')],
     ])
 
 

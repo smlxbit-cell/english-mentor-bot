@@ -1258,6 +1258,23 @@ def format_word_repeat_section_text(overview: dict, summary: dict) -> str:
 
 
 @sync_to_async
+def format_word_survey_levels_text(user_level: str) -> str:
+    from learning.word_bank.service import format_word_survey_levels_text as _fmt
+
+    return _fmt(user_level)
+
+
+@sync_to_async
+def pick_word_survey_batch_for_level(
+    profile_id: int, level: str, limit: int = 10,
+) -> list[dict]:
+    from learning.word_bank.service import entry_to_dict, pick_unseen_entries_for_level
+
+    entries = pick_unseen_entries_for_level(profile_id, level, limit=limit)
+    return [entry_to_dict(e) for e in entries]
+
+
+@sync_to_async
 def pick_word_survey_batch(profile_id: int, user_level: str, limit: int = 10) -> list[dict]:
     from learning.word_bank.service import entry_to_dict, pick_unseen_entries
 

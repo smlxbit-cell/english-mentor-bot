@@ -194,6 +194,27 @@ def pick_unseen_entries(
     return picked
 
 
+def pick_unseen_entries_for_level(
+    user_id: int,
+    level: str,
+    *,
+    limit: int = SURVEY_BATCH,
+) -> list[WordBankEntry]:
+    """Unseen words for one CEFR level (survey / check flow)."""
+    level = (level or 'a1').lower()
+    marked_ids = UserWordBankStatus.objects.filter(user_id=user_id).values_list(
+        'bank_entry_id', flat=True,
+    )
+    qs = (
+        WordBankEntry.objects.filter(is_active=True, cefr_level=level)
+        .exclude(id__in=marked_ids)
+        .order_by('english')
+    )
+    pool = list(qs[: limit * 4])
+    random.shuffle(pool)
+    return pool[:limit]
+
+
 def pick_daily_learning_entries(
     user_id: int,
     user_level: str,
@@ -230,15 +251,26 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     return (
         '📘 <b>Учить новое</b>\n\n'
         f'«Учить · {n}» — готовый набор на сегодня: показ слов и тренировка.\n'
-        '«Выбрать слова» — проверить что знаешь или открыть банк.'
+        '«Выбрать слова» — проверить что знаешь или открыть словарь.'
     )
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
         '📝 <b>Выбрать слова</b>\n\n'
-        '«Что знаешь?» — быстро отметить знаю / учу (идёт в статистику уровней).\n'
-        '«Банк» и уровни — все слова по A1–C1, темам, поиск.'
+        '«Что знаешь?» — отметить знаю / учу по уровню.\n'
+        '«Словарь» — все слова по темам и уровням.\n'
+        '«Поиск» — найти слово.'
+    )
+
+
+def format_word_survey_levels_text(user_level: str) -> str:
+    lvl = (user_level or 'a1').upper()
+    return (
+        '👀 <b>Что знаешь?</b>\n\n'
+        f'Рекомендуем начать с <b>{lvl}</b> (★) — твой уровень по тесту.\n'
+        'Можно проверить и другие уровни — статистика копится отдельно.\n\n'
+        'Выбери уровень: покажу 10 слов, отметь знаю / учу / позже.'
     )
 
 
@@ -440,7 +472,7 @@ def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
             '📗 <b>Мой словарь</b>\n\n'
-            'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Банк слов» — '
+            'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Словарь» — '
             'нажми «Учу».'
         )
     return (

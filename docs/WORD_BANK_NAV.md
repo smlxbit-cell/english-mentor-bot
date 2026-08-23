@@ -29,10 +29,14 @@
 
 | Button | Action |
 |--------|--------|
-| 👀 Что знаешь? | Survey → level stats |
-| 📖 Банк · 🔍 | Corpus browse |
-| A1 … C1 | Level stats + check |
+| 👀 Что знаешь? | Level picker → survey 10 words |
+| 📖 Словарь | Browse corpus by level/topic |
+| 🔍 Поиск | Text search |
 | ← Учить новое | Screen 2 |
+
+## Screen 2c — Что знаешь? (levels)
+
+Tip: start with ★ user level. Pick A1–C1 → 10 cards (Знаю / Учу / Позже).
 
 ## Screen 3 — Повтор
 
