@@ -59,12 +59,12 @@ def words_count_ru(n: int) -> str:
 
 
 def format_word_stats_line(summary: dict[str, Any]) -> str:
-    """Единый формат: всего · учить · знаю · выучил."""
+    """Единый формат: всего · учить · уже знаю (known + mastered)."""
+    already = summary.get('known', 0) + summary.get('mastered', 0)
     return (
         f'Всего <b>{summary["total"]}</b> · '
         f'учить <b>{summary["learning"]}</b> · '
-        f'знаю <b>{summary["known"]}</b> · '
-        f'выучил <b>{summary["mastered"]}</b>'
+        f'уже знаю <b>{already}</b>'
     )
 
 
@@ -278,12 +278,10 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
         )
     train_line = f'🎯 <b>Тренировка</b> — учить {learning_total}'
     if due:
-        train_line += f', к тренировке {words_count_ru(due)}'
+        train_line += f', готово {words_count_ru(due)}'
     lines.extend([
         '',
-        '<b>Два сценария:</b>',
         train_line,
-        '📘 <b>Новые слова</b> — добавить в список (урок · 10 или выбор из словаря)',
     ])
     return '\n'.join(lines)
 
@@ -293,18 +291,16 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     lvl = overview['user_level'].upper()
     return (
         f'📘 <b>Новые слова · {lvl}</b>\n\n'
-        f'«Начать · {n}» — 🔊 слушаете → «Учить» / «Знаю» → тест'
+        f'«Начать · {n}» — {n} слов вашего уровня\n'
+        '«Из словаря» — добавить вручную'
     )
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
-        '📖 <b>Выбрать в словаре</b>\n\n'
-        'Для каждого слова — <b>знаю</b> или <b>учить</b>:\n'
-        '• «Что знаешь?» — 10 слов подряд\n'
-        '• «Словарь» — темы и уровни\n'
-        '• «Поиск» — найти слово\n\n'
-        '«Учить» → 🎯 <b>Тренировка</b> на экране «Слова».'
+        '📖 <b>Добавить из словаря</b>\n\n'
+        'Нажмите слово → <b>Учить</b> или <b>Знаю ✅</b>\n'
+        '«Учить» → 🎯 Тренировка · «Знаю» → уже знаю'
     )
 
 
@@ -429,6 +425,11 @@ def list_personal_words(
             UserWordProgress.Status.NEW,
             UserWordProgress.Status.LEARNING,
         ))
+    elif status == 'known':
+        qs = qs.filter(status__in=(
+            UserWordProgress.Status.KNOWN,
+            UserWordProgress.Status.MASTERED,
+        ))
     elif status:
         qs = qs.filter(status=status)
 
@@ -552,8 +553,8 @@ def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
             '📗 <b>Мои слова</b>\n\n'
-            'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Словарь» — '
-            'нажми «Учить».'
+            'Пока пусто. Добавьте через 📘 <b>Новые слова</b> '
+            'или «Из словаря» — отметьте «Учить».'
         )
     return (
         '📗 <b>Мои слова</b>\n\n'

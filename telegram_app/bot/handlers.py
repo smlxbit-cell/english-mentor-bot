@@ -3170,7 +3170,7 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
             f'{topic_label(canon)} · {count}',
             callback_data=f'words:dict:topic:{canon}:0',
         )])
-    rows.append([InlineKeyboardButton('← Мой словарь', callback_data='words:mydict')])
+    rows.append([InlineKeyboardButton('← Мои слова', callback_data='words:mydict')])
     await _send(
         context, _chat_id(update),
         '📁 <b>Мой словарь · темы</b>\n\nВыбери группу:',
@@ -5026,15 +5026,15 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page = int(data.rsplit(':', 1)[1])
         await _show_personal_word_page(
             update, context,
-            prefix='words:dict:known', title='✅ Знаю',
+            prefix='words:dict:known', title='✅ Уже знаю',
             page=page, status='known',
         )
     elif data.startswith('words:dict:mastered:'):
         page = int(data.rsplit(':', 1)[1])
         await _show_personal_word_page(
             update, context,
-            prefix='words:dict:mastered', title='🌟 Освоил',
-            page=page, status='mastered',
+            prefix='words:dict:known', title='✅ Уже знаю',
+            page=page, status='known',
         )
     elif data.startswith('words:dict:level:'):
         from learning.word_bank.navigation import parse_paged_callback

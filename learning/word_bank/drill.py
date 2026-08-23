@@ -95,7 +95,7 @@ def format_intro_card(
         f'📘 <b>{pos}/{total}</b> · {level.upper()}\n\n'
         f'🇬🇧 <b>{english}</b>\n'
         f'🇷🇺 {translation}\n\n'
-        f'<i>учить {learn_count} · знаю {known_count}</i>'
+        f'<i>учить {learn_count} · уже знаю {known_count}</i>'
     )
 
 
