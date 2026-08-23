@@ -3175,10 +3175,10 @@ async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Банк слов</b>\n\n'
+        '📖 <b>Словарь</b>\n\n'
         f'Твой уровень: <b>{overview["user_level"].upper()}</b>\n'
         'Нажми <b>слово</b> в списке → Знаю / Учу / Позже.\n'
-        '«Учу» попадёт в «Повтор» → тренировка.'
+        '«Учу» → 🎯 Тренировка на главном экране «Слова».'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3291,7 +3291,7 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
     ]
     if entry_dict.get('example'):
         lines.append(f'📝 {_esc(entry_dict["example"])}')
-    lines.append('\n<i>«Учу» → тренировка в «Повтор»</i>')
+    lines.append('\n<i>«Учу» → 🎯 Тренировка</i>')
     context.user_data['tts_text'] = entry_dict['english']
     page_cb = context.user_data.get('bank_page_cb', 'words:bank')
     learning = summary.get('learning', 0)
@@ -3316,7 +3316,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← Добавить слова', callback_data='words:new:pick'),
+            InlineKeyboardButton('← Словарь', callback_data='words:new:pick'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -4593,6 +4593,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_daily_word_learning(update, context)
     elif data == 'words:intro:next':
         await _daily_intro_next(update, context)
+    elif data == 'words:intro:stop':
+        context.user_data.pop('daily_intro_queue', None)
+        context.user_data.pop('daily_intro_selected', None)
+        context.user_data.pop('daily_intro_total', None)
+        context.user_data['mode'] = None
+        await _show_word_hub(update, context)
     elif data.startswith('words:intro:known:'):
         bid = int(data.rsplit(':', 1)[1])
         await _daily_intro_known(update, context, bid)

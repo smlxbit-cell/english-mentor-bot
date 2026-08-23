@@ -237,6 +237,8 @@ def commit_daily_learning_entries(
 
 def format_word_hub_text(overview: dict[str, Any]) -> str:
     user_lvl = overview['user_level'].upper()
+    learning_total = sum(s['learning'] for s in overview['levels'])
+    due = overview.get('due_count', 0)
     lines = [
         '📚 <b>Слова</b>',
         '',
@@ -250,6 +252,13 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
             f"{lvl} {stat['bar']} "
             f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}{here}"
         )
+    lines.extend([
+        '',
+        '<b>Два сценария:</b>',
+        f'🎯 <b>Тренировка</b> — слова «учу» ({learning_total} шт.'
+        + (f', готово {due}' if due else '') + ')',
+        '📘 <b>Новые слова</b> — добавить в список (урок · 10 или выбор из словаря)',
+    ])
     return '\n'.join(lines)
 
 
@@ -257,22 +266,22 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     n = overview['daily_new']
     lvl = overview['user_level'].upper()
     return (
-        '📘 <b>Учить новое</b>\n\n'
-        f'«Начать · {n}» — урок из <b>{n} новых</b> слов твоего уровня '
-        f'(до {lvl}, ещё не отмеченных). Сначала 🔊 по одному, потом тренировка.\n\n'
-        '«➕ Добавить слова» — сам выбрать из банка (знаю / учу). '
-        'Отмеченные «учу» — в разделе «Повтор».'
+        '📘 <b>Новые слова</b>\n\n'
+        f'«Начать · {n}» — <b>{n} случайных</b> слов до уровня {lvl}, '
+        'которые вы ещё <b>не изучали</b>. Сначала 🔊 по одному, потом тренировка.\n\n'
+        '«📖 Выбрать в словаре» — сами отметить знаю / учу. '
+        '«Учу» попадает в 🎯 <b>Тренировку</b>.'
     )
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
-        '➕ <b>Добавить слова</b>\n\n'
-        'Выбери слова в свой список — без урока:\n'
+        '📖 <b>Выбрать в словаре</b>\n\n'
+        'Без урока — только добавить в свой список:\n'
         '• «Что знаешь?» — быстро: знаю / учу / позже\n'
-        '• «Банк слов» — темы и уровни, нажми слово → отметь\n'
+        '• «Словарь» — темы и уровни, нажми слово → отметь\n'
         '• «Поиск» — найти слово\n\n'
-        'Слова «учу» → 🎯 Тренировка в «Повтор» или кнопка на экране слова.'
+        'Отметили «учу» → 🎯 <b>Тренировка</b> на главном экране «Слова».'
     )
 
 
@@ -303,13 +312,14 @@ def format_word_repeat_section_text(
     due = summary.get('due', overview.get('due_count', 0))
     if summary['total'] == 0:
         return (
-            '🔄 <b>Повтор</b>\n\n'
-            'Пока нет слов в учёбе. Сначала «Учить новое» или слова из урока.'
+            '🎯 <b>Тренировка</b>\n\n'
+            'Пока нет слов «учу». Сначала 📘 <b>Новые слова</b> — '
+            'урок · 10 или выбор в словаре.'
         )
     return (
-        '🔄 <b>Повтор</b>\n\n'
-        f'В учёбе: <b>{summary["learning"]}</b> · '
-        f'к повторению: <b>{due}</b>'
+        '🎯 <b>Тренировка</b>\n\n'
+        f'Ваш список «учу»: <b>{summary["learning"]}</b> слов.\n'
+        f'Готово к тренировке сейчас: <b>{due}</b>.'
     )
 
 
@@ -483,12 +493,12 @@ def search_bank_entries(
 def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
-            '📗 <b>Мой словарь</b>\n\n'
-        'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Банк слов» — '
-        'нажми «Учу».'
+            '📗 <b>Мои слова</b>\n\n'
+            'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Словарь» — '
+            'нажми «Учу».'
         )
     return (
-        '📗 <b>Мой словарь</b>\n\n'
+        '📗 <b>Мои слова</b>\n\n'
         f"Всего <b>{summary['total']}</b> · "
         f"учу {summary['learning']} · "
         f"знаю {summary['known']} · "

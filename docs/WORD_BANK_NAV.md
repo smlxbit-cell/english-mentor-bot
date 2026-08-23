@@ -4,70 +4,43 @@
 
 ## Screen 1 — Hub
 
-**Text:**
-- Title + **твой уровень** (from diagnostic)
-- Progress **A1 … C1** — `знаю / CEFR-цель · учу` (targets: 500 / 1k / 2k / 4k / 8k)
-- Current level marked `← ты здесь`
-- No extra counters under bars (no «не проверено» line)
+**Two scenarios (user-facing):**
 
-**Buttons (2 only):**
+| Button | Callback | Meaning |
+|--------|----------|---------|
+| 🎯 Тренировка · N | `words:repeat` | Practice words you marked «учу» |
+| 📘 Новые слова | `words:new` | Add new words to your list |
 
-| Button | Callback | Opens |
-|--------|----------|--------|
-| Учить новое | `words:new` | Screen 2 |
-| Повтор · N | `words:repeat` | Screen 3 |
-
-## Screen 2 — Учить новое
+## Screen 2 — 📘 Новые слова
 
 | Button | Action |
 |--------|--------|
-| Начать · 10 | Урок: 10 **новых** слов твоего уровня (ещё не отмеченных) → 🔊 → тренировка |
-| ➕ Добавить слова | Screen 2b (выбор из банка) |
+| Начать · 10 | 10 random **unlearned** words at your level → 🔊 lesson → training |
+| 📖 Выбрать в словаре | Browse dictionary, mark знаю / учу |
 | ← Слова | Hub |
 
-**Важно:** «Начать · 10» ≠ слова, которые ты сам отметил «учу». Самовыбор → «➕ Добавить слова» → тренировка в «Повтор».
-
-## Screen 2b — ➕ Добавить слова
+## Screen 2b — 📖 Выбрать в словаре
 
 | Button | Action |
 |--------|--------|
-| 👀 Что знаешь? | Level picker → survey 10 words |
-| 📖 Банк слов | Browse corpus — **нажми слово** → Знаю / Учу / Позже |
-| 🔍 Поиск | Text search → открыть слово |
-| ← Учить новое | Screen 2 |
+| 👀 Что знаешь? | Quick survey 10 words |
+| 📁 Темы / 📊 Уровни | Dictionary browse — **tap word** → Знаю / Учу |
+| 🔍 Поиск | Search |
+| ← Новые слова | Screen 2 |
 
-Не урок — только отметить слова в свой список (знаю / учу / позже).
+Marked «учу» → **🎯 Тренировка** on hub.
 
-## Screen 2c — Что знаешь? (levels)
-
-Tip: start with ★ user level. Pick A1–C1 → 10 cards (Знаю / Учу / Позже).
-
-## Screen 3 — Повтор
+## Screen 3 — 🎯 Тренировка
 
 | Button | Action |
 |--------|--------|
-| 🔄 Повтор · N | SRS session (if due) |
-| 📗 Мой словарь | Personal word lists |
-| ← Слова | Back to hub |
+| 🎯 Начать · N | SRS training session |
+| 📗 Мои слова | Your lists (учу / знаю / выучил) |
+| ← Слова | Hub |
 
-**Text:** «В учёбе · к повторению» — counts only here, not in Мой словарь.
+## Lesson flow (Начать · 10)
 
-## Screen 3b — Мой словарь
+- During lesson: **← Выход** (not back to «новые слова»)
+- After lesson: **🎯 Тренировка · N** or **← Слова**
 
-| Button | Action |
-|--------|--------|
-| 📗 Учу / ✅ Знаю / 🌟 Выучил | Filter personal lists |
-| 📁 Темы / 📊 Уровни | Browse by topic or CEFR |
-| ← Повтор | Back to Screen 3 |
-
-No 🔄 Повтор button here (repeat lives on Screen 3 only).
-
-## Topics in corpus
-
-Remote Kelly words are auto-tagged by topic (not dumped into «Общие»). Run `classify_word_topics` after seed to refresh existing DB rows.
-
-## Integration roadmap
-
-See **`docs/WORD_BANK_INTEGRATION.md`** (lessons, tutor, rules).
-
-Legacy: `words:add` → hub.
+Internal code may still use `words:repeat`, `words:bank` — UI never says «банк» or «повтор».
