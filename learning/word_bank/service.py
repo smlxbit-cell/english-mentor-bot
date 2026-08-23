@@ -211,11 +211,49 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
         )
     lines.extend([
         '',
-        f"📝 Не смотрел: <b>{overview['unseen_total']}</b> · "
-        f"🔄 Повтор: <b>{overview['due_count']}</b>",
+        f"Учить новое: <b>{overview['unseen_total']}</b> слов · "
+        f"Повтор: <b>{overview['due_count']}</b> слов",
         '',
-        '▶️ — учить 10 новых · 📗 — твой список · ➕ — выбрать из словаря',
+        'Два раздела ниже — новые слова или повторение.',
     ])
+    return '\n'.join(lines)
+
+
+def format_word_new_section_text(overview: dict[str, Any]) -> str:
+    return (
+        '📘 <b>Учить новое</b>\n\n'
+        f'Не смотрел: <b>{overview["unseen_total"]}</b> слов\n'
+        f'На сегодня: <b>{overview["daily_new"]}</b> новых слов\n\n'
+        '«Начать» — учить с тренировкой.\n'
+        '«Разметить» — быстро отметить: знаю / учу / позже.\n'
+        '«Словарь» — выбрать слова по уровню или теме.'
+    )
+
+
+def format_word_repeat_section_text(
+    overview: dict[str, Any],
+    summary: dict[str, Any],
+) -> str:
+    if summary['total'] == 0:
+        return (
+            '🔄 <b>Повтор</b>\n\n'
+            'Пока нет слов в учёбе. Сначала добавь новые — '
+            'раздел «Учить новое».'
+        )
+    due = summary.get('due', overview.get('due_count', 0))
+    lines = [
+        '🔄 <b>Повтор</b>',
+        '',
+        f"К повторению: <b>{due}</b> · "
+        f"в учёбе: <b>{summary['learning']}</b> · "
+        f"знаю: <b>{summary['known']}</b>",
+    ]
+    if due:
+        lines.append('')
+        lines.append('«Начать повтор» — тренировка по расписанию.')
+    else:
+        lines.append('')
+        lines.append('Сейчас повторять нечего — загляни позже.')
     return '\n'.join(lines)
 
 
@@ -397,18 +435,8 @@ def search_bank_entries(
 
 
 def format_personal_dict_hub(summary: dict[str, Any]) -> str:
-    if summary['total'] == 0:
-        return (
-            '📗 <b>Мои слова</b>\n\n'
-            'Пока пусто. Нажми «➕ Добавить» — выбери слова из словаря.'
-        )
-    return (
-        '📗 <b>Мои слова</b>\n\n'
-        f"Всего <b>{summary['total']}</b> · "
-        f"📗 учу {summary['learning']} · "
-        f"✅ знаю {summary['known']} · 🌟 {summary['mastered']}\n"
-        f"🔄 Повтор: <b>{summary['due']}</b>"
-    )
+    overview = {'due_count': summary.get('due', 0)}
+    return format_word_repeat_section_text(overview, summary)
 
 
 def format_word_list_page(
