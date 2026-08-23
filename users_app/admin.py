@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils import timezone
 
 from billing_app.models import Payment, Subscription
+from billing_app.trial_access import access_tier_label
 from gamification_app.models import UserAchievement, UserStats
 from study_app.models import LessonProgress, StepAttempt
 
@@ -105,6 +106,25 @@ billing_tier.short_description = 'Тариф'
 active_sub_until.short_description = 'Подписка до'
 
 
+class BillingTierFilter(admin.SimpleListFilter):
+    title = 'тариф доступа'
+    parameter_name = 'billing_tier'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('free', 'Free'),
+            ('trial', 'Пробный'),
+            ('paid', 'Платный'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if not value:
+            return queryset
+        matched = [p.pk for p in queryset if access_tier_label(p) == value]
+        return queryset.filter(pk__in=matched)
+
+
 @admin.register(Interest)
 class InterestAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'slug')
@@ -132,6 +152,7 @@ class UserProfileAdmin(admin.ModelAdmin):
         'created_at',
     )
     list_filter = (
+        BillingTierFilter,
         'cefr_level',
         'learning_goal',
         'profession',

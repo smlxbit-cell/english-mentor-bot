@@ -1880,12 +1880,10 @@ def get_plan_by_code(plan_code: str) -> dict | None:
 
 @sync_to_async
 def get_user_limits(profile_id: int) -> dict:
-    from billing_app.limits import get_user_limits as _limits, voice_remaining_minutes
+    from billing_app.limits import get_user_limits as _limits
 
     profile = UserProfile.objects.get(id=profile_id)
-    data = _limits(profile)
-    data['voice_remaining_minutes'] = voice_remaining_minutes(profile)
-    return data
+    return _limits(profile)
 
 
 @sync_to_async

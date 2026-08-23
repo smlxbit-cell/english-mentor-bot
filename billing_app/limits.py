@@ -63,6 +63,7 @@ def get_user_limits(profile: UserProfile) -> dict:
     """Effective limits for profile (subscription or trial defaults)."""
     data = _base_limits(profile)
     data['tutor_messages_remaining'] = tutor_messages_remaining(profile)
+    data.update(voice_quota_snapshot(profile))
     return data
 
 
@@ -141,6 +142,22 @@ def voice_allowance_seconds(profile: UserProfile) -> int:
 
 def voice_remaining_minutes(profile: UserProfile) -> int:
     return max(0, voice_allowance_seconds(profile) // 60)
+
+
+def voice_quota_snapshot(profile: UserProfile) -> dict:
+    """Voice allowance breakdown for UI (base plan + purchased add-ons)."""
+    _reset_voice_period_if_needed(profile)
+    base = _base_limits(profile)['voice_minutes_monthly']
+    bonus = profile.voice_bonus_seconds // 60
+    used = profile.voice_seconds_used // 60
+    total = base + bonus
+    remaining = max(0, total - used)
+    return {
+        'voice_remaining_minutes': remaining,
+        'voice_minutes_monthly': base,
+        'voice_bonus_minutes': bonus,
+        'voice_total_allowance_minutes': total,
+    }
 
 
 def can_use_voice_seconds(profile: UserProfile, duration_sec: int) -> tuple[bool, str]:

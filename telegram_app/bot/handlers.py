@@ -4157,6 +4157,7 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expires_at=sub_until,
             voice_remaining=limits.get('voice_remaining_minutes', 0),
             voice_monthly=voice_monthly,
+            voice_bonus=limits.get('voice_bonus_minutes', 0),
             tutor_remaining=limits.get('tutor_messages_remaining', 0),
         )
         await _send(
@@ -4333,25 +4334,24 @@ async def buy_subscription(
                     reply_markup=_main_menu(context))
         return
 
+    from billing_app.plans_catalog import invoice_texts_for_plan
+
     if upgrade:
         charge_rub = upgrade_price_rub('basic', 'pro')
         payload = f'upgrade:{profile_id}:{target_code}'
-        title = 'English Mentor — апгрейд Basic → Pro'
-        description = (
-            f'Доплата {charge_rub} ₽. Pro: 240 мин 🎙/мес до конца текущего периода.'
-        )
     elif plan['plan_kind'] == 'voice_addon':
         payload = f'addon:{profile_id}:{target_code}'
-        title = f'English Mentor — {plan["name"]}'
-        description = plan.get('description') or 'Дополнительные минуты разговора с ботом.'
         charge_rub = plan['price_rub']
     else:
         payload = f'sub:{profile_id}:{target_code}'
-        title = f'English Mentor — {plan["name"]}'
-        description = plan.get('description') or f'Подписка на {plan["duration_days"]} дней.'
         charge_rub = plan['price_rub']
 
-    prices = [LabeledPrice(label=plan['name'], amount=charge_rub * 100)]
+    title, description, price_label = invoice_texts_for_plan(
+        plan,
+        upgrade=upgrade,
+        charge_rub=charge_rub if upgrade else None,
+    )
+    prices = [LabeledPrice(label=price_label, amount=charge_rub * 100)]
     await context.bot.send_invoice(
         chat_id=chat_id,
         title=title,

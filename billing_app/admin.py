@@ -24,6 +24,8 @@ class PaymentAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'user', 'plan', 'provider', 'status', 'amount_rub', 'created_at',
     )
-    list_filter = ('status', 'provider', 'created_at')
+    list_filter = ('status', 'provider', 'plan', 'created_at')
     search_fields = ('user__telegram_username', 'user__first_name', 'payload')
     readonly_fields = ('created_at',)
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)

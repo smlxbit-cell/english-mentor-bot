@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 # --- v3 prices (2026-08-23) ---
 BASIC_PRICE_RUB = 349
 PRO_PRICE_RUB = 990
@@ -29,6 +31,65 @@ def upgrade_price_rub(from_code: str, to_code: str) -> int | None:
 
 def can_upgrade(from_code: str, to_code: str) -> bool:
     return upgrade_price_rub(from_code, to_code) is not None
+
+
+def plain_invoice_text(text: str) -> str:
+    """Telegram invoices do not render HTML — strip tags for payment screens."""
+    if not text:
+        return ''
+    cleaned = re.sub(r'<[^>]+>', '', text)
+    return cleaned.replace('&amp;', '&').replace('&nbsp;', ' ').strip()
+
+
+def invoice_texts_for_plan(
+    plan: dict,
+    *,
+    upgrade: bool = False,
+    charge_rub: int | None = None,
+) -> tuple[str, str, str]:
+    """Plain (title, description, price_label) for send_invoice."""
+    code = (plan.get('code') or '').lower()
+    if upgrade:
+        diff = charge_rub if charge_rub is not None else upgrade_price_rub('basic', 'pro')
+        return (
+            'English Mentor — апгрейд Basic → Pro',
+            (
+                f'Доплата {diff} ₽. Тариф Pro: 240 мин разговора в месяц '
+                'до конца текущего периода подписки.'
+            ),
+            'Апгрейд Basic → Pro',
+        )
+    if code == 'voice_100':
+        return (
+            f'English Mentor — +{VOICE_ADDON_MINUTES} мин разговора',
+            (
+                f'Дополнительные {VOICE_ADDON_MINUTES} минут разговора с наставником '
+                'в этом месяце. Нужна активная подписка Basic или Pro.'
+            ),
+            f'+{VOICE_ADDON_MINUTES} мин разговора',
+        )
+    name = plan.get('name') or code
+    days = plan.get('duration_days') or settings_days_fallback()
+    mins = plan.get('voice_minutes_monthly') or 0
+    desc = plain_invoice_text(plan.get('description') or '')
+    if not desc:
+        desc = (
+            f'Подписка {name} на {days} дней. '
+            f'План дня, все правила, наставник. {mins} мин разговора в месяц.'
+        )
+    return (
+        f'English Mentor — {name}',
+        desc,
+        f'{name} · {days} дн.',
+    )
+
+
+def settings_days_fallback() -> int:
+    try:
+        from django.conf import settings
+        return int(getattr(settings, 'SUBSCRIPTION_DAYS', 30))
+    except Exception:
+        return 30
 
 
 # Shared marketing copy for paywall / subscription screens.
@@ -219,13 +280,21 @@ def format_subscriber_status(
     expires_at: str,
     voice_remaining: int,
     voice_monthly: int,
+    voice_bonus: int = 0,
     tutor_remaining: int,
 ) -> str:
     """Экран «⭐️ Подписка» для активного тарифа."""
+    if voice_bonus > 0:
+        voice_line = (
+            f'🎙 Голос: <b>{voice_remaining}</b> мин осталось '
+            f'(тариф {voice_monthly} + доп. {voice_bonus})'
+        )
+    else:
+        voice_line = f'🎙 Голос: <b>{voice_remaining}</b> из {voice_monthly} мин/мес'
     lines = [
         f'✅ <b>{plan_name_ru}</b> · до {expires_at}',
         '',
-        f'🎙 Голос: <b>{voice_remaining}</b> из {voice_monthly} мин/мес',
+        voice_line,
         f'💬 Наставник: <b>{tutor_remaining}</b> сообщ./мес',
         '',
         '🔊 «Слушать» в словах и уроках — без лимита.',
