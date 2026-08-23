@@ -1244,6 +1244,13 @@ def format_word_new_section_text(overview: dict) -> str:
 
 
 @sync_to_async
+def format_word_repeat_section_text(overview: dict, summary: dict) -> str:
+    from learning.word_bank.service import format_word_repeat_section_text as _fmt
+
+    return _fmt(overview, summary)
+
+
+@sync_to_async
 def pick_word_survey_batch(profile_id: int, user_level: str, limit: int = 10) -> list[dict]:
     from learning.word_bank.service import entry_to_dict, pick_unseen_entries
 

@@ -218,34 +218,40 @@ def dict_listen_kb(has_words: bool = True) -> InlineKeyboardMarkup:
 
 def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardMarkup:
     """Words home: two sections only."""
-    new_label = 'Учить новое'
-    if unseen_total:
-        new_label = f'Учить новое · {unseen_total}'
     repeat_label = f'Повтор · {due_count}' if due_count else 'Повтор'
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(new_label, callback_data='words:new'),
+        InlineKeyboardButton('Учить новое', callback_data='words:new'),
         InlineKeyboardButton(repeat_label, callback_data='words:repeat'),
     ]])
 
 
 def word_new_section_kb() -> InlineKeyboardMarkup:
-    """Inside «Учить новое»: start, mark, open dictionary."""
+    """One action row + back."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('Начать · 10 слов', callback_data='words:learn:daily')],
-        [InlineKeyboardButton('Разметить 10', callback_data='words:survey:start')],
-        [InlineKeyboardButton('Словарь', callback_data='words:bank')],
+        [
+            InlineKeyboardButton('Начать · 10 слов', callback_data='words:learn:daily'),
+            InlineKeyboardButton('Словарь', callback_data='words:bank'),
+        ],
         [InlineKeyboardButton('← Назад', callback_data='words:hub')],
     ])
 
 
 def word_repeat_section_kb(*, due: int = 0) -> InlineKeyboardMarkup:
-    """Inside «Повтор»: SRS + personal lists."""
-    rows = []
+    """Start repeat or open word lists."""
+    row = []
     if due:
-        rows.append([
-            InlineKeyboardButton(f'Начать повтор · {due}', callback_data='srs:start'),
-        ])
-    rows.extend([
+        row.append(InlineKeyboardButton(
+            f'Начать · {due}', callback_data='srs:start',
+        ))
+    row.append(InlineKeyboardButton('Мои слова', callback_data='words:repeat:list'))
+    return InlineKeyboardMarkup([
+        row,
+        [InlineKeyboardButton('← Назад', callback_data='words:hub')],
+    ])
+
+
+def word_repeat_list_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton('В учёбе', callback_data='words:dict:learning:0'),
             InlineKeyboardButton('Знаю', callback_data='words:dict:known:0'),
@@ -255,9 +261,8 @@ def word_repeat_section_kb(*, due: int = 0) -> InlineKeyboardMarkup:
             InlineKeyboardButton('Темы', callback_data='words:dict:topics'),
             InlineKeyboardButton('Уровни', callback_data='words:dict:levels'),
         ],
-        [InlineKeyboardButton('← Назад', callback_data='words:hub')],
+        [InlineKeyboardButton('← Назад', callback_data='words:repeat')],
     ])
-    return InlineKeyboardMarkup(rows)
 
 
 def word_bank_menu_kb() -> InlineKeyboardMarkup:
@@ -283,7 +288,7 @@ def word_add_menu_kb() -> InlineKeyboardMarkup:
 
 
 def word_dict_hub_kb(*, due: int = 0) -> InlineKeyboardMarkup:
-    return word_repeat_section_kb(due=due)
+    return word_repeat_list_kb()
 
 
 def word_dict_levels_kb() -> InlineKeyboardMarkup:
@@ -304,7 +309,7 @@ def word_list_page_kb(
     *,
     page: int,
     pages: int,
-    back_data: str = 'words:repeat',
+    back_data: str = 'words:repeat:list',
 ) -> InlineKeyboardMarkup:
     nav = []
     if page > 0:

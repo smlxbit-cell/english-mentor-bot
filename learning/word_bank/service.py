@@ -149,11 +149,18 @@ def get_word_bank_overview(user_id: int, user_level: str) -> dict[str, Any]:
         Q(next_review_at__lte=timezone.now()) | Q(next_review_at__isnull=True),
     ).count()
     unseen_total = sum(s['unseen'] for s in level_stats)
+    user_lvl = (user_level or 'a1').lower()
+    current_level = next(
+        (s for s in level_stats if s['level'] == user_lvl),
+        level_stats[-1] if level_stats else None,
+    )
     return {
-        'user_level': (user_level or 'a1').lower(),
+        'user_level': user_lvl,
         'levels': level_stats,
+        'current_level': current_level,
         'due_count': due_count,
         'unseen_total': unseen_total,
+        'unseen_at_level': current_level['unseen'] if current_level else 0,
         'daily_new': DAILY_NEW_WORDS,
     }
 
@@ -202,58 +209,77 @@ def pick_daily_learning_entries(
 
 
 def format_word_hub_text(overview: dict[str, Any]) -> str:
-    lines = ['📚 <b>Слова</b>', '']
-    for stat in overview['levels']:
-        lvl = stat['level'].upper()
+    user_lvl = overview['user_level'].upper()
+    current = overview.get('current_level') or {}
+    lines = [
+        '📚 <b>Слова</b>',
+        '',
+        f'Твой уровень: <b>{user_lvl}</b> · по результатам теста',
+    ]
+    if current:
         lines.append(
-            f"{lvl} {stat['bar']} "
-            f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}"
+            f"{user_lvl} {current['bar']} "
+            f"<b>{current['known']}</b>/{current['target']} знаю"
         )
     lines.extend([
         '',
-        f"Учить новое: <b>{overview['unseen_total']}</b> слов · "
-        f"Повтор: <b>{overview['due_count']}</b> слов",
+        f"Сегодня: <b>{overview['daily_new']}</b> новых · "
+        f"повтор: <b>{overview['due_count']}</b>",
         '',
-        'Два раздела ниже — новые слова или повторение.',
+        'Два раздела — новые слова или повторение.',
     ])
     return '\n'.join(lines)
 
 
 def format_word_new_section_text(overview: dict[str, Any]) -> str:
-    return (
-        '📘 <b>Учить новое</b>\n\n'
-        f'Не смотрел: <b>{overview["unseen_total"]}</b> слов\n'
-        f'На сегодня: <b>{overview["daily_new"]}</b> новых слов\n\n'
-        '«Начать» — учить с тренировкой.\n'
-        '«Разметить» — быстро отметить: знаю / учу / позже.\n'
-        '«Словарь» — выбрать слова по уровню или теме.'
-    )
+    user_lvl = overview['user_level'].upper()
+    current = overview.get('current_level') or {}
+    unseen_here = overview.get('unseen_at_level', 0)
+    known = current.get('known', 0)
+    target = current.get('target', 0)
+    lines = [
+        '📘 <b>Учить новое</b>',
+        '',
+        f'Твой уровень: <b>{user_lvl}</b>',
+        f'{user_lvl} {current.get("bar", "")} '
+        f'<b>{known}</b>/{target} знаю · новых на {user_lvl}: <b>{unseen_here}</b>',
+        '',
+        f'Сегодня — <b>{overview["daily_new"]}</b> слов: покажу с переводом, '
+        'потом короткая тренировка.',
+        '',
+        '«Начать» — учить. «Словарь» — выбрать другие слова вручную.',
+    ]
+    return '\n'.join(lines)
 
 
 def format_word_repeat_section_text(
     overview: dict[str, Any],
     summary: dict[str, Any],
 ) -> str:
+    user_lvl = overview.get('user_level', 'a1').upper()
     if summary['total'] == 0:
         return (
             '🔄 <b>Повтор</b>\n\n'
-            'Пока нет слов в учёбе. Сначала добавь новые — '
-            'раздел «Учить новое».'
+            f'Твой уровень: <b>{user_lvl}</b>\n\n'
+            'Пока нет слов в учёбе. Сначала нажми «Учить новое» → «Начать».'
         )
     due = summary.get('due', overview.get('due_count', 0))
     lines = [
         '🔄 <b>Повтор</b>',
         '',
-        f"К повторению: <b>{due}</b> · "
-        f"в учёбе: <b>{summary['learning']}</b> · "
-        f"знаю: <b>{summary['known']}</b>",
+        f'Твой уровень: <b>{user_lvl}</b>',
+        f"К повторению: <b>{due}</b> · в учёбе: <b>{summary['learning']}</b>",
     ]
     if due:
-        lines.append('')
-        lines.append('«Начать повтор» — тренировка по расписанию.')
+        lines.extend([
+            '',
+            '«Начать» — тренировка: перевод → напиши слово по-английски.',
+        ])
     else:
-        lines.append('')
-        lines.append('Сейчас повторять нечего — загляни позже.')
+        lines.extend([
+            '',
+            'Сейчас повторять нечего. «Мои слова» — посмотреть списки.',
+        ])
     return '\n'.join(lines)
 
 
@@ -435,7 +461,7 @@ def search_bank_entries(
 
 
 def format_personal_dict_hub(summary: dict[str, Any]) -> str:
-    overview = {'due_count': summary.get('due', 0)}
+    overview = {'due_count': summary.get('due', 0), 'user_level': 'a1'}
     return format_word_repeat_section_text(overview, summary)
 
 

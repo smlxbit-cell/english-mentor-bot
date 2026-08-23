@@ -3032,7 +3032,7 @@ async def _show_word_repeat_section(update: Update, context: ContextTypes.DEFAUL
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
     summary = await db.get_personal_dict_summary(profile['id'])
-    text = await db.format_personal_dict_hub(summary)
+    text = await db.format_word_repeat_section_text(overview, summary)
     context.user_data['words_overview'] = overview
     await _send(
         context, _chat_id(update), text,
@@ -3079,7 +3079,7 @@ async def _show_personal_word_page(
     prefix: str,
     title: str,
     page: int,
-    back_data: str = 'words:repeat',
+    back_data: str = 'words:repeat:list',
     **filters,
 ):
     profile = await _ensure_profile(update, context)
@@ -3110,7 +3110,7 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
         await _send(
             context, _chat_id(update),
             'Темы появятся, когда в словаре будут слова из разных разделов.',
-            reply_markup=keyboards.word_repeat_section_kb(),
+            reply_markup=keyboards.word_repeat_list_kb(),
         )
         return
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -3121,7 +3121,7 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
         )]
         for slug, count in topics[:12]
     ]
-    rows.append([InlineKeyboardButton('← Назад', callback_data='words:repeat')])
+    rows.append([InlineKeyboardButton('← Назад', callback_data='words:repeat:list')])
     await _send(
         context, _chat_id(update),
         '📁 <b>Повтор · темы</b>\n\nВыбери группу:',
@@ -3130,14 +3130,29 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
+async def _show_word_repeat_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    summary = await db.get_personal_dict_summary(profile['id'])
+    await _send(
+        context, _chat_id(update),
+        '📋 <b>Мои слова</b>\n\n'
+        f"В учёбе: <b>{summary['learning']}</b> · "
+        f"знаю: <b>{summary['known']}</b> · "
+        f"выучил: <b>{summary['mastered']}</b>",
+        reply_markup=keyboards.word_repeat_list_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    user_level = profile.get('level_code') or 'a1'
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     overview = await db.get_word_bank_overview(profile['id'], user_level)
+    lvl = overview['user_level'].upper()
     text = (
-        '📖 <b>Словарь</b>\n\n'
-        f'Не смотрел: <b>{overview["unseen_total"]}</b> слов\n'
-        'Выбери уровень, тему или поиск.'
+        f'📖 <b>Словарь · {lvl}</b>\n\n'
+        'Выбери уровень, тему или поиск. '
+        'На каждом слове — «Знаю» или «Учу».'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3302,8 +3317,8 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['word_survey_queue'] = batch
     await _send(
         context, _chat_id(update),
-        f'📝 <b>Разметить 10</b>\n'
-        'Знаю · Учу · Позже',
+        f'📝 <b>Разметка слов</b>\n'
+        'Знаю · Учу · Позже — без тренировки.',
         parse_mode=ParseMode.HTML,
     )
     await _show_word_survey_card(update, context)
@@ -4291,6 +4306,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_word_new_section(update, context)
     elif data == 'words:repeat':
         await _show_word_repeat_section(update, context)
+    elif data == 'words:repeat:list':
+        await _show_word_repeat_list(update, context)
     elif data == 'words:mydict':
         await _show_word_repeat_section(update, context)
     elif data == 'words:survey:start':
