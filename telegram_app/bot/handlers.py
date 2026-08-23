@@ -3774,7 +3774,14 @@ async def _handle_drill_pick(
     if is_correct:
         query = update.callback_query
         if query:
-            await _ack_callback(query, '✅')
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except BadRequest:
+                pass
+        await _send(
+            context, _chat_id(update), msg,
+            parse_mode=ParseMode.HTML,
+        )
         advanced = _advance_drill(context)
         if advanced is None:
             await _finish_word_drill(update, context)
@@ -3820,6 +3827,8 @@ async def _handle_drill_recall(update, context, answer_text: str):
     await db.record_word_review(context.user_data['profile_id'], word['word_id'], correct)
 
     if correct:
+        msg = format_recall_correct(word, heard=guess or answer_text)
+        await _send(context, chat_id, msg, parse_mode=ParseMode.HTML)
         advanced = _advance_drill(context)
         if advanced is None:
             await _finish_word_drill(update, context)
