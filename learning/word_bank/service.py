@@ -45,6 +45,29 @@ def _progress_bar(known: int, total: int, width: int = 10) -> str:
     return '█' * filled + '░' * (width - filled)
 
 
+def words_count_ru(n: int) -> str:
+    """«1 слово», «43 слова», «5 слов»."""
+    n_abs = abs(int(n))
+    mod10, mod100 = n_abs % 10, n_abs % 100
+    if mod10 == 1 and mod100 != 11:
+        form = 'слово'
+    elif 2 <= mod10 <= 4 and not (12 <= mod100 <= 14):
+        form = 'слова'
+    else:
+        form = 'слов'
+    return f'{n} {form}'
+
+
+def format_word_stats_line(summary: dict[str, Any]) -> str:
+    """Единый формат: всего · учить · знаю · выучил."""
+    return (
+        f'Всего <b>{summary["total"]}</b> · '
+        f'учить <b>{summary["learning"]}</b> · '
+        f'знаю <b>{summary["known"]}</b> · '
+        f'выучил <b>{summary["mastered"]}</b>'
+    )
+
+
 def sync_word_from_bank(user_id: int, entry: WordBankEntry, *, status: str) -> Word:
     word, _ = Word.objects.get_or_create(
         english=entry.english,
@@ -250,13 +273,15 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
         here = ' ← ты здесь' if stat['level'] == overview['user_level'] else ''
         lines.append(
             f"{lvl} {stat['bar']} "
-            f"<b>{stat['known']}</b>/{stat['target']} · учу {stat['learning']}{here}"
+            f"<b>{stat['known']}</b>/{stat['target']} · учить {stat['learning']}{here}"
         )
+    train_line = f'🎯 <b>Тренировка</b> — учить {learning_total}'
+    if due:
+        train_line += f', к тренировке {words_count_ru(due)}'
     lines.extend([
         '',
         '<b>Два сценария:</b>',
-        f'🎯 <b>Тренировка</b> — слова «учу» ({learning_total} шт.'
-        + (f', готово {due}' if due else '') + ')',
+        train_line,
         '📘 <b>Новые слова</b> — добавить в список (урок · 10 или выбор из словаря)',
     ])
     return '\n'.join(lines)
@@ -269,19 +294,19 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
         '📘 <b>Новые слова</b>\n\n'
         f'«Начать · {n}» — <b>{n} случайных</b> слов до уровня {lvl}, '
         'которые вы ещё <b>не изучали</b>. Сначала 🔊 по одному, потом тренировка.\n\n'
-        '«📖 Выбрать в словаре» — сами отметить знаю / учу. '
-        '«Учу» попадает в 🎯 <b>Тренировку</b>.'
+        '«📖 Выбрать в словаре» — выбрать слова и отметить: <b>знаю</b> / <b>учить</b>. '
+        '«Учить» → 🎯 <b>Тренировка</b>.'
     )
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
         '📖 <b>Выбрать в словаре</b>\n\n'
-        'Без урока — только добавить в свой список:\n'
-        '• «Что знаешь?» — быстро: знаю / учу / позже\n'
-        '• «Словарь» — темы и уровни, нажми слово → отметь\n'
+        'Для каждого слова — <b>знаю</b> или <b>учить</b>:\n'
+        '• «Что знаешь?» — 10 слов подряд\n'
+        '• «Словарь» — темы и уровни\n'
         '• «Поиск» — найти слово\n\n'
-        'Отметили «учу» → 🎯 <b>Тренировка</b> на главном экране «Слова».'
+        '«Учить» → 🎯 <b>Тренировка</b> на экране «Слова».'
     )
 
 
@@ -289,9 +314,9 @@ def format_word_survey_levels_text(user_level: str) -> str:
     lvl = (user_level or 'a1').upper()
     return (
         '👀 <b>Что знаешь?</b>\n\n'
-        f'Рекомендуем начать с <b>{lvl}</b> (★) — твой уровень по тесту.\n'
-        'Можно проверить и другие уровни — статистика копится отдельно.\n\n'
-        'Выбери уровень: покажу 10 слов, отметь знаю / учу / позже.'
+        f'Начните с <b>{lvl}</b> (★) — ваш уровень по тесту.\n'
+        '10 слов подряд: только <b>знаю</b> или <b>учить</b>.\n'
+        'В конце — сразу тренировка.'
     )
 
 
@@ -313,13 +338,47 @@ def format_word_repeat_section_text(
     if summary['total'] == 0:
         return (
             '🎯 <b>Тренировка</b>\n\n'
-            'Пока нет слов «учу». Сначала 📘 <b>Новые слова</b> — '
-            'урок · 10 или выбор в словаре.'
+            'Пока пусто. Добавьте слова через 📘 <b>Новые слова</b> '
+            '(урок · 10 или выбор в словаре) и отметьте «Учить».'
         )
+    stats = format_word_stats_line(summary)
+    if due:
+        tail = f'\n\nК тренировке сейчас: <b>{words_count_ru(due)}</b>.'
+    else:
+        tail = '\n\nСлов к тренировке пока нет — загляните позже.'
+    return f'🎯 <b>Тренировка</b>\n\n{stats}{tail}'
+
+
+def format_word_review_intro(count: int) -> str:
     return (
-        '🎯 <b>Тренировка</b>\n\n'
-        f'Ваш список «учу»: <b>{summary["learning"]}</b> слов.\n'
-        f'Готово к тренировке сейчас: <b>{due}</b>.'
+        f'🎯 <b>Тренировка · {words_count_ru(count)}</b>\n\n'
+        'Дам перевод — напишите или скажите слово по-английски.\n'
+        '✍️ текст · 🎙️ голос'
+    )
+
+
+def format_word_review_prompt(*, pos: int, total: int, translation: str) -> str:
+    return (
+        f'<b>{pos}/{total}</b> · Как по-английски «{translation}»?\n'
+        '✍️ Напишите · 🎙️ Скажите'
+    )
+
+
+def format_daily_intro_start(count: int) -> str:
+    return (
+        f'📘 <b>Урок · {words_count_ru(count)}</b>\n\n'
+        'По одному слову:\n'
+        '🔊 Слушайте → «Дальше» — в список «учить»\n'
+        '«Знаю ✅» — уже знаете\n\n'
+        'В конце — 🎯 тренировка.'
+    )
+
+
+def format_daily_intro_finish(count: int) -> str:
+    return (
+        f'✅ <b>{words_count_ru(count)} готово</b>\n\n'
+        'Слова в списке «учить».\n'
+        'Нажмите 🎯 <b>Тренировка</b> — перевод → ответ по-английски.'
     )
 
 
@@ -495,14 +554,11 @@ def format_personal_dict_hub(summary: dict[str, Any]) -> str:
         return (
             '📗 <b>Мои слова</b>\n\n'
             'Пока пусто. Отметь слова в «👀 Что знаешь?» или «📖 Словарь» — '
-            'нажми «Учу».'
+            'нажми «Учить».'
         )
     return (
         '📗 <b>Мои слова</b>\n\n'
-        f"Всего <b>{summary['total']}</b> · "
-        f"учу {summary['learning']} · "
-        f"знаю {summary['known']} · "
-        f"выучил {summary['mastered']}"
+        + format_word_stats_line(summary)
     )
 
 

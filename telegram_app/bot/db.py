@@ -1274,6 +1274,34 @@ def format_word_repeat_section_text(overview: dict, summary: dict) -> str:
 
 
 @sync_to_async
+def format_word_review_intro(count: int) -> str:
+    from learning.word_bank.service import format_word_review_intro as _fmt
+
+    return _fmt(count)
+
+
+@sync_to_async
+def format_word_review_prompt(*, pos: int, total: int, translation: str) -> str:
+    from learning.word_bank.service import format_word_review_prompt as _fmt
+
+    return _fmt(pos=pos, total=total, translation=translation)
+
+
+@sync_to_async
+def format_daily_intro_start(count: int) -> str:
+    from learning.word_bank.service import format_daily_intro_start as _fmt
+
+    return _fmt(count)
+
+
+@sync_to_async
+def format_daily_intro_finish(count: int) -> str:
+    from learning.word_bank.service import format_daily_intro_finish as _fmt
+
+    return _fmt(count)
+
+
+@sync_to_async
 def format_word_survey_levels_text(user_level: str) -> str:
     from learning.word_bank.service import format_word_survey_levels_text as _fmt
 

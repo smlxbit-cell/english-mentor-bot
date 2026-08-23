@@ -299,7 +299,7 @@ def word_repeat_section_kb(*, due: int = 0) -> InlineKeyboardMarkup:
 def word_dict_hub_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('📗 Учу', callback_data='words:dict:learning:0'),
+            InlineKeyboardButton('📗 Учить', callback_data='words:dict:learning:0'),
             InlineKeyboardButton('✅ Знаю', callback_data='words:dict:known:0'),
             InlineKeyboardButton('🌟 Выучил', callback_data='words:dict:mastered:0'),
         ],
@@ -435,12 +435,9 @@ def word_bank_entry_kb(
     rows = [
         [
             InlineKeyboardButton('Знаю', callback_data=f'words:bank:known:{bid}'),
-            InlineKeyboardButton('Учу', callback_data=f'words:bank:learn:{bid}'),
+            InlineKeyboardButton('Учить', callback_data=f'words:bank:learn:{bid}'),
         ],
-        [
-            InlineKeyboardButton('Позже', callback_data=f'words:bank:skip:{bid}'),
-            InlineKeyboardButton('Слушать', callback_data='tts:say'),
-        ],
+        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
     ]
     if show_train and learning_count > 0:
         rows.append([InlineKeyboardButton(
@@ -468,14 +465,22 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton('Знаю', callback_data=f'words:survey:known:{bid}'),
-            InlineKeyboardButton('Учу', callback_data=f'words:survey:learn:{bid}'),
+            InlineKeyboardButton('Учить', callback_data=f'words:survey:learn:{bid}'),
         ],
-        [
-            InlineKeyboardButton('Позже', callback_data=f'words:survey:skip:{bid}'),
-            InlineKeyboardButton('Слушать', callback_data='tts:say'),
-        ],
-        [InlineKeyboardButton('← Уровни', callback_data='words:survey:menu')],
+        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
     ])
+
+
+def word_survey_finish_kb(*, learning_count: int, due_count: int = 0) -> InlineKeyboardMarkup:
+    rows = []
+    if learning_count > 0:
+        count = due_count or learning_count
+        rows.append([InlineKeyboardButton(
+            f'🎯 Тренировка · {count}',
+            callback_data='srs:start',
+        )])
+    rows.append([InlineKeyboardButton('← Слова', callback_data='words:hub')])
+    return InlineKeyboardMarkup(rows)
 
 
 def word_intro_kb() -> InlineKeyboardMarkup:

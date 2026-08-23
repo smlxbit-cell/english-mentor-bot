@@ -3094,7 +3094,7 @@ async def _show_word_level_detail(
         f'📊 <b>Уровень {level.upper()}</b>\n\n'
         f'{stat["bar"]} {stat["known"]}/{stat["target"]} ({stat["pct"]}%)\n\n'
         f'✅ Знаю: <b>{stat["known"]}</b> · '
-        f'📗 Учу: <b>{stat["learning"]}</b>\n'
+        f'📗 Учить: <b>{stat["learning"]}</b>\n'
         f'📝 Новых: <b>{stat["unseen"]}</b> · '
         f'🎯 До цели: <b>{stat["remaining"]}</b>'
     )
@@ -3177,8 +3177,8 @@ async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     text = (
         '📖 <b>Словарь</b>\n\n'
         f'Твой уровень: <b>{overview["user_level"].upper()}</b>\n'
-        'Нажми <b>слово</b> в списке → Знаю / Учу / Позже.\n'
-        '«Учу» → 🎯 Тренировка на главном экране «Слова».'
+        'Нажми <b>слово</b> в списке → <b>Знаю</b> / <b>Учить</b>.\n'
+        '«Учить» → 🎯 Тренировка на главном экране «Слова».'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3291,7 +3291,7 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
     ]
     if entry_dict.get('example'):
         lines.append(f'📝 {_esc(entry_dict["example"])}')
-    lines.append('\n<i>«Учу» → 🎯 Тренировка</i>')
+    lines.append('\n<i>«Учить» → 🎯 Тренировка</i>')
     context.user_data['tts_text'] = entry_dict['english']
     page_cb = context.user_data.get('bank_page_cb', 'words:bank')
     learning = summary.get('learning', 0)
@@ -3378,7 +3378,7 @@ async def start_word_survey_for_level(
     await _send(
         context, _chat_id(update),
         f'👀 <b>{level.upper()}</b> · {len(batch)} слов\n'
-        'Знаю · Учу · Позже',
+        'Знаю · Учить',
         parse_mode=ParseMode.HTML,
     )
     await _show_word_survey_card(update, context)
@@ -3395,8 +3395,47 @@ async def _show_word_survey_card(update, context):
         context.user_data['mode'] = None
         context.user_data.pop('word_survey_total', None)
         context.user_data.pop('word_survey_level', None)
-        await _send(context, chat_id, 'Готово 👍')
-        await _show_survey_level_menu(update, context)
+        profile_id = context.user_data.get('profile_id')
+        summary = await db.get_personal_dict_summary(profile_id) if profile_id else {}
+        profile = await db.get_profile(profile_id) if profile_id else {}
+        user_level = (
+            (profile or {}).get('level_code')
+            or (profile or {}).get('cefr_level')
+            or 'a1'
+        )
+        overview = (
+            await db.get_word_bank_overview(profile_id, user_level)
+            if profile_id else {}
+        )
+        learning = summary.get('learning', 0)
+        due = overview.get('due_count', 0) or summary.get('due', 0)
+        if learning > 0:
+            stats = (
+                f'учить <b>{learning}</b> · '
+                f'к тренировке <b>{due or learning}</b>'
+            )
+            await _send(
+                context, chat_id,
+                '✅ <b>10 слов готово</b>\n\n'
+                f'{stats}\n'
+                'Сразу тренировка 👇',
+                reply_markup=keyboards.word_survey_finish_kb(
+                    learning_count=learning,
+                    due_count=due,
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            await _send(
+                context, chat_id,
+                '✅ <b>10 слов готово</b>\n\n'
+                'Отметили только «знаю» — для тренировки выберите «Учить».',
+                reply_markup=keyboards.word_survey_finish_kb(
+                    learning_count=0,
+                    due_count=0,
+                ),
+                parse_mode=ParseMode.HTML,
+            )
         return
     word = queue[0]
     total = context.user_data.get('word_survey_total') or len(queue)
@@ -3455,10 +3494,7 @@ async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAUL
     context.user_data['daily_intro_total'] = len(intro)
     await _send(
         context, _chat_id(update),
-        f'📘 <b>Урок · {len(intro)} слов</b>\n\n'
-        'Покажу по одному — сначала слушай 🔊, потом «Дальше».\n'
-        'Если слово уже знаешь — «Знаю ✅».\n'
-        'В конце — тренировка.',
+        await db.format_daily_intro_start(len(intro)),
         parse_mode=ParseMode.HTML,
     )
     await _show_daily_intro_card(update, context)
@@ -3543,14 +3579,9 @@ async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE
         for w in selected
     ]
     context.user_data['tts_text'] = '. '.join(speak_chunks)
-    lines = [
-        f'✅ <b>Познакомились с {len(selected)} словами</b>',
-        '',
-        'Когда готов — нажми «Тренировка»: покажу перевод, '
-        'ты напишешь или скажешь по-английски.',
-    ]
     await _send(
-        context, chat_id, '\n'.join(lines),
+        context, chat_id,
+        await db.format_daily_intro_finish(len(selected)),
         reply_markup=keyboards.word_daily_intro_finish_kb(count=len(selected)),
         parse_mode=ParseMode.HTML,
     )
@@ -3569,11 +3600,11 @@ async def _start_daily_word_quiz(update, context):
     context.user_data['mode'] = 'review'
     context.user_data['review_from_plan'] = False
     context.user_data['review_queue'] = review
+    context.user_data['review_total'] = len(review)
     await send_mentor_reaction(context, _chat_id(update), 'word_review')
     await _send(
         context, _chat_id(update),
-        f'🎯 Тренировка: {len(review)} слов\n'
-        'Перевод → напиши или скажи по-английски.',
+        await db.format_word_review_intro(len(review)),
         parse_mode=ParseMode.HTML,
     )
     await _ask_next_word(update, context)
@@ -3606,12 +3637,11 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
     context.user_data['mode'] = 'review'
     context.user_data['review_from_plan'] = from_plan
     context.user_data['review_queue'] = due
+    context.user_data['review_total'] = len(due)
     await send_mentor_reaction(context, chat_id, 'word_review')
     await _send(
         context, chat_id,
-        f'🎓 Тренировка слов ({len(due)} шт.)\n'
-        'Показываю перевод — <b>напиши или скажи</b> одно слово по-английски.\n'
-        '✍️ текстом  ·  🎙️ голосом',
+        await db.format_word_review_intro(len(due)),
         parse_mode=ParseMode.HTML,
     )
     await _ask_next_word(update, context)
@@ -3622,8 +3652,9 @@ async def _ask_next_word(update, context):
     chat_id = _chat_id(update)
     if not queue:
         context.user_data['mode'] = None
+        context.user_data.pop('review_total', None)
         from_plan = context.user_data.pop('review_from_plan', False)
-        await _send(context, chat_id, '🎉 Повторение завершено! Отличная работа.')
+        await _send(context, chat_id, '🎉 Тренировка завершена!')
         if from_plan:
             plan = context.user_data.get('daily_plan') or await db.get_daily_plan(
                 context.user_data['profile_id'],
@@ -3635,10 +3666,15 @@ async def _ask_next_word(update, context):
         return
     word = queue.pop(0)
     context.user_data['review_current'] = word
+    total = context.user_data.get('review_total') or (len(queue) + 1)
+    pos = total - len(queue)
     await _send(
         context, chat_id,
-        f'Как по-английски: «{word["translation"]}»?\n'
-        '✍️ Напиши  ·  🎙️ Скажи',
+        await db.format_word_review_prompt(
+            pos=pos,
+            total=total,
+            translation=_esc(word['translation']),
+        ),
         parse_mode=ParseMode.HTML,
     )
 
@@ -4615,7 +4651,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status='known',
         )
     elif data.startswith('words:survey:learn:'):
-        await _ack_callback(query, 'В учёбу 📗')
+        await _ack_callback(query, 'Учить 📗')
         await _handle_word_survey_action(
             update, context,
             bank_entry_id=int(data.rsplit(':', 1)[1]),
@@ -4646,7 +4682,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('words:bank:learn:'):
         bid = int(data.rsplit(':', 1)[1])
         await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'learning')
-        await _ack_callback(query, 'В учёбу 📗')
+        await _ack_callback(query, 'Учить 📗')
         await _show_bank_entry(update, context, bid)
     elif data.startswith('words:bank:skip:'):
         bid = int(data.rsplit(':', 1)[1])
@@ -4694,7 +4730,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page = int(data.rsplit(':', 1)[1])
         await _show_personal_word_page(
             update, context,
-            prefix='words:dict:learning', title='📗 Учу',
+            prefix='words:dict:learning', title='📗 Учить',
             page=page, status='learning',
         )
     elif data.startswith('words:dict:known:'):
