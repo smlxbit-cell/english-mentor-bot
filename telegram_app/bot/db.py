@@ -1244,6 +1244,13 @@ def format_word_new_section_text(overview: dict) -> str:
 
 
 @sync_to_async
+def format_word_new_pick_text(overview: dict) -> str:
+    from learning.word_bank.service import format_word_new_pick_text as _fmt
+
+    return _fmt(overview)
+
+
+@sync_to_async
 def format_word_repeat_section_text(overview: dict, summary: dict) -> str:
     from learning.word_bank.service import format_word_repeat_section_text as _fmt
 

@@ -3032,7 +3032,19 @@ async def _show_word_new_section(update: Update, context: ContextTypes.DEFAULT_T
     text = await db.format_word_new_section_text(overview)
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_new_section_kb(),
+        reply_markup=keyboards.word_new_section_kb(daily=overview['daily_new']),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_word_new_pick_section(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    overview = await db.get_word_bank_overview(profile['id'], user_level)
+    text = await db.format_word_new_pick_text(overview)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_new_pick_kb(),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3071,7 +3083,7 @@ async def _show_word_level_detail(
                 InlineKeyboardButton('👀 Проверить 10', callback_data='words:survey:start'),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
-            [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+            [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3262,7 +3274,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← Учить новое', callback_data='words:new'),
+            InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3300,7 +3312,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send(
             context, _chat_id(update),
             'Все слова на твоих уровнях уже просмотрены 👍',
-            reply_markup=keyboards.word_new_section_kb(),
+            reply_markup=keyboards.word_new_pick_kb(),
         )
         return
     context.user_data['mode'] = 'word_survey'
@@ -4296,6 +4308,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_word_hub(update, context)
     elif data == 'words:new':
         await _show_word_new_section(update, context)
+    elif data == 'words:new:pick':
+        await _show_word_new_pick_section(update, context)
     elif data == 'words:repeat':
         await _show_word_repeat_section(update, context)
     elif data in ('words:repeat:list', 'words:add'):

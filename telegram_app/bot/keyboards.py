@@ -225,9 +225,18 @@ def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardM
     ]])
 
 
-def word_new_section_kb() -> InlineKeyboardMarkup:
+def word_new_section_kb(*, daily: int = 10) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('▶️ 10 новых', callback_data='words:learn:daily')],
+        [
+            InlineKeyboardButton(f'Учить · {daily}', callback_data='words:learn:daily'),
+            InlineKeyboardButton('Выбрать слова', callback_data='words:new:pick'),
+        ],
+        [InlineKeyboardButton('← Слова', callback_data='words:hub')],
+    ])
+
+
+def word_new_pick_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:start')],
         [
             InlineKeyboardButton('📖 Банк слов', callback_data='words:bank'),
@@ -240,7 +249,7 @@ def word_new_section_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('B2', callback_data='words:level:b2'),
             InlineKeyboardButton('C1', callback_data='words:level:c1'),
         ],
-        [InlineKeyboardButton('← Слова', callback_data='words:hub')],
+        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
     ])
 
 
@@ -291,7 +300,7 @@ def word_bank_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('📁 Темы', callback_data='words:bank:topics'),
             InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
         ],
-        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
     ])
 
 
@@ -392,7 +401,7 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton('Позже', callback_data=f'words:survey:skip:{bid}'),
             InlineKeyboardButton('Слушать', callback_data='tts:say'),
         ],
-        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
     ])
 
 
@@ -402,7 +411,7 @@ def word_intro_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('Тренировка', callback_data='words:learn:quiz'),
             InlineKeyboardButton('Слушать', callback_data='tts:say'),
         ],
-        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
     ])
 
 

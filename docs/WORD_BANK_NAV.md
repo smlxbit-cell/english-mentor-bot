@@ -21,11 +21,18 @@
 
 | Button | Action |
 |--------|--------|
-| ▶️ 10 новых | Daily intro + quiz |
-| 👀 Что знаешь? | Survey cards → level stats |
-| 📖 Банк слов · 🔍 Поиск | Full corpus browse |
-| A1 … C1 | Level stats + check + words |
-| ← Слова | Back to hub |
+| Учить · 10 | Daily intro + quiz (`words:learn:daily`) |
+| Выбрать слова | Screen 2b |
+| ← Слова | Hub |
+
+## Screen 2b — Выбрать слова
+
+| Button | Action |
+|--------|--------|
+| 👀 Что знаешь? | Survey → level stats |
+| 📖 Банк · 🔍 | Corpus browse |
+| A1 … C1 | Level stats + check |
+| ← Учить новое | Screen 2 |
 
 ## Screen 3 — Повтор
 

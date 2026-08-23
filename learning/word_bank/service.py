@@ -226,11 +226,19 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
 
 
 def format_word_new_section_text(overview: dict[str, Any]) -> str:
+    n = overview['daily_new']
     return (
         '📘 <b>Учить новое</b>\n\n'
-        f'Сегодня: <b>{overview["daily_new"]}</b> слов с тренировкой.\n'
-        '«Что знаешь?» — отметить знаю / учу (статистика по уровням).\n'
-        '«Банк» — все слова по уровню и теме.'
+        f'«Учить · {n}» — готовый набор на сегодня: показ слов и тренировка.\n'
+        '«Выбрать слова» — проверить что знаешь или открыть банк.'
+    )
+
+
+def format_word_new_pick_text(overview: dict[str, Any]) -> str:
+    return (
+        '📝 <b>Выбрать слова</b>\n\n'
+        '«Что знаешь?» — быстро отметить знаю / учу (идёт в статистику уровней).\n'
+        '«Банк» и уровни — все слова по A1–C1, темам, поиск.'
     )
 
 
