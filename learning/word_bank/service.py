@@ -9,7 +9,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from learning.models import Word, WordBankEntry
-from learning.word_bank.normalize import word_slug
+from learning.word_bank.navigation import PAGE_SIZE, normalize_topics, topic_label
 from progress_app.models import UserWordBankStatus, UserWordProgress
 
 CEFR_LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
@@ -205,7 +205,7 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
     lines = [
         '📚 <b>Слова</b>',
         '',
-        'Прогресс по уровням (знаю / цель):',
+        'Прогресс (знаю / цель по уровню):',
     ]
     for stat in overview['levels']:
         lvl = stat['level'].upper()
@@ -215,10 +215,13 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
         )
     lines.extend([
         '',
-        f"🆕 Не размечено: <b>{overview['unseen_total']}</b> · "
-        f"🔄 К повторению: <b>{overview['due_count']}</b>",
+        f"👀 <b>Не проверено:</b> {overview['unseen_total']} "
+        f'(ещё не смотрел в банке) · '
+        f"🔄 <b>К повторению:</b> {overview['due_count']}",
         '',
-        f"План на сегодня: <b>{overview['daily_new']}</b> новых слов + повторение.",
+        f"Сегодня: <b>{overview['daily_new']}</b> новых + повторение.",
+        '',
+        '<i>«Что знаешь?» — быстро отметить: знаю / учу / позже.</i>',
     ])
     return '\n'.join(lines)
 
@@ -231,7 +234,217 @@ def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:
         'example': entry.example,
         'example_ru': entry.example_ru,
         'cefr_level': entry.cefr_level,
+        'topics': normalize_topics(entry.topics),
     }
+
+
+def get_personal_dict_summary(user_id: int) -> dict[str, Any]:
+    qs = UserWordProgress.objects.filter(user_id=user_id)
+    by_status: dict[str, int] = {}
+    for row in qs.values('status').annotate(c=Count('id')):
+        by_status[row['status']] = row['c']
+    now = timezone.now()
+    due = qs.filter(
+        status__in=(UserWordProgress.Status.NEW, UserWordProgress.Status.LEARNING),
+    ).filter(
+        Q(next_review_at__lte=now) | Q(next_review_at__isnull=True),
+    ).exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True).count()
+    return {
+        'total': qs.count(),
+        'learning': by_status.get(UserWordProgress.Status.LEARNING, 0)
+        + by_status.get(UserWordProgress.Status.NEW, 0),
+        'known': by_status.get(UserWordProgress.Status.KNOWN, 0),
+        'mastered': by_status.get(UserWordProgress.Status.MASTERED, 0),
+        'due': due,
+    }
+
+
+def list_personal_words(
+    user_id: int,
+    *,
+    status: str | None = None,
+    level: str | None = None,
+    topic: str | None = None,
+    page: int = 0,
+    page_size: int = PAGE_SIZE,
+) -> dict[str, Any]:
+    qs = UserWordProgress.objects.filter(user_id=user_id).select_related('word')
+    if status == 'learning':
+        qs = qs.filter(status__in=(
+            UserWordProgress.Status.NEW,
+            UserWordProgress.Status.LEARNING,
+        ))
+    elif status:
+        qs = qs.filter(status=status)
+
+    if level:
+        english_set = WordBankEntry.objects.filter(
+            cefr_level=level.lower(), is_active=True,
+        ).values_list('english', flat=True)
+        qs = qs.filter(word__english__in=english_set)
+    if topic:
+        if topic == 'general':
+            bank_qs = WordBankEntry.objects.filter(is_active=True)
+            general_eng = [
+                e.english for e in bank_qs
+                if normalize_topics(e.topics) == ['general']
+            ]
+            qs = qs.filter(word__english__in=general_eng)
+        else:
+            english_set = WordBankEntry.objects.filter(
+                is_active=True, topics__contains=[topic],
+            ).values_list('english', flat=True)
+            qs = qs.filter(word__english__in=english_set)
+
+    qs = qs.order_by('-updated_at')
+    total = qs.count()
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, pages - 1))
+    items = []
+    for uwp in qs[page * page_size:(page + 1) * page_size]:
+        items.append({
+            'english': uwp.word.english,
+            'translation': uwp.word.translation,
+            'example': uwp.word.example,
+            'status': uwp.status,
+            'word_id': uwp.word_id,
+        })
+    return {'items': items, 'total': total, 'page': page, 'pages': pages}
+
+
+def list_personal_topic_counts(user_id: int) -> list[tuple[str, int]]:
+    qs = UserWordProgress.objects.filter(user_id=user_id).select_related('word')
+    english_list = [uwp.word.english for uwp in qs]
+    by_en = {
+        e.english.lower(): e
+        for e in WordBankEntry.objects.filter(english__in=english_list).only('english', 'topics')
+    }
+    counts: dict[str, int] = {}
+    for uwp in qs:
+        entry = by_en.get(uwp.word.english.lower())
+        topics = normalize_topics(entry.topics if entry else None)
+        for topic in topics:
+            counts[topic] = counts.get(topic, 0) + 1
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+
+
+def list_bank_topic_counts(user_id: int, user_level: str) -> list[tuple[str, int]]:
+    levels = _levels_up_to(user_level)
+    marked = UserWordBankStatus.objects.filter(user_id=user_id).values_list(
+        'bank_entry_id', flat=True,
+    )
+    entries = WordBankEntry.objects.filter(
+        is_active=True, cefr_level__in=levels,
+    ).exclude(id__in=marked).only('topics')
+    counts: dict[str, int] = {}
+    for entry in entries.iterator():
+        for topic in normalize_topics(entry.topics):
+            counts[topic] = counts.get(topic, 0) + 1
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+
+
+def browse_bank_entries(
+    user_id: int,
+    user_level: str,
+    *,
+    level: str | None = None,
+    topic: str | None = None,
+    only_unseen: bool = True,
+    page: int = 0,
+    page_size: int = PAGE_SIZE,
+) -> dict[str, Any]:
+    levels = [level.lower()] if level else _levels_up_to(user_level)
+    qs = WordBankEntry.objects.filter(is_active=True, cefr_level__in=levels)
+    if only_unseen:
+        marked = UserWordBankStatus.objects.filter(user_id=user_id).values_list(
+            'bank_entry_id', flat=True,
+        )
+        qs = qs.exclude(id__in=marked)
+    if topic:
+        if topic == 'general':
+            # Entries without specific topics land in "general".
+            all_entries = list(qs.only('id', 'topics'))
+            ids = [e.id for e in all_entries if normalize_topics(e.topics) == ['general']]
+            qs = WordBankEntry.objects.filter(id__in=ids)
+        else:
+            qs = qs.filter(topics__contains=[topic])
+    qs = qs.order_by('cefr_level', 'english')
+    total = qs.count()
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, pages - 1))
+    items = [entry_to_dict(e) for e in qs[page * page_size:(page + 1) * page_size]]
+    return {
+        'items': items,
+        'total': total,
+        'page': page,
+        'pages': pages,
+        'level': level,
+        'topic': topic,
+    }
+
+
+def search_bank_entries(
+    user_id: int,
+    user_level: str,
+    query: str,
+    *,
+    limit: int = 8,
+) -> list[dict]:
+    q = (query or '').strip()
+    if len(q) < 2:
+        return []
+    levels = _levels_up_to(user_level)
+    hits = WordBankEntry.objects.filter(
+        is_active=True,
+        cefr_level__in=levels,
+    ).filter(
+        Q(english__icontains=q) | Q(translation__icontains=q),
+    ).order_by('cefr_level', 'english')[:limit]
+    return [entry_to_dict(e) for e in hits]
+
+
+def format_personal_dict_hub(summary: dict[str, Any]) -> str:
+    if summary['total'] == 0:
+        return (
+            '🗂 <b>Мой словарь</b>\n\n'
+            'Пока пусто. Слова появятся из уроков или когда отметишь «📗 Учу» в банке.'
+        )
+    return (
+        '🗂 <b>Мой словарь</b>\n\n'
+        f"Всего: <b>{summary['total']}</b> · "
+        f"📗 учу {summary['learning']} · "
+        f"✅ знаю {summary['known']} · "
+        f"🌟 {summary['mastered']}\n"
+        f"🔄 К повторению: <b>{summary['due']}</b>\n\n"
+        '<i>Выбери группу — покажем по 6 слов, без длинной простыни.</i>'
+    )
+
+
+def format_word_list_page(
+    *,
+    title: str,
+    items: list[dict],
+    page: int,
+    pages: int,
+    total: int,
+    show_status: bool = False,
+) -> str:
+    lines = [f'<b>{title}</b>', '']
+    if not items:
+        lines.append('Здесь пока пусто.')
+        return '\n'.join(lines)
+    for w in items:
+        if show_status:
+            icon = {'new': '🆕', 'learning': '📗', 'known': '✅', 'mastered': '🌟'}.get(
+                w.get('status'), '•',
+            )
+            lines.append(f'{icon} <b>{w["english"]}</b> — {w["translation"]}')
+        else:
+            lvl = (w.get('cefr_level') or '').upper()
+            prefix = f'[{lvl}] ' if lvl else ''
+            lines.append(f'{prefix}<b>{w["english"]}</b> — {w["translation"]}')
+    lines.extend(['', f'Стр. {page + 1}/{pages} · всего {total}'])
+    return '\n'.join(lines)
 
 
 def get_review_words_for_entries(profile_id: int, entries: list[WordBankEntry]) -> list[dict]:

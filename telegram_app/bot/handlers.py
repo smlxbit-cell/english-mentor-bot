@@ -3023,14 +3023,15 @@ async def _show_word_level_detail(
         f'{stat["bar"]} {stat["known"]}/{stat["target"]} ({stat["pct"]}%)\n\n'
         f'✅ Знаю: <b>{stat["known"]}</b>\n'
         f'📗 Учу: <b>{stat["learning"]}</b>\n'
-        f'🆕 Не размечено: <b>{stat["unseen"]}</b>\n'
-        f'🎯 Осталось до цели: <b>{stat["remaining"]}</b>'
+        f'👀 Не проверено: <b>{stat["unseen"]}</b>\n'
+        f'🎯 До цели: <b>{stat["remaining"]}</b>'
     )
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     await _send(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton('✅ Разметить', callback_data='words:survey:start')],
+            [InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:start')],
+            [InlineKeyboardButton('📖 Банк', callback_data=f'words:bank:level:{level}:0')],
             [InlineKeyboardButton('↩️ К словам', callback_data='words:hub')],
         ]),
         parse_mode=ParseMode.HTML,
@@ -3039,29 +3040,208 @@ async def _show_word_level_detail(
 
 async def _show_my_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    words = await db.get_dictionary_words(profile['id'], limit=15)
-    if not words:
+    summary = await db.get_personal_dict_summary(profile['id'])
+    text = await db.format_personal_dict_hub(summary)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_dict_hub_kb(due=summary.get('due', 0)),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_personal_word_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    prefix: str,
+    title: str,
+    page: int,
+    back_data: str = 'words:mydict',
+    **filters,
+):
+    profile = await _ensure_profile(update, context)
+    data = await db.list_personal_words(profile['id'], page=page, **filters)
+    text = await db.format_word_list_page(
+        title=title,
+        items=data['items'],
+        page=data['page'],
+        pages=data['pages'],
+        total=data['total'],
+        show_status=True,
+    )
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_list_page_kb(
+            prefix, page=data['page'], pages=data['pages'], back_data=back_data,
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.navigation import topic_label
+
+    profile = await _ensure_profile(update, context)
+    topics = await db.list_personal_topic_counts(profile['id'])
+    if not topics:
         await _send(
             context, _chat_id(update),
-            'Словарь пока пуст. Отметь слова в банке или пройди урок.',
+            'Темы появятся, когда в словаре будут слова из разных разделов.',
+            reply_markup=keyboards.word_dict_hub_kb(),
+        )
+        return
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = [
+        [InlineKeyboardButton(
+            f'{topic_label(slug)} · {count}',
+            callback_data=f'words:dict:topic:{slug}:0',
+        )]
+        for slug, count in topics[:12]
+    ]
+    rows.append([InlineKeyboardButton('↩️ Назад', callback_data='words:mydict')])
+    await _send(
+        context, _chat_id(update),
+        '📁 <b>Мой словарь · темы</b>\n\nВыбери группу:',
+        reply_markup=InlineKeyboardMarkup(rows),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_word_bank_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or 'a1'
+    overview = await db.get_word_bank_overview(profile['id'], user_level)
+    text = (
+        '📖 <b>Банк слов</b>\n\n'
+        f'👀 Не проверено: <b>{overview["unseen_total"]}</b>\n'
+        'Выбери уровень или тему — по 6 слов на экран.'
+    )
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_bank_hub_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_bank_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.navigation import topic_label
+
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or 'a1'
+    topics = await db.list_bank_topic_counts(profile['id'], user_level)
+    if not topics:
+        await _send(
+            context, _chat_id(update),
+            'Все слова уже проверены — отлично! 👍',
+            reply_markup=keyboards.word_bank_hub_kb(),
+        )
+        return
+    text = '📁 <b>Банк · темы</b>\n\nСлова, которые ты ещё не оценивал:'
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_bank_topics_kb(topics),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_bank_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    prefix: str,
+    page: int,
+    level: str | None = None,
+    topic: str | None = None,
+):
+    from learning.word_bank.navigation import topic_label
+
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or 'a1'
+    data = await db.browse_bank_entries(
+        profile['id'], user_level, level=level, topic=topic, page=page,
+    )
+    if level:
+        title = f'📖 Банк · {level.upper()}'
+    elif topic:
+        title = f'📖 Банк · {topic_label(topic)}'
+    else:
+        title = '📖 Банк слов'
+    text = await db.format_word_list_page(
+        title=title,
+        items=data['items'],
+        page=data['page'],
+        pages=data['pages'],
+        total=data['total'],
+    )
+    context.user_data['bank_page_cb'] = f'{prefix}:{page}'
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.word_list_page_kb(
+            prefix, page=data['page'], pages=data['pages'], back_data='words:bank',
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_bank_entry(update, context, bank_entry_id: int):
+    entry_dict = await db.get_bank_entry_dict(bank_entry_id)
+    if not entry_dict:
+        if update.callback_query:
+            await _ack_callback(update.callback_query, 'Слово не найдено', show_alert=True)
+        return
+    lines = [
+        f'👀 <b>{_esc(entry_dict["english"])}</b> · '
+        f'{entry_dict["cefr_level"].upper()}',
+        f'🇷🇺 {_esc(entry_dict["translation"])}',
+    ]
+    if entry_dict.get('example'):
+        lines.append(f'📝 {_esc(entry_dict["example"])}')
+    context.user_data['tts_text'] = entry_dict['english']
+    page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+    await _send(
+        context, _chat_id(update), '\n'.join(lines),
+        reply_markup=keyboards.word_bank_entry_kb(
+            bank_entry_id, page_cb=page_cb,
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    context.user_data['expect'] = 'word_search'
+    await _send(
+        context, _chat_id(update),
+        '🔍 <b>Поиск в банке</b>\n\n'
+        'Напиши слово на английском или по-русски (от 2 букв).',
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('↩️ К словам', callback_data='words:hub'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_word_search(update, context, query: str):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or 'a1'
+    results = await db.search_bank_entries(profile['id'], user_level, query)
+    context.user_data['expect'] = None
+    if not results:
+        await _send(
+            context, _chat_id(update),
+            'Ничего не нашёл. Попробуй другое написание.',
             reply_markup=keyboards.word_hub_kb(),
         )
         return
-    lines = ['🗂 <b>Мой словарь</b> (последние):\n']
-    speak_chunks = []
-    for w in words:
-        icon = _WORD_STATUS_ICON.get(w.get('status'), '•')
-        line = f'{icon} {w["english"]} — {w["translation"]}'
-        if w.get('example'):
-            line += f'\n   {w["example"]}'
-        lines.append(line)
-        speak_chunks.append(
-            w['english'] if not w.get('example') else f'{w["english"]}. {w["example"]}'
+    lines = ['🔍 <b>Результаты</b>', '']
+    for item in results[:6]:
+        lines.append(
+            f'[{item["cefr_level"].upper()}] <b>{item["english"]}</b> — {item["translation"]}',
         )
-    context.user_data['dict_speak'] = '. '.join(speak_chunks)
     await _send(
         context, _chat_id(update), '\n'.join(lines),
-        reply_markup=keyboards.dict_listen_kb(has_words=True),
+        reply_markup=keyboards.word_search_result_kb(results),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3073,7 +3253,7 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not batch:
         await _send(
             context, _chat_id(update),
-            'Все слова на твоём уровне уже размечены 👍 Можно повторить или учить новые.',
+            'Все слова на твоих уровнях уже проверены 👍',
             reply_markup=keyboards.word_hub_kb(),
         )
         return
@@ -3082,8 +3262,8 @@ async def start_word_survey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['word_survey_queue'] = batch
     await _send(
         context, _chat_id(update),
-        f'✅ <b>Разметка слов</b> — {len(batch)} шт.\n'
-        'Отмечай, что уже знаешь, что хочешь учить, или пропускай.',
+        f'👀 <b>Что уже знаешь?</b> — {len(batch)} слов\n'
+        '✅ Знаю · 📗 Учу · ⏭️ Позже',
         parse_mode=ParseMode.HTML,
     )
     await _show_word_survey_card(update, context)
@@ -3095,7 +3275,7 @@ async def _show_word_survey_card(update, context):
     if not queue:
         context.user_data['mode'] = None
         context.user_data.pop('word_survey_total', None)
-        await _send(context, chat_id, 'Разметка завершена 🎉')
+        await _send(context, chat_id, 'Готово 👍')
         await _show_word_hub(update, context)
         return
     word = queue[0]
@@ -3103,8 +3283,7 @@ async def _show_word_survey_card(update, context):
     context.user_data['word_survey_total'] = total
     pos = total - len(queue) + 1
     lines = [
-        f'📇 Слово {pos}/{total} · '
-        f'{word["cefr_level"].upper()}',
+        f'👀 {pos}/{total} · {word["cefr_level"].upper()}',
         '',
         f'🇬🇧 <b>{_esc(word["english"])}</b>',
         f'🇷🇺 {_esc(word["translation"])}',
@@ -4067,6 +4246,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_words(update, context)
     elif data == 'words:hub':
         context.user_data['mode'] = None
+        context.user_data['expect'] = None
         await _show_word_hub(update, context)
     elif data == 'words:mydict':
         await _show_my_dictionary(update, context)
@@ -4094,11 +4274,104 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status='learning',
         )
     elif data.startswith('words:survey:skip:'):
-        await _ack_callback(query, 'Пропуск ⏭️')
+        await _ack_callback(query, 'Позже ⏭️')
         await _handle_word_survey_action(
             update, context,
             bank_entry_id=int(data.rsplit(':', 1)[1]),
             status='skipped',
+        )
+    elif data == 'words:bank':
+        await _show_word_bank_hub(update, context)
+    elif data == 'words:bank:topics':
+        await _show_bank_topics(update, context)
+    elif data == 'words:search':
+        await _prompt_word_search(update, context)
+    elif data.startswith('words:bank:open:'):
+        await _show_bank_entry(update, context, int(data.rsplit(':', 1)[1]))
+    elif data.startswith('words:bank:known:'):
+        bid = int(data.rsplit(':', 1)[1])
+        await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'known')
+        await _ack_callback(query, 'Знаю ✅')
+        await _show_bank_entry(update, context, bid)
+    elif data.startswith('words:bank:learn:'):
+        bid = int(data.rsplit(':', 1)[1])
+        await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'learning')
+        await _ack_callback(query, 'В учёбу 📗')
+        await _show_bank_entry(update, context, bid)
+    elif data.startswith('words:bank:skip:'):
+        bid = int(data.rsplit(':', 1)[1])
+        await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'skipped')
+        await _ack_callback(query, 'Позже ⏭️')
+        page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+        parts = page_cb.rsplit(':', 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            prefix, page = parts[0], int(parts[1])
+            if ':level:' in prefix:
+                level = prefix.rsplit(':', 1)[1]
+                await _show_bank_page(
+                    update, context, prefix=prefix, page=page, level=level,
+                )
+            elif ':topic:' in prefix:
+                topic = prefix.split(':')[-1]
+                await _show_bank_page(
+                    update, context, prefix=prefix, page=page, topic=topic,
+                )
+        else:
+            await _show_word_bank_hub(update, context)
+    elif data.startswith('words:bank:level:'):
+        _, _, _, level, page_s = data.split(':')
+        prefix = f'words:bank:level:{level}'
+        await _show_bank_page(
+            update, context, prefix=prefix, page=int(page_s), level=level,
+        )
+    elif data.startswith('words:bank:topic:'):
+        parts = data.split(':')
+        topic, page_s = parts[-2], parts[-1]
+        prefix = f'words:bank:topic:{topic}'
+        await _show_bank_page(
+            update, context, prefix=prefix, page=int(page_s), topic=topic,
+        )
+    elif data == 'words:dict:topics':
+        await _show_personal_topics(update, context)
+    elif data.startswith('words:dict:learning:'):
+        page = int(data.rsplit(':', 1)[1])
+        await _show_personal_word_page(
+            update, context,
+            prefix='words:dict:learning', title='📗 Учу',
+            page=page, status='learning',
+        )
+    elif data.startswith('words:dict:known:'):
+        page = int(data.rsplit(':', 1)[1])
+        await _show_personal_word_page(
+            update, context,
+            prefix='words:dict:known', title='✅ Знаю',
+            page=page, status='known',
+        )
+    elif data.startswith('words:dict:mastered:'):
+        page = int(data.rsplit(':', 1)[1])
+        await _show_personal_word_page(
+            update, context,
+            prefix='words:dict:mastered', title='🌟 Освоил',
+            page=page, status='mastered',
+        )
+    elif data.startswith('words:dict:level:'):
+        parts = data.split(':')
+        level, page_s = parts[-2], parts[-1]
+        prefix = f'words:dict:level:{level}'
+        await _show_personal_word_page(
+            update, context,
+            prefix=prefix, title=f'🗂 {level.upper()}',
+            page=int(page_s), level=level,
+        )
+    elif data.startswith('words:dict:topic:'):
+        parts = data.split(':')
+        topic, page_s = parts[-2], parts[-1]
+        from learning.word_bank.navigation import topic_label
+        prefix = f'words:dict:topic:{topic}'
+        await _show_personal_word_page(
+            update, context,
+            prefix=prefix, title=topic_label(topic),
+            page=int(page_s), topic=topic,
         )
     elif data == 'train:rules':
         context.user_data['mode'] = None
@@ -4657,6 +4930,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data['expect'] = None
         await _finish_sphere_selection(update, context)
+        return
+
+    if context.user_data.get('expect') == 'word_search':
+        await _handle_word_search(update, context, text)
         return
 
     _restore_tutor_mode_if_active(context)

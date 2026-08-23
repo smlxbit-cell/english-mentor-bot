@@ -1274,6 +1274,85 @@ def get_level_word_stats(profile_id: int, level: str) -> dict:
     return get_level_stats(profile_id, level)
 
 
+@sync_to_async
+def get_personal_dict_summary(profile_id: int) -> dict:
+    from learning.word_bank.service import get_personal_dict_summary as _fn
+
+    return _fn(profile_id)
+
+
+@sync_to_async
+def format_personal_dict_hub(summary: dict) -> str:
+    from learning.word_bank.service import format_personal_dict_hub as _fn
+
+    return _fn(summary)
+
+
+@sync_to_async
+def list_personal_words(
+    profile_id: int,
+    *,
+    status: str | None = None,
+    level: str | None = None,
+    topic: str | None = None,
+    page: int = 0,
+) -> dict:
+    from learning.word_bank.service import list_personal_words as _fn
+
+    return _fn(profile_id, status=status, level=level, topic=topic, page=page)
+
+
+@sync_to_async
+def list_personal_topic_counts(profile_id: int) -> list[tuple[str, int]]:
+    from learning.word_bank.service import list_personal_topic_counts as _fn
+
+    return _fn(profile_id)
+
+
+@sync_to_async
+def list_bank_topic_counts(profile_id: int, user_level: str) -> list[tuple[str, int]]:
+    from learning.word_bank.service import list_bank_topic_counts as _fn
+
+    return _fn(profile_id, user_level)
+
+
+@sync_to_async
+def browse_bank_entries(
+    profile_id: int,
+    user_level: str,
+    *,
+    level: str | None = None,
+    topic: str | None = None,
+    page: int = 0,
+) -> dict:
+    from learning.word_bank.service import browse_bank_entries as _fn
+
+    return _fn(profile_id, user_level, level=level, topic=topic, page=page)
+
+
+@sync_to_async
+def search_bank_entries(profile_id: int, user_level: str, query: str) -> list[dict]:
+    from learning.word_bank.service import search_bank_entries as _fn
+
+    return _fn(profile_id, user_level, query)
+
+
+@sync_to_async
+def format_word_list_page(**kwargs) -> str:
+    from learning.word_bank.service import format_word_list_page as _fn
+
+    return _fn(**kwargs)
+
+
+@sync_to_async
+def get_bank_entry_dict(bank_entry_id: int) -> dict | None:
+    from learning.models import WordBankEntry
+    from learning.word_bank.service import entry_to_dict
+
+    entry = WordBankEntry.objects.filter(id=bank_entry_id, is_active=True).first()
+    return entry_to_dict(entry) if entry else None
+
+
 # --------------------------------------------------------------------------- #
 # Mentor character media (GIF / photo / video note)
 # --------------------------------------------------------------------------- #

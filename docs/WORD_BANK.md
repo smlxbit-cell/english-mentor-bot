@@ -43,11 +43,11 @@ Sources (later overrides earlier for same slug):
 **🎯 Тренировка → Слова** opens the hub (not empty-state only).
 
 Buttons:
-- **▶️ Учить 10 новых** — daily batch from unseen bank words
-- **🔄 Повторить** — SRS due queue
-- **✅ Разметить знания** — know/learn/skip survey
-- **A1…C1** — level detail + scale
-- **🗂 Мой словарь** — personal list from lessons + marked words
+- **▶️ 10 новых** | **🔄 Повтор** — daily batch + SRS
+- **👀 Что знаешь?** — quick check: know / learn / later (not «разметка»)
+- **🗂 Мой словарь** — groups + 6 words per page (no long canvas)
+- **📖 Банк слов** — browse by level/topic, 6 per page
+- **🔍 Поиск** — find in bank by EN or RU
 
 ## Phase 3 (later)
 
