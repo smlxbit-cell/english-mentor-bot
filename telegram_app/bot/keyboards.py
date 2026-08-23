@@ -217,12 +217,12 @@ def dict_listen_kb(has_words: bool = True) -> InlineKeyboardMarkup:
 
 
 def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardMarkup:
-    """Hub: три раздела в одну строку."""
+    """Hub: три раздела в одну строку (короткие подписи для телефона)."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('🎯 Тренировка', callback_data='words:repeat'),
-            InlineKeyboardButton('📘 Новые слова', callback_data='words:new'),
-            InlineKeyboardButton('📗 Мои слова', callback_data='words:mydict'),
+            InlineKeyboardButton('🎯 Практика', callback_data='words:repeat'),
+            InlineKeyboardButton('📘 Новые', callback_data='words:new'),
+            InlineKeyboardButton('📗 Мои', callback_data='words:mydict'),
         ],
     ])
 
