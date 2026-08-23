@@ -68,6 +68,41 @@ def format_word_stats_line(summary: dict[str, Any]) -> str:
     )
 
 
+def _learning_bank_english(user_id: int) -> list[str]:
+    """Headwords explicitly marked «учить» in the bank."""
+    return [
+        en for en in UserWordBankStatus.objects.filter(
+            user_id=user_id,
+            status=UserWordBankStatus.Status.LEARNING,
+        ).values_list('bank_entry__english', flat=True)
+        if en
+    ]
+
+
+def _known_bank_english(user_id: int) -> list[str]:
+    return [
+        en for en in UserWordBankStatus.objects.filter(
+            user_id=user_id,
+            status=UserWordBankStatus.Status.KNOWN,
+        ).values_list('bank_entry__english', flat=True)
+        if en
+    ]
+
+
+def count_learning_due(user_id: int) -> int:
+    """Due SRS rows among bank-marked «учить» words only."""
+    learning = _learning_bank_english(user_id)
+    if not learning:
+        return 0
+    now = timezone.now()
+    return (
+        UserWordProgress.objects.filter(user_id=user_id, word__english__in=learning)
+        .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
+        .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
+        .count()
+    )
+
+
 def sync_word_from_bank(user_id: int, entry: WordBankEntry, *, status: str) -> Word:
     word, _ = Word.objects.get_or_create(
         english=entry.english,
@@ -166,15 +201,7 @@ def get_word_bank_overview(user_id: int, user_level: str) -> dict[str, Any]:
     stats_by_level = {s['level']: s for s in level_stats}
     path_levels = _levels_up_to(user_level)
     unseen_total = sum(stats_by_level[l]['unseen'] for l in path_levels if l in stats_by_level)
-    due_count = UserWordProgress.objects.filter(
-        user_id=user_id,
-        status__in=(
-            UserWordProgress.Status.NEW,
-            UserWordProgress.Status.LEARNING,
-        ),
-    ).filter(
-        Q(next_review_at__lte=timezone.now()) | Q(next_review_at__isnull=True),
-    ).count()
+    due_count = count_learning_due(user_id)
     user_lvl = (user_level or 'a1').lower()
     current_level = stats_by_level.get(user_lvl) or (level_stats[-1] if level_stats else None)
     return {
@@ -290,7 +317,7 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     n = overview['daily_new']
     lvl = overview['user_level'].upper()
     return (
-        f'📘 <b>Новые слова · {lvl}</b>\n\n'
+        f'📘 <b>Словарь · {lvl}</b>\n\n'
         f'«Начать · {n}» — {n} слов вашего уровня\n'
         '«Из словаря» — добавить вручную'
     )
@@ -329,11 +356,13 @@ def format_word_repeat_section_text(
     summary: dict[str, Any],
 ) -> str:
     due = summary.get('due', overview.get('due_count', 0))
-    if summary['total'] == 0:
+    if summary['learning'] == 0:
+        n = overview.get('daily_new', DAILY_NEW_WORDS)
         return (
             '🎯 <b>Тренировка</b>\n\n'
-            'Пока пусто. Добавьте слова через 📘 <b>Новые слова</b> '
-            '(урок · 10 или выбор в словаре) и отметьте «Учить».'
+            'Пока пусто — слова попадают сюда только после «🎯 Учить».\n\n'
+            f'📘 <b>Словарь</b> → «Начать · {n}» (ваш уровень) '
+            'или выберите слова вручную.'
         )
     stats = format_word_stats_line(summary)
     if due:
@@ -390,22 +419,24 @@ def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:
 
 
 def get_personal_dict_summary(user_id: int) -> dict[str, Any]:
-    qs = UserWordProgress.objects.filter(user_id=user_id)
-    by_status: dict[str, int] = {}
-    for row in qs.values('status').annotate(c=Count('id')):
-        by_status[row['status']] = row['c']
-    now = timezone.now()
-    due = qs.filter(
-        status__in=(UserWordProgress.Status.NEW, UserWordProgress.Status.LEARNING),
-    ).filter(
-        Q(next_review_at__lte=now) | Q(next_review_at__isnull=True),
-    ).exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True).count()
+    """Counts from explicit bank marks — not lesson vocabulary imports."""
+    bank = UserWordBankStatus.objects.filter(user_id=user_id)
+    learning = bank.filter(status=UserWordBankStatus.Status.LEARNING).count()
+    known = bank.filter(status=UserWordBankStatus.Status.KNOWN).count()
+    learning_en = _learning_bank_english(user_id)
+    mastered = 0
+    if learning_en:
+        mastered = UserWordProgress.objects.filter(
+            user_id=user_id,
+            word__english__in=learning_en,
+            status=UserWordProgress.Status.MASTERED,
+        ).count()
+    due = count_learning_due(user_id)
     return {
-        'total': qs.count(),
-        'learning': by_status.get(UserWordProgress.Status.LEARNING, 0)
-        + by_status.get(UserWordProgress.Status.NEW, 0),
-        'known': by_status.get(UserWordProgress.Status.KNOWN, 0),
-        'mastered': by_status.get(UserWordProgress.Status.MASTERED, 0),
+        'total': learning + known,
+        'learning': learning,
+        'known': known,
+        'mastered': mastered,
         'due': due,
     }
 
@@ -419,17 +450,23 @@ def list_personal_words(
     page: int = 0,
     page_size: int = PAGE_SIZE,
 ) -> dict[str, Any]:
+    learning_en = _learning_bank_english(user_id)
+    known_en = _known_bank_english(user_id)
     qs = UserWordProgress.objects.filter(user_id=user_id).select_related('word')
     if status == 'learning':
-        qs = qs.filter(status__in=(
-            UserWordProgress.Status.NEW,
-            UserWordProgress.Status.LEARNING,
-        ))
+        if not learning_en:
+            qs = qs.none()
+        else:
+            qs = qs.filter(word__english__in=learning_en)
     elif status == 'known':
-        qs = qs.filter(status__in=(
-            UserWordProgress.Status.KNOWN,
-            UserWordProgress.Status.MASTERED,
-        ))
+        english_set = known_en
+        if english_set:
+            qs = qs.filter(
+                Q(word__english__in=english_set)
+                | Q(status=UserWordProgress.Status.MASTERED),
+            )
+        else:
+            qs = qs.filter(status=UserWordProgress.Status.MASTERED)
     elif status:
         qs = qs.filter(status=status)
 
@@ -553,8 +590,8 @@ def format_personal_dict_hub(summary: dict[str, Any]) -> str:
     if summary['total'] == 0:
         return (
             '📗 <b>Мои слова</b>\n\n'
-            'Пока пусто. Добавьте через 📘 <b>Новые слова</b> '
-            'или «Из словаря» — отметьте «Учить».'
+            'Пока пусто. 📘 <b>Словарь</b> → «Начать · 10» '
+            'или выбор вручную — отметьте «🎯 Учить».'
         )
     return (
         '📗 <b>Мои слова</b>\n\n'

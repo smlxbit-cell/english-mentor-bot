@@ -1134,20 +1134,18 @@ SRS_INTERVALS_DAYS = [1, 3, 7, 14, 30, 60]
 
 @sync_to_async
 def save_lesson_words(profile_id: int, words: list[dict]) -> int:
-    """Add a lesson's vocabulary to the learner's personal dictionary (SRS)."""
+    """Ensure lesson vocabulary exists in Word catalog — not auto-added to training."""
     from learning.models import Word
-    from progress_app.models import UserWordProgress
 
     added = 0
     for w in words:
         en = (w.get('en') or '').strip()
         if not en:
             continue
-        word, _ = Word.objects.get_or_create(
+        word, created = Word.objects.get_or_create(
             english=en,
             defaults={'translation': w.get('ru', ''), 'example': w.get('example', '')},
         )
-        # Backfill translation/example if the word was created empty elsewhere.
         changed = False
         if not word.translation and w.get('ru'):
             word.translation = w['ru']
@@ -1157,11 +1155,6 @@ def save_lesson_words(profile_id: int, words: list[dict]) -> int:
             changed = True
         if changed:
             word.save(update_fields=['translation', 'example', 'updated_at'])
-
-        _, created = UserWordProgress.objects.get_or_create(
-            user_id=profile_id, word=word,
-            defaults={'next_review_at': timezone.now()},
-        )
         if created:
             added += 1
     return added
@@ -1190,20 +1183,27 @@ def get_dictionary_words(profile_id: int, limit: int = 12) -> list[dict]:
 @sync_to_async
 def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
     from learning.models import WordBankEntry
-    from learning.word_bank.service import DAILY_NEW_WORDS
+    from learning.word_bank.service import DAILY_NEW_WORDS, _learning_bank_english
     from progress_app.models import UserWordProgress
 
     if limit is None:
         limit = DAILY_NEW_WORDS
+    learning_en = _learning_bank_english(profile_id)
+    if not learning_en:
+        return []
     now = timezone.now()
     qs = (
-        UserWordProgress.objects.filter(user_id=profile_id)
+        UserWordProgress.objects.filter(
+            user_id=profile_id,
+            word__english__in=learning_en,
+        )
         .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
         .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
         .select_related('word')
         .order_by('next_review_at')[:limit]
     )
     out: list[dict] = []
+    seen: set[str] = set()
     for uwp in qs:
         entry = WordBankEntry.objects.filter(
             english__iexact=uwp.word.english,
@@ -1217,6 +1217,29 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
             'example': uwp.word.example or (entry.example if entry else ''),
             'cefr_level': entry.cefr_level if entry else '',
         })
+        seen.add(uwp.word.english.lower())
+    # Bank-marked «учить» without SRS row yet — treat as due now.
+    if len(out) < limit:
+        for en in learning_en:
+            if en.lower() in seen:
+                continue
+            entry = WordBankEntry.objects.filter(
+                english__iexact=en,
+                is_active=True,
+            ).first()
+            if not entry:
+                continue
+            out.append({
+                'word_id': None,
+                'bank_entry_id': entry.id,
+                'english': entry.english,
+                'translation': entry.translation,
+                'example': entry.example,
+                'cefr_level': entry.cefr_level,
+            })
+            seen.add(en.lower())
+            if len(out) >= limit:
+                break
     return out
 
 

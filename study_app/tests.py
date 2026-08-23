@@ -121,15 +121,26 @@ class VocabSRSTests(TestCase):
         UserStats.objects.create(user=self.profile)
 
     def test_save_words_and_review_schedule(self):
-        words = [
+        from learning.models import WordBankEntry
+        from learning.word_bank.service import mark_bank_entry
+
+        entry = WordBankEntry.objects.create(
+            english='coffee',
+            translation='кофе',
+            example='I love coffee.',
+            cefr_level='a1',
+            is_active=True,
+        )
+        sync(db.save_lesson_words)(self.profile.id, [
             {'en': 'coffee', 'ru': 'кофе', 'example': 'I love coffee.'},
             {'en': 'tea', 'ru': 'чай', 'example': 'A cup of tea.'},
-        ]
-        added = sync(db.save_lesson_words)(self.profile.id, words)
-        self.assertEqual(added, 2)
-
+        ])
         due = sync(db.get_due_words)(self.profile.id)
-        self.assertEqual(len(due), 2)
+        self.assertEqual(len(due), 0)
+
+        mark_bank_entry(self.profile.id, entry.id, 'learning')
+        due = sync(db.get_due_words)(self.profile.id)
+        self.assertEqual(len(due), 1)
 
         word_id = due[0]['word_id']
         sync(db.record_word_review)(self.profile.id, word_id, True)

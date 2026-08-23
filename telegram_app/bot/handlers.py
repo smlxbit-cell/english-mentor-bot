@@ -2868,14 +2868,8 @@ async def _finish_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = _chat_id(update)
     lesson_id = state.get('lesson_id')
 
-    # Harvest vocabulary into the learner's personal dictionary (SRS) before reset.
-    vocab_words = []
-    for step in state.get('steps', []):
-        if step.get('step_type') == 'vocabulary':
-            vocab_words.extend((step.get('content') or {}).get('words', []))
-    if vocab_words:
-        await db.save_lesson_words(context.user_data['profile_id'], vocab_words)
-
+    # Vocabulary steps stay in the lesson only — training queue needs explicit «Учить».
+    # (Word rows may still be ensured elsewhere when the learner marks words in the bank.)
     summary = await db.complete_lesson(context.user_data['profile_id'], lesson_id)
     plan_block_id = context.user_data.pop('plan_episode_block_id', None)
     if plan_block_id:

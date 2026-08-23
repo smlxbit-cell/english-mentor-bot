@@ -221,7 +221,7 @@ def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardM
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton('🎯 Практика', callback_data='words:repeat'),
-            InlineKeyboardButton('📘 Новые', callback_data='words:new'),
+            InlineKeyboardButton('📘 Словарь', callback_data='words:new'),
             InlineKeyboardButton('📗 Мои слова', callback_data='words:mydict'),
         ],
     ])
@@ -247,7 +247,7 @@ def word_new_pick_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('📁 Темы', callback_data='words:bank:topics'),
             InlineKeyboardButton('📊 Уровни', callback_data='words:bank'),
         ],
-        [InlineKeyboardButton('← Новые слова', callback_data='words:new')],
+        [InlineKeyboardButton('← Словарь', callback_data='words:new')],
     ])
 
 
