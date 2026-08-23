@@ -84,6 +84,39 @@ class WordBankServiceTests(TestCase):
         self.assertGreaterEqual(stat['known'], 1)
 
 
+class TopicNavigationTests(TestCase):
+    def test_canonical_aliases(self):
+        from learning.word_bank.navigation import canonical_topic, normalize_topics, topic_label
+
+        self.assertEqual(canonical_topic('food and drink'), 'food')
+        self.assertEqual(canonical_topic('work and career'), 'work')
+        self.assertEqual(normalize_topics(['remote']), ['general'])
+        self.assertEqual(normalize_topics(['travel', 'food and drink']), ['travel', 'food'])
+        self.assertIn('Еда', topic_label('food'))
+
+    def test_parse_paged_callback(self):
+        from learning.word_bank.navigation import parse_paged_callback
+
+        self.assertEqual(parse_paged_callback('words:bank:topic:food:2', 'words:bank:topic:'), ('food', 2))
+        self.assertEqual(parse_paged_callback('words:dict:level:a1:0', 'words:dict:level:'), ('a1', 0))
+        self.assertIsNone(parse_paged_callback('words:bank:topic:food', 'words:bank:topic:'))
+
+
+class TopicClassifierTests(TestCase):
+    def test_classify_known_words(self):
+        from learning.word_bank.topic_classifier import classify_word, resolve_topics
+
+        self.assertIn('food', classify_word('coffee', 'кофе'))
+        self.assertIn('travel', classify_word('airport', 'аэропорт'))
+        self.assertEqual(resolve_topics(['food and drink'], english='tea', translation='чай'), ['food'])
+
+    def test_remote_resolves_to_topic_not_general_only(self):
+        from learning.word_bank.topic_classifier import resolve_topics
+
+        topics = resolve_topics(['remote'], english='coffee', translation='кофе')
+        self.assertNotEqual(topics, ['general'])
+
+
 class SeedWordBankCommandTests(TestCase):
     def test_seed_creates_entries(self):
         from django.core.management import call_command

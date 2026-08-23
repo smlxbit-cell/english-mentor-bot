@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from billing_app.models import SubscriptionPlan
-from billing_app.plans_catalog import PLANS
+from billing_app.plans_catalog import PLANS, RETIRED_PLAN_CODES
 
 
 class Command(BaseCommand):
@@ -28,4 +28,10 @@ class Command(BaseCommand):
             )
             verb = 'Created' if created else 'Updated'
             self.stdout.write(f'{verb}: {plan.code} — {plan.price_rub} ₽')
+
+        retired = SubscriptionPlan.objects.filter(code__in=RETIRED_PLAN_CODES)
+        n = retired.update(is_active=False)
+        if n:
+            self.stdout.write(f'Retired: {", ".join(RETIRED_PLAN_CODES)} ({n} row(s))')
+
         self.stdout.write(self.style.SUCCESS('Done.'))

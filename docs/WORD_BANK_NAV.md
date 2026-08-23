@@ -21,11 +21,13 @@
 
 | Button | Action |
 |--------|--------|
-| Учить · 10 | Daily intro + quiz (`words:learn:daily`) |
-| Выбрать слова | Screen 2b |
+| Начать · 10 | Урок: 1 слово → 🔊 → «Дальше» ×10 → тренировка |
+| В словарь | Screen 2b (добавить слова без урока) |
 | ← Слова | Hub |
 
-## Screen 2b — Выбрать слова
+**Важно:** слова попадают в «учу» только после прохождения урока и нажатия «Тренировка». «Знаю ✅» в уроке — сразу в статистику.
+
+## Screen 2b — В словарь
 
 | Button | Action |
 |--------|--------|
@@ -33,6 +35,8 @@
 | 📖 Словарь | Browse corpus by level/topic |
 | 🔍 Поиск | Text search |
 | ← Учить новое | Screen 2 |
+
+Не урок — только отметить слова в свой список (знаю / учу / позже).
 
 ## Screen 2c — Что знаешь? (levels)
 
@@ -43,8 +47,24 @@ Tip: start with ★ user level. Pick A1–C1 → 10 cards (Знаю / Учу / �
 | Button | Action |
 |--------|--------|
 | 🔄 Повтор · N | SRS session (if due) |
-| 📗 Мой словарь | Учу / Знаю / Выучил / темы |
+| 📗 Мой словарь | Personal word lists |
 | ← Слова | Back to hub |
+
+**Text:** «В учёбе · к повторению» — counts only here, not in Мой словарь.
+
+## Screen 3b — Мой словарь
+
+| Button | Action |
+|--------|--------|
+| 📗 Учу / ✅ Знаю / 🌟 Выучил | Filter personal lists |
+| 📁 Темы / 📊 Уровни | Browse by topic or CEFR |
+| ← Повтор | Back to Screen 3 |
+
+No 🔄 Повтор button here (repeat lives on Screen 3 only).
+
+## Topics in corpus
+
+Remote Kelly words are auto-tagged by topic (not dumped into «Общие»). Run `classify_word_topics` after seed to refresh existing DB rows.
 
 ## Integration roadmap
 

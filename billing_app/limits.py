@@ -164,7 +164,7 @@ def can_use_voice_seconds(profile: UserProfile, duration_sec: int) -> tuple[bool
         return False, (
             'Голосовые минуты на этот месяц закончились 🎙️\n'
             f'В твоём тарифе: {mins} мин/мес.\n'
-            'Можно докупить +100 мин (290 ₽) — кнопка «⭐️ Подписка».'
+            'Можно: ↑ Pro (+641 ₽) или +100 мин (350 ₽) — «⭐️ Подписка».'
         )
     return True, ''
 

@@ -1290,19 +1290,25 @@ def mark_word_bank_entry(profile_id: int, bank_entry_id: int, status: str) -> bo
 
 
 @sync_to_async
-def start_daily_word_learning(profile_id: int, user_level: str, limit: int = 10) -> list[dict]:
+def prepare_daily_word_intro(profile_id: int, user_level: str, limit: int = 10) -> dict:
+    from learning.word_bank.service import entry_to_dict, pick_daily_intro_entries
+
+    entries = pick_daily_intro_entries(profile_id, user_level, limit=limit)
+    return {'intro': [entry_to_dict(e) for e in entries]}
+
+
+@sync_to_async
+def start_daily_word_quiz(profile_id: int, intro_words: list[dict]) -> list[dict]:
+    from learning.models import WordBankEntry
     from learning.word_bank.service import (
-        entry_to_dict,
+        commit_daily_learning_entries,
         get_review_words_for_entries,
-        pick_daily_learning_entries,
     )
 
-    entries = pick_daily_learning_entries(profile_id, user_level, limit=limit)
-    review = get_review_words_for_entries(profile_id, entries)
-    return {
-        'intro': [entry_to_dict(e) for e in entries],
-        'review': review,
-    }
+    ids = [w['bank_entry_id'] for w in intro_words]
+    entries = list(WordBankEntry.objects.filter(id__in=ids))
+    commit_daily_learning_entries(profile_id, entries)
+    return get_review_words_for_entries(profile_id, entries)
 
 
 @sync_to_async
@@ -1921,7 +1927,7 @@ def get_or_create_plan() -> dict:
         code='basic',
         defaults={
             'name': 'Basic',
-            'price_rub': 590,
+            'price_rub': 349,
             'duration_days': settings.SUBSCRIPTION_DAYS,
             'is_active': True,
         },
@@ -1951,14 +1957,31 @@ def check_can_use_stt(profile_id: int) -> tuple[bool, str]:
 
 
 @sync_to_async
-def activate_mock_subscription(profile_id: int, plan_code: str = 'basic') -> dict:
-    from billing_app.limits import add_voice_bonus_minutes
+def get_active_plan_code(profile_id: int) -> str | None:
+    from billing_app.limits import get_active_plan
+
+    profile = UserProfile.objects.get(id=profile_id)
+    plan = get_active_plan(profile)
+    return plan.code if plan else None
+
+
+def _activate_subscription_purchase(
+    profile_id: int,
+    plan_code: str,
+    *,
+    upgrade: bool = False,
+    amount_rub: int | None = None,
+    payload: str = '',
+) -> dict:
+    from billing_app.limits import add_voice_bonus_minutes, get_active_plan, voice_remaining_minutes
+    from billing_app.plans_catalog import PLANS, can_upgrade, upgrade_price_rub
 
     profile = UserProfile.objects.get(id=profile_id)
     plan = SubscriptionPlan.objects.filter(code=plan_code, is_active=True).first()
     if not plan:
-        from billing_app.plans_catalog import PLANS
-        spec = next((p for p in PLANS if p['code'] == plan_code), PLANS[0])
+        spec = next((p for p in PLANS if p['code'] == plan_code), None)
+        if not spec:
+            return {'ok': False, 'reason': 'plan_not_found'}
         plan, _ = SubscriptionPlan.objects.update_or_create(
             code=spec['code'],
             defaults={
@@ -1977,22 +2000,54 @@ def activate_mock_subscription(profile_id: int, plan_code: str = 'basic') -> dic
             },
         )
 
-    Payment.objects.create(
-        user=profile,
-        plan=plan,
-        provider='mock',
-        status=Payment.Status.SUCCEEDED,
-        amount_rub=plan.price_rub,
-        currency='RUB',
-        payload=f'mock:{profile.id}:{plan.code}',
-        raw_data={'mode': 'mock', 'plan_code': plan.code},
-    )
+    if upgrade:
+        current = get_active_plan(profile)
+        if not current or not can_upgrade(current.code, plan_code):
+            return {'ok': False, 'reason': 'upgrade_not_allowed'}
+        charge = amount_rub if amount_rub is not None else upgrade_price_rub(current.code, plan_code)
+        Payment.objects.create(
+            user=profile,
+            plan=plan,
+            provider='mock' if not payload else 'telegram',
+            status=Payment.Status.SUCCEEDED,
+            amount_rub=charge or 0,
+            currency='RUB',
+            payload=payload or f'upgrade:{profile.id}:{plan_code}',
+            raw_data={
+                'upgrade': True,
+                'from_plan': current.code,
+                'to_plan': plan_code,
+            },
+        )
+        sub = Subscription.upgrade_active_plan(profile, plan)
+        if not sub:
+            return {'ok': False, 'reason': 'no_active_sub'}
+        return {
+            'ok': True,
+            'kind': 'upgrade',
+            'plan_code': plan.code,
+            'plan_name': plan.name,
+            'from_plan': current.code,
+            'amount_rub': charge,
+            'expires_at': sub.expires_at.strftime('%d.%m.%Y'),
+            'voice_remaining_minutes': voice_remaining_minutes(profile),
+        }
 
     if plan.plan_kind == SubscriptionPlan.PlanKind.VOICE_ADDON:
         if not _has_active_subscription(profile.id):
             return {'ok': False, 'reason': 'no_subscription'}
+        charge = amount_rub if amount_rub is not None else plan.price_rub
+        Payment.objects.create(
+            user=profile,
+            plan=plan,
+            provider='mock' if not payload else 'telegram',
+            status=Payment.Status.SUCCEEDED,
+            amount_rub=charge,
+            currency='RUB',
+            payload=payload or f'addon:{profile.id}:{plan.code}',
+            raw_data={'plan_code': plan.code},
+        )
         add_voice_bonus_minutes(profile, plan.voice_minutes_in_pack)
-        from billing_app.limits import voice_remaining_minutes
         return {
             'ok': True,
             'kind': 'voice_addon',
@@ -2000,6 +2055,17 @@ def activate_mock_subscription(profile_id: int, plan_code: str = 'basic') -> dic
             'voice_remaining_minutes': voice_remaining_minutes(profile),
         }
 
+    charge = amount_rub if amount_rub is not None else plan.price_rub
+    Payment.objects.create(
+        user=profile,
+        plan=plan,
+        provider='mock' if not payload else 'telegram',
+        status=Payment.Status.SUCCEEDED,
+        amount_rub=charge,
+        currency='RUB',
+        payload=payload or f'sub:{profile.id}:{plan.code}',
+        raw_data={'plan_code': plan.code},
+    )
     sub = Subscription.activate(profile, plan)
     return {
         'ok': True,
@@ -2008,3 +2074,38 @@ def activate_mock_subscription(profile_id: int, plan_code: str = 'basic') -> dic
         'plan_name': plan.name,
         'expires_at': sub.expires_at.strftime('%d.%m.%Y'),
     }
+
+
+@sync_to_async
+def activate_subscription_purchase(
+    profile_id: int,
+    plan_code: str,
+    *,
+    upgrade: bool = False,
+    amount_rub: int | None = None,
+    payload: str = '',
+) -> dict:
+    return _activate_subscription_purchase(
+        profile_id,
+        plan_code,
+        upgrade=upgrade,
+        amount_rub=amount_rub,
+        payload=payload,
+    )
+
+
+@sync_to_async
+def activate_mock_subscription(
+    profile_id: int,
+    plan_code: str = 'basic',
+    *,
+    upgrade: bool = False,
+    amount_rub: int | None = None,
+) -> dict:
+    return _activate_subscription_purchase(
+        profile_id,
+        plan_code,
+        upgrade=upgrade,
+        amount_rub=amount_rub,
+        payload=f'mock:{profile_id}:{plan_code}',
+    )

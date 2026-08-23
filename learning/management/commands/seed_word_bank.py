@@ -12,6 +12,7 @@ from learning.models import WordBankEntry
 from learning.word_bank.curriculum_words import iter_curriculum_rows
 from learning.word_bank.loader import load_directory
 from learning.word_bank.seed_words import iter_builtin_rows
+from learning.word_bank.topic_classifier import resolve_topics
 
 REMOTE_CACHE = 'remote.json'
 
@@ -103,6 +104,12 @@ class Command(BaseCommand):
 
         created = updated = 0
         for row in rows.values():
+            topics = resolve_topics(
+                row.get('topics'),
+                english=row['english'],
+                translation=row['translation'],
+                part_of_speech=row.get('part_of_speech', ''),
+            )
             _, was_created = WordBankEntry.objects.update_or_create(
                 slug=row['slug'],
                 defaults={
@@ -112,7 +119,7 @@ class Command(BaseCommand):
                     'example_ru': row.get('example_ru', ''),
                     'cefr_level': row['cefr_level'],
                     'part_of_speech': row.get('part_of_speech', ''),
-                    'topics': row.get('topics') or [],
+                    'topics': topics,
                     'is_active': True,
                 },
             )

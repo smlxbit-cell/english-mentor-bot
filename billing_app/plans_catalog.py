@@ -2,46 +2,68 @@
 
 from __future__ import annotations
 
+# --- v3 prices (2026-08-23) ---
+BASIC_PRICE_RUB = 349
+PRO_PRICE_RUB = 990
+VOICE_ADDON_PRICE_RUB = 350
+VOICE_ADDON_MINUTES = 100
+
+RETIRED_PLAN_CODES = frozenset({'active'})
+
+UPGRADE_PATHS: dict[tuple[str, str], int] = {
+    ('basic', 'pro'): PRO_PRICE_RUB - BASIC_PRICE_RUB,  # 641 ₽
+}
+
+
+def subscription_plans() -> tuple[dict, ...]:
+    """Active subscription tiers only (not voice add-on)."""
+    return tuple(p for p in PLANS if p.get('plan_kind') == 'subscription')
+
+
+def upgrade_price_rub(from_code: str, to_code: str) -> int | None:
+    return UPGRADE_PATHS.get((from_code.lower(), to_code.lower()))
+
+
+def can_upgrade(from_code: str, to_code: str) -> bool:
+    return upgrade_price_rub(from_code, to_code) is not None
+
+
 # Shared marketing copy for paywall / subscription screens.
 TARIFF_INCLUDES = (
-    '<b>В каждом тарифе — полная программа:</b>\n'
-    '• ежедневный план под твой уровень, <b>цели и интересы</b>\n'
-    '• история с Emma, уроки и диалоги\n'
-    '• словарь с повторением и тренировка слов\n'
-    '• карта правил, тренировка грамматики\n'
-    '• 💬 наставник на продвинутом AI — текст и голос (RU+EN)\n'
-    '  забыл слово — скажи по-русски; поправит ошибки, покажет правила\n\n'
-    '<i>Тарифы отличаются лимитом <b>минут голосового диалога</b> с наставником 🎙 '
-    '(говоришь боту — он отвечает голосом). '
-    'Кнопка 🔊 «Слушать» в уроках — на всех тарифах, без лимита.</i>'
+    '<b>В подписке:</b>\n'
+    '• ▶️ <b>План дня</b> — слова, правило, текст на слух, диалог\n'
+    '• 📖 <b>Все правила</b> + тренировки\n'
+    '• 📚 <b>Слова</b> — как на free, плюс 🎙 говорить в тренировке\n'
+    '• 💬 <b>Наставник</b> — текст и голос (RU+EN)\n\n'
+    '<i>Тарифы отличаются <b>минутами 🎙</b> (сколько говоришь боту в месяц). '
+    '🔊 «Слушать» — без лимита на всех тарифах.</i>'
 )
 
 TARIFF_INCLUDES_PLAIN = (
-    'В каждом тарифе: план дня под цели и интересы, история с Emma, '
-    'словарь, тренировка слов и правил, наставник AI (текст + голос). '
-    'Тарифы отличаются в основном минутами голоса.'
+    'Подписка: план дня, все правила, наставник текст+голос. '
+    'Basic и Pro отличаются минутами голоса.'
 )
 
 FREE_TIER_BLOCK = (
     '<b>🆓 Free — 0 ₽ навсегда</b>\n'
-    '• эпизоды 1–3 сериала, словарь, карта правил\n'
-    '• тесты и тренировки <b>текстом</b>\n'
-    '• 🔊 озвучка всего английского в уроках\n'
-    '• наставник — текст (лимит в месяц)\n'
-    '• <i>без голосового ввода 🎙️ (экономим ваши минуты STT)</i>\n\n'
-    '<b>+ 2 дня пробного периода</b> — всё открыто, включая голос.\n\n'
+    '• 📚 <b>Слова</b> — весь банк, тренировка, 🔊 слушать\n'
+    '• 📖 <b>3 правила</b> — попробовать грамматику\n'
+    '• 🧪 Диагностика уровня\n'
+    '• 💬 Наставник — <b>только текст</b> (20 сообщ./мес)\n'
+    '• 🚫 без 🎙 голосового ввода · без ▶️ плана дня\n\n'
+    '<b>+ 3 дня trial</b> — полный план дня, как Basic.\n\n'
 )
 
 FREE_TIER_PLAIN = (
-    'Free 0 ₽: эпизоды 1–3, словарь, правила, озвучка, наставник текстом. '
-    'Без голосового ввода. 2 дня полного trial.'
+    'Free: слова бесплатно, 3 правила, наставник текстом. '
+    'Trial 3 дня — полная программа.'
 )
 
 PLANS: tuple[dict, ...] = (
     {
         'code': 'basic',
         'name': 'Basic',
-        'price_rub': 590,
+        'price_rub': BASIC_PRICE_RUB,
         'duration_days': 30,
         'plan_kind': 'subscription',
         'voice_minutes_monthly': 60,
@@ -50,57 +72,43 @@ PLANS: tuple[dict, ...] = (
         'tutor_ai_monthly_limit': 500,
         'stt_model': 'whisper-large-v3-turbo',
         'description': (
-            'Вся программа + ~60 мин <b>голосового диалога</b> 🎙 с наставником в месяц. '
-            'Спокойный темп (~2 мин разговора в день).'
+            '▶️ План дня + все правила + наставник.\n'
+            '🎙 <b>60 мин/мес</b> — ~2 мин говоришь каждый день.'
         ),
         'sort_order': 1,
     },
     {
-        'code': 'active',
-        'name': 'Active',
-        'price_rub': 990,
+        'code': 'pro',
+        'name': 'Pro',
+        'price_rub': PRO_PRICE_RUB,
         'duration_days': 30,
         'plan_kind': 'subscription',
-        'voice_minutes_monthly': 180,
+        'voice_minutes_monthly': 240,
         'voice_minutes_in_pack': 0,
         'tutor_ai_daily_limit': 120,
-        'tutor_ai_monthly_limit': 900,
+        'tutor_ai_monthly_limit': 1200,
         'stt_model': 'whisper-large-v3-turbo',
         'description': (
-            'Вся программа + ~180 мин <b>голосового диалога</b> 🎙 (~6 мин/день). '
-            '4–5 разговоров с наставником в неделю.'
+            'Всё из Basic.\n'
+            '🎙 <b>240 мин/мес</b> — ~8 мин говоришь каждый день.'
         ),
         'sort_order': 2,
     },
     {
-        'code': 'pro',
-        'name': 'Pro',
-        'price_rub': 1990,
-        'duration_days': 30,
-        'plan_kind': 'subscription',
-        'voice_minutes_monthly': 450,
-        'voice_minutes_in_pack': 0,
-        'tutor_ai_daily_limit': 150,
-        'tutor_ai_monthly_limit': 1500,
-        'stt_model': 'whisper-large-v3-turbo',
-        'description': (
-            'Вся программа + ~450 мин <b>голосового диалога</b> 🎙. '
-            'Интенсивная практика вместо репетитора.'
-        ),
-        'sort_order': 3,
-    },
-    {
         'code': 'voice_100',
         'name': '+100 мин голоса',
-        'price_rub': 290,
+        'price_rub': VOICE_ADDON_PRICE_RUB,
         'duration_days': 0,
         'plan_kind': 'voice_addon',
         'voice_minutes_monthly': 0,
-        'voice_minutes_in_pack': 100,
+        'voice_minutes_in_pack': VOICE_ADDON_MINUTES,
         'tutor_ai_daily_limit': 0,
         'tutor_ai_monthly_limit': 0,
         'stt_model': '',
-        'description': 'Докупка 100 минут голосового диалога 🎙. Нужна активная подписка.',
+        'description': (
+            'Докупка <b>100 мин</b> 🎙 к текущему месяцу. '
+            'Нужна активная подписка Basic или Pro.'
+        ),
         'sort_order': 10,
     },
 )
@@ -108,27 +116,24 @@ PLANS: tuple[dict, ...] = (
 DEFAULT_SUBSCRIPTION_CODE = 'basic'
 
 PLAN_NAMES_RU = {
-    'basic': 'Базовый',
-    'active': 'Активный',
-    'pro': 'Про',
-    'voice_100': '+100 мин голоса',
+    'basic': 'Basic',
+    'pro': 'Pro',
+    'voice_100': '+100 мин 🎙',
+    'active': 'Active (архив)',
 }
 
-# Короткие подписи для кнопок (лимит Telegram ~64 символа).
 PLAN_BUTTON_LABELS = {
-    'free': '🆓 0₽ · 3 эпизода · 🔊 слушать · текст',
-    'basic': '💵 590₽ · всё + 60 мин 🎙 разговора',
-    'active': '💵 990₽ · всё + 180 мин 🎙 разговора',
-    'pro': '💵 1990₽ · всё + 450 мин 🎙 разговора',
-    'voice_100': '➕ 290₽ · +100 мин разговора 🎙',
+    'free': '🆓 Free · слова навсегда',
+    'basic': f'Basic {BASIC_PRICE_RUB}₽ · 60 мин 🎙',
+    'pro': f'Pro {PRO_PRICE_RUB}₽ · 240 мин 🎙',
+    'upgrade_pro': f'↑ Pro +{UPGRADE_PATHS[("basic", "pro")]}₽',
+    'voice_100': f'+{VOICE_ADDON_MINUTES} мин 🎙 · {VOICE_ADDON_PRICE_RUB}₽',
 }
 
 TARIFF_UTP_BLOCK = (
-    '<b>Что умеет бот</b>\n'
-    '📖 Программа под ваш уровень — история Emma, уроки, упражнения\n'
-    '🔊 <b>Слушайте любой английский</b> — кнопка 🔊 везде (и на бесплатном!)\n'
-    '💬 <b>Умный наставник AI</b> — диалог, перевод, разбор ошибок\n'
-    '🎙 На платных — <b>говорите голосом</b> (RU+EN), он отвечает голосом'
+    '<b>English Mentor</b> — тренажёр + AI-наставник\n'
+    '📚 <b>Слова бесплатно</b> · прогресс A1–C1 · 🔊 слушать\n'
+    '▶️ <b>Подписка</b> — план дня, все правила, 🎙 говорить с ботом'
 )
 
 
@@ -140,64 +145,103 @@ def plan_button_label(plan: dict) -> str:
     price = plan.get('price_rub', 0)
     mins = plan.get('voice_minutes_monthly', 0)
     if mins:
-        return f'💵 {price}₽ {ru} · {mins} мин 🎙'
-    return f'💵 {price}₽ {ru}'
+        return f'{ru} {price}₽ · {mins} мин 🎙'
+    return f'{ru} {price}₽'
 
 
 def format_subscription_compact(
     sub_plans: list[dict],
     *,
     access_tier: str = 'free',
+    current_plan_code: str = '',
 ) -> str:
-    """Тарифы блоками — понятно новому человеку."""
+    """Тарифы — понятно с первого взгляда."""
     tier_note = {
-        'free': 'Сейчас у вас: бесплатный доступ',
-        'trial': 'Сейчас: пробный период — всё открыто',
-        'paid': 'Сейчас: платная подписка активна',
+        'free': 'Сейчас: <b>Free</b> — слова и 3 правила',
+        'trial': 'Сейчас: <b>Trial</b> — полная программа (3 дня)',
+        'paid': 'Сейчас: платная подписка',
     }.get(access_tier, '')
+    upgrade_line = ''
+    if current_plan_code == 'basic':
+        diff = upgrade_price_rub('basic', 'pro')
+        upgrade_line = (
+            f'\n<i>У тебя Basic → Pro за <b>+{diff} ₽</b> '
+            f'(не {PRO_PRICE_RUB} ₽ заново)</i>\n'
+        )
     blocks = [
         '<b>💳 Тарифы</b>',
         f'<i>{tier_note}</i>' if tier_note else '',
-        '',
-        TARIFF_UTP_BLOCK,
-        '',
-        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
-        '🆓 <b>БЕСПЛАТНО</b> · 0 ₽',
-        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
-        '📺 Эпизоды 1–3 сериала',
-        '📖 Словарь и карта грамматики',
-        '🔊 <b>Озвучка всего английского</b> — нажми 🔊 где угодно',
-        '💬 Наставник AI — <b>текстом</b>, объясняет и переводит',
-        '🚫 Голосом боту говорить нельзя (нет 🎙)',
+        upgrade_line,
         '',
         '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
-        '💰 <b>ПЛАТНЫЕ ТАРИФЫ</b>',
-        '<i>Доступ на 30 дней · без автосписания</i>',
+        f'🆓 <b>FREE · 0 ₽</b>',
         '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
-        'В каждом платном — <b>всё из бесплатного, плюс:</b>',
-        '✅ <b>Все эпизоды</b> — вся история и программа',
-        '✅ Наставник AI — диалог, объяснения <b>с переводом</b>, правки',
-        '✅ <b>Голос 🎙</b> — говорите боту, он отвечает голосом',
-        '✅ Словарь, правила, тренировки — без ограничений по контенту',
+        '✅ Слова — весь банк, 🔊 слушать, повтор',
+        '✅ 3 правила · диагностика',
+        '✅ Наставник текст (20 сообщ./мес)',
+        '❌ План дня · 🎙 говорить',
         '',
-        'Тарифы отличаются <b>лимитом минут голосового диалога</b> 🎙 с наставником:',
+        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+        f'💵 <b>BASIC · {BASIC_PRICE_RUB} ₽ / 30 дней</b>',
+        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+        '✅ ▶️ <b>План дня</b> каждый день',
+        '✅ <b>Все правила</b> + тренировки',
+        '✅ Наставник текст + 🎙 голос',
+        f'🎙 <b>60 мин/мес</b> (~2 мин/день) · 500 сообщ.',
         '',
-        '💵 <b>590 ₽ · Базовый</b>',
-        '🎙 ~60 мин — ~2 мин/день или короткий диалог через день',
+        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+        f'💵 <b>PRO · {PRO_PRICE_RUB} ₽ / 30 дней</b>',
+        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+        '✅ Всё из Basic',
+        f'🎙 <b>240 мин/мес</b> (~8 мин/день) · 1200 сообщ.',
         '',
-        '💵 <b>990 ₽ · Активный</b>',
-        '🎙 ~180 мин — ~6 мин/день, хватит на 4–5 разговоров в неделю',
+        '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+        f'⬆️ <b>С Basic на Pro</b> — доплата <b>+{upgrade_price_rub("basic", "pro")} ₽</b>',
+        f'<i>(не нужно платить {PRO_PRICE_RUB} ₽ заново)</i>',
         '',
-        '💵 <b>1990 ₽ · Про</b>',
-        '🎙 ~450 мин — ~15 мин/день, много живой практики',
+        f'➕ <b>+{VOICE_ADDON_MINUTES} мин 🎙 · {VOICE_ADDON_PRICE_RUB} ₽</b>',
+        '<i>Если минут не хватает — докупка (нужен Basic или Pro). '
+        'Выгоднее Pro, если говоришь каждый день.</i>',
         '',
-        '➕ <b>290 ₽ · ещё 100 мин разговора</b>',
-        '<i>Если минуты на тарифе закончились — можно добавить 100 мин.\n'
-        'Нужен активный платный тариф (Базовый, Активный или Про).</i>',
-        '',
-        '👇 Выберите тариф кнопкой ниже',
+        '👇 Выбери тариф',
     ]
     return '\n'.join(line for line in blocks if line)
+
+
+def format_subscriber_status(
+    *,
+    plan_code: str,
+    plan_name_ru: str,
+    expires_at: str,
+    voice_remaining: int,
+    voice_monthly: int,
+    tutor_remaining: int,
+) -> str:
+    """Экран «⭐️ Подписка» для активного тарифа."""
+    lines = [
+        f'✅ <b>{plan_name_ru}</b> · до {expires_at}',
+        '',
+        f'🎙 Голос: <b>{voice_remaining}</b> из {voice_monthly} мин/мес',
+        f'💬 Наставник: <b>{tutor_remaining}</b> сообщ./мес',
+        '',
+        '🔊 «Слушать» в словах и уроках — без лимита.',
+    ]
+    if plan_code == 'basic':
+        diff = upgrade_price_rub('basic', 'pro')
+        lines.extend([
+            '',
+            '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+            f'⬆️ <b>Нужно больше говорить?</b>',
+            f'Pro — <b>+{diff} ₽</b> доплата (ещё +180 мин/мес)',
+            f'или +{VOICE_ADDON_MINUTES} мин за {VOICE_ADDON_PRICE_RUB} ₽',
+        ])
+    elif voice_remaining <= 15:
+        lines.extend([
+            '',
+            f'Минут мало — можно докупить +{VOICE_ADDON_MINUTES} мин '
+            f'({VOICE_ADDON_PRICE_RUB} ₽) или перейти на Pro.',
+        ])
+    return '\n'.join(lines)
 
 
 def format_subscription_plans_message(
@@ -213,15 +257,14 @@ def format_subscription_plans_message(
     if show_free:
         prefix = '✅ ' if free_active else ''
         lines.append(prefix + FREE_TIER_BLOCK.strip())
-    lines.append(f'<b>Платные тарифы</b> — доступ на {days} дней (<i>без автосписания</i>):\n')
+    lines.append(f'<b>Подписки</b> — {days} дней (<i>без автосписания</i>):\n')
     for plan in sub_plans:
         mins = plan.get('voice_minutes_monthly', 0)
-        stt_note = ''
-        if plan.get('code') == 'pro':
-            stt_note = ' · больше минут голоса'
         lines.append(
-            f'• <b>{plan["name"]}</b> — {plan["price_rub"]} ₽\n'
-            f'  🎙 {mins} мин голосового диалога/мес{stt_note}'
+            f'• <b>{plan["name"]}</b> — {plan["price_rub"]} ₽ · 🎙 {mins} мин/мес'
         )
+    diff = upgrade_price_rub('basic', 'pro')
+    if diff:
+        lines.append(f'\n⬆️ С Basic на Pro: доплата <b>+{diff} ₽</b>')
     lines.append('\n' + TARIFF_INCLUDES)
     return '\n'.join(lines)

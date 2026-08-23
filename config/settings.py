@@ -45,7 +45,7 @@ TELEGRAM_PROXY = os.getenv('TELEGRAM_PROXY', '').strip()
 # Subscription / billing (single plan)
 # -------------------------------------------------------------------
 # One plan: 390 RUB for 30 days, no auto-renewal.
-SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 590)
+SUBSCRIPTION_PRICE_RUB = env_int('SUBSCRIPTION_PRICE_RUB', 349)
 SUBSCRIPTION_PRICE_KOPEKS = SUBSCRIPTION_PRICE_RUB * 100
 SUBSCRIPTION_DAYS = env_int('SUBSCRIPTION_DAYS', 30)
 TRIAL_LESSONS_LIMIT = env_int('TRIAL_LESSONS_LIMIT', 2)

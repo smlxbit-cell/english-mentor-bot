@@ -228,8 +228,8 @@ def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardM
 def word_new_section_kb(*, daily: int = 10) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f'Учить · {daily}', callback_data='words:learn:daily'),
-            InlineKeyboardButton('Выбрать слова', callback_data='words:new:pick'),
+            InlineKeyboardButton(f'Начать · {daily}', callback_data='words:learn:daily'),
+            InlineKeyboardButton('В словарь', callback_data='words:new:pick'),
         ],
         [InlineKeyboardButton('← Слова', callback_data='words:hub')],
     ])
@@ -242,6 +242,25 @@ def word_new_pick_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('📖 Словарь', callback_data='words:bank'),
             InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
         ],
+        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+    ])
+
+
+def word_daily_intro_card_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
+        [
+            InlineKeyboardButton('Дальше →', callback_data='words:intro:next'),
+            InlineKeyboardButton('Знаю ✅', callback_data=f'words:intro:known:{bank_entry_id}'),
+        ],
+        [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
+    ])
+
+
+def word_daily_intro_finish_kb(*, count: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f'🎯 Тренировка · {count}', callback_data='words:learn:quiz')],
+        [InlineKeyboardButton('🔊 Слушать все', callback_data='tts:say')],
         [InlineKeyboardButton('← Учить новое', callback_data='words:new')],
     ])
 
@@ -259,7 +278,7 @@ def word_survey_levels_kb(user_level: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(lbl('b2'), callback_data='words:survey:level:b2'),
             InlineKeyboardButton(lbl('c1'), callback_data='words:survey:level:c1'),
         ],
-        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← В словарь', callback_data='words:new:pick')],
     ])
 
 
@@ -276,13 +295,8 @@ def word_repeat_section_kb(*, due: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def word_dict_hub_kb(*, due: int = 0) -> InlineKeyboardMarkup:
-    rows = []
-    if due:
-        rows.append([
-            InlineKeyboardButton(f'🔄 Повтор · {due}', callback_data='srs:start'),
-        ])
-    rows.extend([
+def word_dict_hub_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton('📗 Учу', callback_data='words:dict:learning:0'),
             InlineKeyboardButton('✅ Знаю', callback_data='words:dict:known:0'),
@@ -294,7 +308,6 @@ def word_dict_hub_kb(*, due: int = 0) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton('← Повтор', callback_data='words:repeat')],
     ])
-    return InlineKeyboardMarkup(rows)
 
 
 def word_bank_menu_kb() -> InlineKeyboardMarkup:
@@ -310,7 +323,7 @@ def word_bank_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('📁 Темы', callback_data='words:bank:topics'),
             InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
         ],
-        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← В словарь', callback_data='words:new:pick')],
     ])
 
 
@@ -355,14 +368,15 @@ def word_bank_hub_kb() -> InlineKeyboardMarkup:
 
 
 def word_bank_topics_kb(topics: list[tuple[str, int]]) -> InlineKeyboardMarkup:
-    from learning.word_bank.navigation import topic_button_label
+    from learning.word_bank.navigation import canonical_topic, topic_button_label
 
     rows = []
     row: list[InlineKeyboardButton] = []
     for slug, count in topics[:12]:
+        canon = canonical_topic(slug)
         row.append(InlineKeyboardButton(
-            topic_button_label(slug, count),
-            callback_data=f'words:bank:topic:{slug}:0',
+            topic_button_label(canon, count),
+            callback_data=f'words:bank:topic:{canon}:0',
         ))
         if len(row) == 2:
             rows.append(row)
@@ -421,7 +435,7 @@ def word_intro_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('Тренировка', callback_data='words:learn:quiz'),
             InlineKeyboardButton('Слушать', callback_data='tts:say'),
         ],
-        [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← В словарь', callback_data='words:new:pick')],
     ])
 
 
@@ -907,6 +921,7 @@ def paywall_kb(
     *,
     show_free: bool = True,
     has_subscription: bool = False,
+    current_plan_code: str = '',
 ) -> InlineKeyboardMarkup:
     from billing_app.plans_catalog import PLAN_BUTTON_LABELS, plan_button_label
 
@@ -919,25 +934,7 @@ def paywall_kb(
             ),
         ])
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
-    if len(sub_plans) >= 2:
-        rows.append([
-            InlineKeyboardButton(
-                plan_button_label(sub_plans[0]),
-                callback_data=f'buy:{sub_plans[0]["code"]}',
-            ),
-            InlineKeyboardButton(
-                plan_button_label(sub_plans[1]),
-                callback_data=f'buy:{sub_plans[1]["code"]}',
-            ),
-        ])
-        if len(sub_plans) > 2:
-            rows.append([
-                InlineKeyboardButton(
-                    plan_button_label(sub_plans[2]),
-                    callback_data=f'buy:{sub_plans[2]["code"]}',
-                ),
-            ])
-    else:
+    if not has_subscription:
         for plan in sub_plans:
             rows.append([
                 InlineKeyboardButton(
@@ -945,6 +942,13 @@ def paywall_kb(
                     callback_data=f'buy:{plan["code"]}',
                 ),
             ])
+    elif current_plan_code == 'basic':
+        rows.append([
+            InlineKeyboardButton(
+                PLAN_BUTTON_LABELS['upgrade_pro'],
+                callback_data='buy:upgrade:pro',
+            ),
+        ])
     addon_cb = 'buy:voice_100' if has_subscription else 'addon:info'
     rows.append([
         InlineKeyboardButton(PLAN_BUTTON_LABELS['voice_100'], callback_data=addon_cb),
@@ -953,11 +957,23 @@ def paywall_kb(
     return InlineKeyboardMarkup(rows)
 
 
-def subscription_kb(*, has_subscription: bool, voice_remaining: int = 0) -> InlineKeyboardMarkup:
+def subscription_kb(
+    *,
+    has_subscription: bool,
+    voice_remaining: int = 0,
+    plan_code: str = '',
+) -> InlineKeyboardMarkup:
     from billing_app.plans_catalog import PLAN_BUTTON_LABELS
 
     rows = []
     if has_subscription:
+        if plan_code == 'basic':
+            rows.append([
+                InlineKeyboardButton(
+                    PLAN_BUTTON_LABELS['upgrade_pro'],
+                    callback_data='buy:upgrade:pro',
+                ),
+            ])
         rows.append([
             InlineKeyboardButton(
                 PLAN_BUTTON_LABELS['voice_100'],

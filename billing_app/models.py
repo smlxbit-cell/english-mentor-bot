@@ -101,6 +101,27 @@ class Subscription(models.Model):
         return self.status == self.Status.ACTIVE and self.expires_at > timezone.now()
 
     @classmethod
+    def upgrade_active_plan(cls, user, new_plan: 'SubscriptionPlan'):
+        """Switch active subscription to a higher plan; keep expiry date."""
+        now = timezone.now()
+        sub = (
+            cls.objects.filter(
+                user=user,
+                status=cls.Status.ACTIVE,
+                expires_at__gt=now,
+                plan__plan_kind=SubscriptionPlan.PlanKind.SUBSCRIPTION,
+            )
+            .select_related('plan')
+            .order_by('-expires_at')
+            .first()
+        )
+        if not sub:
+            return None
+        sub.plan = new_plan
+        sub.save(update_fields=['plan'])
+        return sub
+
+    @classmethod
     def activate(cls, user, plan, *, from_now=True):
         """Create/extend an active subscription. Stacks on top of an active one."""
         now = timezone.now()

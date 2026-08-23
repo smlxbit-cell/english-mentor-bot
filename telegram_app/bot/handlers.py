@@ -3003,6 +3003,9 @@ async def _show_word_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = await db.format_word_hub_text(overview)
     context.user_data['mode'] = None
     context.user_data.pop('word_survey_queue', None)
+    context.user_data.pop('daily_intro_queue', None)
+    context.user_data.pop('daily_intro_selected', None)
+    context.user_data.pop('daily_intro_total', None)
     context.user_data['words_overview'] = overview
     await _send(
         context, _chat_id(update), text,
@@ -3020,7 +3023,7 @@ async def _show_my_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = await db.format_personal_dict_hub(summary)
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_dict_hub_kb(due=summary.get('due', 0)),
+        reply_markup=keyboards.word_dict_hub_kb(),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3083,7 +3086,7 @@ async def _show_word_level_detail(
                 InlineKeyboardButton('👀 Проверить 10', callback_data=f'words:survey:level:{level}'),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
-            [InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick')],
+            [InlineKeyboardButton('← В словарь', callback_data='words:new:pick')],
         ]),
         parse_mode=ParseMode.HTML,
     )
@@ -3119,7 +3122,7 @@ async def _show_personal_word_page(
 
 
 async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from learning.word_bank.navigation import topic_label
+    from learning.word_bank.navigation import canonical_topic, topic_label
 
     profile = await _ensure_profile(update, context)
     topics = await db.list_personal_topic_counts(profile['id'])
@@ -3131,13 +3134,13 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    rows = [
-        [InlineKeyboardButton(
-            f'{topic_label(slug)} · {count}',
-            callback_data=f'words:dict:topic:{slug}:0',
-        )]
-        for slug, count in topics[:12]
-    ]
+    rows = []
+    for slug, count in topics[:12]:
+        canon = canonical_topic(slug)
+        rows.append([InlineKeyboardButton(
+            f'{topic_label(canon)} · {count}',
+            callback_data=f'words:dict:topic:{canon}:0',
+        )])
     rows.append([InlineKeyboardButton('← Мой словарь', callback_data='words:mydict')])
     await _send(
         context, _chat_id(update),
@@ -3273,7 +3276,7 @@ async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         '🔍 <b>Поиск</b>\n\n'
         'Напиши по-английски или по-русски (от 2 букв).',
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('← Выбрать слова', callback_data='words:new:pick'),
+            InlineKeyboardButton('← В словарь', callback_data='words:new:pick'),
         ]]),
         parse_mode=ParseMode.HTML,
     )
@@ -3397,9 +3400,8 @@ async def _handle_word_survey_action(
 async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     user_level = profile.get('level_code') or 'a1'
-    pack = await db.start_daily_word_learning(profile['id'], user_level, limit=10)
+    pack = await db.prepare_daily_word_intro(profile['id'], user_level, limit=10)
     intro = pack['intro']
-    review = pack['review']
     if not intro:
         await _send(
             context, _chat_id(update),
@@ -3407,30 +3409,120 @@ async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAUL
             reply_markup=keyboards.word_new_section_kb(),
         )
         return
-    lines = [
-        f'📘 <b>Сегодня учим {len(intro)} слов</b>\n',
-        'Сначала познакомься, потом — тренировка.',
-        '',
-    ]
-    speak_chunks = []
-    for w in intro:
-        lines.append(f'• <b>{_esc(w["english"])}</b> — {_esc(w["translation"])}')
-        if w.get('example'):
-            lines.append(f'  <i>{_esc(w["example"])}</i>')
-        speak_chunks.append(
-            w['english'] if not w.get('example') else f'{w["english"]}. {w["example"]}'
-        )
-    context.user_data['tts_text'] = '. '.join(speak_chunks)
-    context.user_data['daily_word_review'] = review
+    context.user_data['mode'] = 'daily_intro'
+    context.user_data['daily_intro_queue'] = list(intro)
+    context.user_data['daily_intro_selected'] = []
+    context.user_data['daily_intro_total'] = len(intro)
     await _send(
-        context, _chat_id(update), '\n'.join(lines),
-        reply_markup=keyboards.word_intro_kb(),
+        context, _chat_id(update),
+        f'📘 <b>Урок · {len(intro)} слов</b>\n\n'
+        'Покажу по одному — сначала слушай 🔊, потом «Дальше».\n'
+        'Если слово уже знаешь — «Знаю ✅».\n'
+        'В конце — тренировка.',
+        parse_mode=ParseMode.HTML,
+    )
+    await _show_daily_intro_card(update, context)
+
+
+async def _show_daily_intro_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    queue = context.user_data.get('daily_intro_queue') or []
+    chat_id = _chat_id(update)
+    if not queue:
+        await _finish_daily_intro(update, context)
+        return
+    word = queue[0]
+    total = context.user_data.get('daily_intro_total') or len(queue)
+    pos = total - len(queue) + 1
+    lines = [
+        f'📘 {pos}/{total} · {word["cefr_level"].upper()}',
+        '',
+        f'🇬🇧 <b>{_esc(word["english"])}</b>',
+        f'🇷🇺 {_esc(word["translation"])}',
+    ]
+    if word.get('example'):
+        lines.append(f'\n📝 {_esc(word["example"])}')
+    context.user_data['tts_text'] = (
+        word['english'] if not word.get('example')
+        else f'{word["english"]}. {word["example"]}'
+    )
+    await _send(
+        context, chat_id, '\n'.join(lines),
+        reply_markup=keyboards.word_daily_intro_card_kb(word['bank_entry_id']),
+        parse_mode=ParseMode.HTML,
+    )
+    await _play_tts(context, chat_id, context.user_data['tts_text'])
+
+
+async def _daily_intro_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    queue = context.user_data.get('daily_intro_queue') or []
+    if not queue:
+        await _finish_daily_intro(update, context)
+        return
+    word = queue.pop(0)
+    selected = context.user_data.setdefault('daily_intro_selected', [])
+    selected.append(word)
+    context.user_data['daily_intro_queue'] = queue
+    if queue:
+        await _show_daily_intro_card(update, context)
+    else:
+        await _finish_daily_intro(update, context)
+
+
+async def _daily_intro_known(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, bank_entry_id: int,
+):
+    profile_id = context.user_data.get('profile_id')
+    if profile_id:
+        await db.mark_word_bank_entry(profile_id, bank_entry_id, 'known')
+    queue = context.user_data.get('daily_intro_queue') or []
+    if queue and queue[0].get('bank_entry_id') == bank_entry_id:
+        queue.pop(0)
+    context.user_data['daily_intro_queue'] = queue
+    if queue:
+        await _show_daily_intro_card(update, context)
+    else:
+        await _finish_daily_intro(update, context)
+
+
+async def _finish_daily_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected = context.user_data.get('daily_intro_selected') or []
+    context.user_data['mode'] = None
+    context.user_data.pop('daily_intro_queue', None)
+    context.user_data.pop('daily_intro_total', None)
+    chat_id = _chat_id(update)
+    if not selected:
+        await _send(
+            context, chat_id,
+            'Отлично — все эти слова уже знаешь ✅',
+            reply_markup=keyboards.word_new_section_kb(),
+        )
+        context.user_data.pop('daily_intro_selected', None)
+        return
+    speak_chunks = [
+        w['english'] if not w.get('example') else f'{w["english"]}. {w["example"]}'
+        for w in selected
+    ]
+    context.user_data['tts_text'] = '. '.join(speak_chunks)
+    lines = [
+        f'✅ <b>Познакомились с {len(selected)} словами</b>',
+        '',
+        'Когда готов — нажми «Тренировка»: покажу перевод, '
+        'ты напишешь или скажешь по-английски.',
+    ]
+    await _send(
+        context, chat_id, '\n'.join(lines),
+        reply_markup=keyboards.word_daily_intro_finish_kb(count=len(selected)),
         parse_mode=ParseMode.HTML,
     )
 
 
 async def _start_daily_word_quiz(update, context):
-    review = context.user_data.pop('daily_word_review', None) or []
+    profile = await _ensure_profile(update, context)
+    selected = context.user_data.pop('daily_intro_selected', None)
+    if selected:
+        review = await db.start_daily_word_quiz(profile['id'], selected)
+    else:
+        review = context.user_data.pop('daily_word_review', None) or []
     if not review:
         await start_word_review(update, context)
         return
@@ -3440,7 +3532,7 @@ async def _start_daily_word_quiz(update, context):
     await send_mentor_reaction(context, _chat_id(update), 'word_review')
     await _send(
         context, _chat_id(update),
-        f'🎓 Тренировка: {len(review)} новых слов\n'
+        f'🎯 Тренировка: {len(review)} слов\n'
         'Перевод → напиши или скажи по-английски.',
         parse_mode=ParseMode.HTML,
     )
@@ -4014,18 +4106,28 @@ async def _show_paywall(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from billing_app.plans_catalog import format_subscription_compact
 
     profile_id = context.user_data.get('profile_id')
+    has_sub = False
+    plan_code = ''
     if profile_id:
         has_sub = await db.has_active_subscription(profile_id)
-    else:
-        has_sub = False
+        if has_sub:
+            plan_code = await db.get_active_plan_code(profile_id) or ''
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
-    text = format_subscription_compact(sub_plans, access_tier='free')
+    detail = await db.get_profile_detail(profile_id) if profile_id else {}
+    text = format_subscription_compact(
+        sub_plans,
+        access_tier=detail.get('access_tier', 'free'),
+        current_plan_code=plan_code,
+    )
     await _send(
         context, _chat_id(update),
         text,
         reply_markup=keyboards.paywall_kb(
-            sub_plans, show_free=True, has_subscription=has_sub,
+            sub_plans,
+            show_free=True,
+            has_subscription=has_sub,
+            current_plan_code=plan_code or '',
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -4043,16 +4145,19 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tier = detail.get('access_tier', 'free')
 
     if limits.get('has_subscription'):
-        from billing_app.plans_catalog import PLAN_NAMES_RU
+        from billing_app.plans_catalog import PLAN_NAMES_RU, format_subscriber_status
+
         plan_code = (detail.get('plan_code') or '').lower()
         plan_ru = PLAN_NAMES_RU.get(plan_code, limits['plan_name'])
-        text = (
-            f'✅ <b>{plan_ru}</b> · все эпизоды открыты\n\n'
-            f'🎙 <b>Голосовой диалог</b> с наставником: '
-            f'~{limits["voice_remaining_minutes"]} мин\n'
-            f'💬 <b>Чат</b> с наставником: '
-            f'~{limits["tutor_messages_remaining"]} сообщ.\n\n'
-            '🔊 Озвучка уроков (кнопка «Слушать») — без лимита на любом тарифе.'
+        sub_until = detail.get('subscription_until') or '—'
+        voice_monthly = limits.get('voice_minutes_monthly') or 0
+        text = format_subscriber_status(
+            plan_code=plan_code,
+            plan_name_ru=plan_ru,
+            expires_at=sub_until,
+            voice_remaining=limits.get('voice_remaining_minutes', 0),
+            voice_monthly=voice_monthly,
+            tutor_remaining=limits.get('tutor_messages_remaining', 0),
         )
         await _send(
             context, _chat_id(update),
@@ -4060,6 +4165,7 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboards.subscription_kb(
                 has_subscription=True,
                 voice_remaining=limits.get('voice_remaining_minutes', 0),
+                plan_code=plan_code,
             ),
             parse_mode=ParseMode.HTML,
         )
@@ -4067,47 +4173,45 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     plans = await db.get_subscription_plans()
     sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
-    text = format_subscription_compact(sub_plans, access_tier=tier)
+    text = format_subscription_compact(
+        sub_plans,
+        access_tier=tier,
+        current_plan_code='',
+    )
     await _send(
         context, _chat_id(update),
         text,
         reply_markup=keyboards.paywall_kb(
             sub_plans, show_free=True,
-            has_subscription=limits.get('has_subscription', False),
+            has_subscription=False,
         ),
         parse_mode=ParseMode.HTML,
     )
 
 
 async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from billing_app.plans_catalog import TARIFF_INCLUDES_PLAIN
+    from billing_app.plans_catalog import (
+        BASIC_PRICE_RUB,
+        PRO_PRICE_RUB,
+        TARIFF_INCLUDES_PLAIN,
+        VOICE_ADDON_MINUTES,
+        VOICE_ADDON_PRICE_RUB,
+        upgrade_price_rub,
+    )
 
     days = settings.SUBSCRIPTION_DAYS
-    plans = await db.get_subscription_plans()
-    sub_lines = []
-    for plan in plans:
-        if plan.get('plan_kind') == 'subscription':
-            sub_lines.append(
-                f'• {plan["name"]}: {plan["price_rub"]} ₽ / {days} дней — '
-                f'{plan.get("voice_minutes_monthly", 0)} мин голосового диалога 🎙/мес'
-            )
-    addon = next((p for p in plans if p.get('code') == 'voice_100'), None)
-    addon_line = ''
-    if addon:
-        addon_line = (
-            f'\n• Докупка голоса: +{addon.get("voice_minutes_in_pack", 100)} мин — '
-            f'{addon["price_rub"]} ₽ (нужна активная подписка).'
-        )
+    diff = upgrade_price_rub('basic', 'pro')
     await _send(
         context, _chat_id(update),
         'Условия подписки:\n\n'
-        + '\n'.join(sub_lines)
-        + addon_line
-        + f'\n\n{TARIFF_INCLUDES_PLAIN}'
-        + '\n\n• Без автопродления — доступ заканчивается через 30 дней.\n'
-        '• Бесплатно: диагностика уровня и 2 пробных урока.\n'
-        '• Оплата через ЮKassa (подключается после модерации магазина).\n'
-        '• Вопросы по оплате — в поддержку проекта.',
+        f'• Basic: {BASIC_PRICE_RUB} ₽ / {days} дн · 60 мин 🎙/мес\n'
+        f'• Pro: {PRO_PRICE_RUB} ₽ / {days} дн · 240 мин 🎙/мес\n'
+        f'• Апгрейд Basic→Pro: +{diff} ₽ (доплата, не полная цена Pro)\n'
+        f'• Докупка: +{VOICE_ADDON_MINUTES} мин — {VOICE_ADDON_PRICE_RUB} ₽\n\n'
+        f'{TARIFF_INCLUDES_PLAIN}\n\n'
+        '• Без автопродления.\n'
+        '• Free: слова бесплатно, 3 правила, trial 3 дня.\n'
+        '• Оплата через ЮKassa (Telegram Payments).',
         reply_markup=_main_menu(context),
     )
 
@@ -4120,34 +4224,77 @@ async def buy_subscription(
     profile_id = context.user_data['profile_id']
     chat_id = _chat_id(update)
 
-    plan = await db.get_plan_by_code(plan_code)
+    upgrade = False
+    target_code = plan_code
+    if plan_code.startswith('upgrade:'):
+        upgrade = True
+        target_code = plan_code.split(':', 1)[1]
+    elif plan_code == 'pro':
+        current = await db.get_active_plan_code(profile_id)
+        if current == 'basic':
+            upgrade = True
+            target_code = 'pro'
+
+    plan = await db.get_plan_by_code(target_code)
     if not plan:
         await _send(context, chat_id, 'Тариф не найден. Попробуй позже.',
                     reply_markup=_main_menu(context))
         return
 
+    from billing_app.plans_catalog import upgrade_price_rub
+
     if plan['plan_kind'] == 'voice_addon':
         if not await db.has_active_subscription(profile_id):
             await _send(
                 context, chat_id,
-                'Докупка минут доступна только с активной подпиской.\n'
-                'Сначала оформи Basic, Active или Pro.',
+                'Докупка минут — только с активной подпиской Basic или Pro.\n'
+                'Сначала оформи Basic (349 ₽).',
+                reply_markup=keyboards.paywall_kb(
+                    [p for p in await db.get_subscription_plans()],
+                    has_subscription=False,
+                ),
+            )
+            return
+    elif upgrade:
+        current = await db.get_active_plan_code(profile_id)
+        if current != 'basic' or target_code != 'pro':
+            await _send(
+                context, chat_id,
+                'Сейчас доступен апгрейд только с Basic на Pro.',
                 reply_markup=_main_menu(context),
             )
             return
+        charge_rub = upgrade_price_rub('basic', 'pro')
     elif await db.has_active_subscription(profile_id):
-        await _send(context, chat_id, 'У тебя уже есть активная подписка ✅',
-                    reply_markup=_main_menu(context))
+        await _send(
+            context, chat_id,
+            'У тебя уже есть подписка ✅\n'
+            'Нужно больше минут? — «↑ Pro +641₽» или докупка +100 мин.',
+            reply_markup=keyboards.subscription_kb(
+                has_subscription=True,
+                plan_code=await db.get_active_plan_code(profile_id) or '',
+            ),
+        )
         return
+    else:
+        charge_rub = plan['price_rub']
 
     if settings.PAYMENT_MODE == 'mock':
-        result = await db.activate_mock_subscription(profile_id, plan_code)
+        result = await db.activate_mock_subscription(
+            profile_id,
+            target_code,
+            upgrade=upgrade,
+            amount_rub=charge_rub if upgrade else None,
+        )
         if not result.get('ok'):
-            await _send(
-                context, chat_id,
-                'Нужна активная подписка для докупки минут.',
-                reply_markup=_main_menu(context),
-            )
+            reason = result.get('reason', '')
+            if reason == 'no_subscription':
+                msg = 'Нужна активная подписка для докупки минут.'
+            elif reason == 'upgrade_not_allowed':
+                msg = 'Апгрейд сейчас недоступен для этого тарифа.'
+            else:
+                msg = 'Не удалось оформить. Попробуй позже.'
+            await _send(context, chat_id, msg, reply_markup=_main_menu(context))
             return
         if result.get('kind') == 'voice_addon':
             await _send(
@@ -4157,12 +4304,22 @@ async def buy_subscription(
                 f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
                 reply_markup=_main_menu(context),
             )
+        elif result.get('kind') == 'upgrade':
+            await _send(
+                context, chat_id,
+                f'Апгрейд прошёл ✅\n\n'
+                f'<b>Pro</b> активен до {result["expires_at"]}.\n'
+                f'Доплата: {result["amount_rub"]} ₽ · '
+                f'🎙 ~{result.get("voice_remaining_minutes", 0)} мин осталось.',
+                reply_markup=_main_menu(context),
+                parse_mode=ParseMode.HTML,
+            )
         else:
             await _send(
                 context, chat_id,
                 f'Тестовая оплата прошла ✅\n\n'
                 f'Тариф <b>{result["plan_name"]}</b> активен до {result["expires_at"]}.\n'
-                '(mock-режим — реальную оплату ЮKassa подключим после модерации.)',
+                '(mock — реальная оплата через ЮKassa после модерации.)',
                 reply_markup=_main_menu(context),
                 parse_mode=ParseMode.HTML,
             )
@@ -4174,15 +4331,25 @@ async def buy_subscription(
                     reply_markup=_main_menu(context))
         return
 
-    prices = [LabeledPrice(label=plan['name'], amount=plan['price_kopeks'])]
-    if plan['plan_kind'] == 'voice_addon':
-        payload = f'addon:{profile_id}:{plan_code}'
+    if upgrade:
+        charge_rub = upgrade_price_rub('basic', 'pro')
+        payload = f'upgrade:{profile_id}:{target_code}'
+        title = 'English Mentor — апгрейд Basic → Pro'
+        description = (
+            f'Доплата {charge_rub} ₽. Pro: 240 мин 🎙/мес до конца текущего периода.'
+        )
+    elif plan['plan_kind'] == 'voice_addon':
+        payload = f'addon:{profile_id}:{target_code}'
         title = f'English Mentor — {plan["name"]}'
-        description = plan.get('description') or 'Докупка минут голосового наставника.'
+        description = plan.get('description') or 'Докупка минут голоса.'
+        charge_rub = plan['price_rub']
     else:
-        payload = f'sub:{profile_id}:{plan_code}'
+        payload = f'sub:{profile_id}:{target_code}'
         title = f'English Mentor — {plan["name"]}'
         description = plan.get('description') or f'Подписка на {plan["duration_days"]} дней.'
+        charge_rub = plan['price_rub']
+
+    prices = [LabeledPrice(label=plan['name'], amount=charge_rub * 100)]
     await context.bot.send_invoice(
         chat_id=chat_id,
         title=title,
@@ -4191,7 +4358,7 @@ async def buy_subscription(
         provider_token=settings.TELEGRAM_PAYMENT_PROVIDER_TOKEN,
         currency='RUB',
         prices=prices,
-        start_parameter=f'english-mentor-{plan_code}',
+        start_parameter=f'english-mentor-{target_code}',
     )
 
 
@@ -4204,11 +4371,31 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     profile_id = context.user_data['profile_id']
     payload = (update.message.successful_payment.invoice_payload or '').strip()
     plan_code = 'basic'
+    upgrade = False
+    amount_rub = None
     if ':' in payload:
         parts = payload.split(':')
-        if len(parts) >= 3 and parts[0] in ('sub', 'addon'):
+        if len(parts) >= 3 and parts[0] == 'upgrade':
+            upgrade = True
             plan_code = parts[2]
-    result = await db.activate_mock_subscription(profile_id, plan_code)
+            from billing_app.plans_catalog import upgrade_price_rub
+            amount_rub = upgrade_price_rub('basic', plan_code)
+        elif len(parts) >= 3 and parts[0] in ('sub', 'addon'):
+            plan_code = parts[2]
+    result = await db.activate_subscription_purchase(
+        profile_id,
+        plan_code,
+        upgrade=upgrade,
+        amount_rub=amount_rub,
+        payload=payload,
+    )
+    if not result.get('ok'):
+        await _send(
+            context, _chat_id(update),
+            'Оплата получена, но активация не удалась — напиши в поддержку.',
+            reply_markup=_main_menu(context),
+        )
+        return
     if result.get('kind') == 'voice_addon':
         await _send(
             context, _chat_id(update),
@@ -4216,11 +4403,19 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
             f'Осталось: ~{result["voice_remaining_minutes"]} мин.',
             reply_markup=_main_menu(context),
         )
+    elif result.get('kind') == 'upgrade':
+        await _send(
+            context, _chat_id(update),
+            f'Оплата прошла ✅ <b>Pro</b> активен до {result.get("expires_at", "")}.\n'
+            f'Доплата {result.get("amount_rub")} ₽.',
+            reply_markup=_main_menu(context),
+            parse_mode=ParseMode.HTML,
+        )
     else:
         await _send(
             context, _chat_id(update),
             f'Оплата прошла ✅ Тариф {result.get("plan_name", "")} '
-            f'активен до {result["expires_at"]}.',
+            f'активен до {result.get("expires_at", "")}.',
             reply_markup=_main_menu(context),
         )
 
@@ -4344,6 +4539,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_word_survey_for_level(update, context, level)
     elif data == 'words:learn:daily':
         await start_daily_word_learning(update, context)
+    elif data == 'words:intro:next':
+        await _daily_intro_next(update, context)
+    elif data.startswith('words:intro:known:'):
+        bid = int(data.rsplit(':', 1)[1])
+        await _daily_intro_known(update, context, bid)
     elif data == 'words:learn:quiz':
         await _start_daily_word_quiz(update, context)
     elif data.startswith('words:level:'):
@@ -4404,24 +4604,31 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     update, context, prefix=prefix, page=page, level=level,
                 )
             elif ':topic:' in prefix:
-                topic = prefix.split(':')[-1]
+                topic = prefix.split('words:bank:topic:', 1)[1]
                 await _show_bank_page(
                     update, context, prefix=prefix, page=page, topic=topic,
                 )
         else:
             await _show_word_bank_hub(update, context)
     elif data.startswith('words:bank:level:'):
-        _, _, _, level, page_s = data.split(':')
+        from learning.word_bank.navigation import parse_paged_callback
+        parsed = parse_paged_callback(data, 'words:bank:level:')
+        if not parsed:
+            return
+        level, page = parsed
         prefix = f'words:bank:level:{level}'
         await _show_bank_page(
-            update, context, prefix=prefix, page=int(page_s), level=level,
+            update, context, prefix=prefix, page=page, level=level,
         )
     elif data.startswith('words:bank:topic:'):
-        parts = data.split(':')
-        topic, page_s = parts[-2], parts[-1]
+        from learning.word_bank.navigation import parse_paged_callback
+        parsed = parse_paged_callback(data, 'words:bank:topic:')
+        if not parsed:
+            return
+        topic, page = parsed
         prefix = f'words:bank:topic:{topic}'
         await _show_bank_page(
-            update, context, prefix=prefix, page=int(page_s), topic=topic,
+            update, context, prefix=prefix, page=page, topic=topic,
         )
     elif data == 'words:dict:topics':
         await _show_personal_topics(update, context)
@@ -4447,23 +4654,28 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             page=page, status='mastered',
         )
     elif data.startswith('words:dict:level:'):
-        parts = data.split(':')
-        level, page_s = parts[-2], parts[-1]
+        from learning.word_bank.navigation import parse_paged_callback
+        parsed = parse_paged_callback(data, 'words:dict:level:')
+        if not parsed:
+            return
+        level, page = parsed
         prefix = f'words:dict:level:{level}'
         await _show_personal_word_page(
             update, context,
             prefix=prefix, title=f'🗂 {level.upper()}',
-            page=int(page_s), level=level,
+            page=page, level=level,
         )
     elif data.startswith('words:dict:topic:'):
-        parts = data.split(':')
-        topic, page_s = parts[-2], parts[-1]
-        from learning.word_bank.navigation import topic_label
+        from learning.word_bank.navigation import parse_paged_callback, topic_label
+        parsed = parse_paged_callback(data, 'words:dict:topic:')
+        if not parsed:
+            return
+        topic, page = parsed
         prefix = f'words:dict:topic:{topic}'
         await _show_personal_word_page(
             update, context,
             prefix=prefix, title=topic_label(topic),
-            page=int(page_s), topic=topic,
+            page=page, topic=topic,
         )
     elif data == 'train:rules':
         context.user_data['mode'] = None
@@ -4549,9 +4761,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'addon:info':
         await _ack_callback(
             query,
-            '➕ 290 ₽ — добавить 100 минут разговора с наставником.\n\n'
-            'Работает, когда уже есть платный тариф (Базовый, Активный или Про). '
-            'Минуты прибавляются к вашему лимиту на месяц.',
+            '➕ 350 ₽ — +100 мин 🎙. Нужна Basic или Pro. '
+            'Каждый день говоришь — выгоднее ↑ Pro (+641 ₽).',
             show_alert=True,
         )
     elif data == 'plan:warmup:next':
@@ -4710,27 +4921,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await _begin_diagnostic(update, context, retake=True)
     elif data == 'tier:free':
-        from billing_app.plans_catalog import TARIFF_UTP_BLOCK
+        from billing_app.plans_catalog import FREE_TIER_BLOCK, format_subscription_compact
+
+        plans = await db.get_subscription_plans()
+        sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
         await _send(
             context, _chat_id(update),
-            TARIFF_UTP_BLOCK + '\n\n'
-            '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n'
-            '🆓 <b>БЕСПЛАТНО</b> · 0 ₽\n'
-            '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n'
-            '📺 Эпизоды 1–3 сериала\n'
-            '📖 Словарь и карта грамматики\n'
-            '🔊 <b>Озвучка всего английского</b> — кнопка 🔊 везде\n'
-            '💬 Наставник AI — текстом, с объяснениями и переводом\n'
-            '🚫 Голосом боту говорить нельзя\n\n'
-            'Все эпизоды и разговор 🎙 — в платных тарифах ниже 👇',
+            FREE_TIER_BLOCK + '\n\n' + format_subscription_compact(sub_plans),
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.paywall_kb(
-                [p for p in await db.get_subscription_plans()
-                 if p.get('plan_kind') == 'subscription'],
-                show_free=True,
+                sub_plans,
+                show_free=False,
                 has_subscription=await db.has_active_subscription(
                     context.user_data['profile_id'],
                 ),
+                current_plan_code=await db.get_active_plan_code(
+                    context.user_data['profile_id'],
+                ) or '',
             ),
         )
     elif data.startswith('intr:toggle:'):

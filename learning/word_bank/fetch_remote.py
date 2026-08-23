@@ -41,13 +41,13 @@ def load_en_ru_lookup(*, url: str = EN_RU_URL) -> dict[str, str]:
     return lookup
 
 
-def load_kelly_cefr(*, url: str = KELLY_EN_URL) -> dict[str, str]:
-    """English headword (lower) → cefr level (a1–c1)."""
+def load_kelly_cefr(*, url: str = KELLY_EN_URL) -> dict[str, dict[str, str]]:
+    """English headword (lower) → {level, pos}."""
     data = _fetch_json(url)
     full_list = data.get('full_list') if isinstance(data, dict) else None
     if not isinstance(full_list, list):
         raise ValueError('Kelly EN: expected full_list array')
-    levels: dict[str, str] = {}
+    levels: dict[str, dict[str, str]] = {}
     for item in full_list:
         if not isinstance(item, dict):
             continue
@@ -60,8 +60,9 @@ def load_kelly_cefr(*, url: str = KELLY_EN_URL) -> dict[str, str]:
             continue
         if pos.lower() in {'proper noun', 'abbreviation', 'symbol'}:
             continue
-        if word not in levels or _level_rank(level) < _level_rank(levels[word]):
-            levels[word] = level
+        prev = levels.get(word)
+        if prev is None or _level_rank(level) < _level_rank(prev['level']):
+            levels[word] = {'level': level, 'pos': pos}
     return levels
 
 
@@ -78,10 +79,14 @@ def iter_remote_rows(*, max_rows: int | None = None) -> Iterator[dict]:
     lookup = load_en_ru_lookup()
     kelly = load_kelly_cefr()
     count = 0
-    for en, level in kelly.items():
+    from .topic_classifier import resolve_topics
+
+    for en, meta in kelly.items():
         ru = lookup.get(en)
         if not ru:
             continue
+        level = meta['level']
+        pos = meta.get('pos') or ''
         row = {
             'slug': word_slug(en),
             'english': en,
@@ -89,8 +94,13 @@ def iter_remote_rows(*, max_rows: int | None = None) -> Iterator[dict]:
             'example': '',
             'example_ru': '',
             'cefr_level': level,
-            'part_of_speech': '',
-            'topics': ['remote'],
+            'part_of_speech': pos,
+            'topics': resolve_topics(
+                ['remote'],
+                english=en,
+                translation=ru,
+                part_of_speech=pos,
+            ),
         }
         yield row
         count += 1

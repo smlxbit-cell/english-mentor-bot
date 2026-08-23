@@ -9,7 +9,8 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from learning.models import Word, WordBankEntry
-from learning.word_bank.navigation import PAGE_SIZE, normalize_topics, topic_label
+from learning.word_bank.navigation import PAGE_SIZE, canonical_topic, normalize_topics, topic_label
+from learning.word_bank.topic_classifier import topic_matches
 from progress_app.models import UserWordBankStatus, UserWordProgress
 
 CEFR_LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
@@ -215,17 +216,23 @@ def pick_unseen_entries_for_level(
     return pool[:limit]
 
 
-def pick_daily_learning_entries(
+def pick_daily_intro_entries(
     user_id: int,
     user_level: str,
     *,
     limit: int = DAILY_NEW_WORDS,
 ) -> list[WordBankEntry]:
-    """Unseen words for today's learning session (auto-marked as learning)."""
-    entries = pick_unseen_entries(user_id, user_level, limit=limit)
+    """Unseen words for today's intro lesson (not marked until training starts)."""
+    return pick_unseen_entries(user_id, user_level, limit=limit)
+
+
+def commit_daily_learning_entries(
+    user_id: int,
+    entries: list[WordBankEntry],
+) -> None:
+    """Mark picked words as «учу» when user starts the training quiz."""
     for entry in entries:
         mark_bank_entry(user_id, entry.id, UserWordBankStatus.Status.LEARNING)
-    return entries
 
 
 def format_word_hub_text(overview: dict[str, Any]) -> str:
@@ -250,17 +257,18 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     n = overview['daily_new']
     return (
         '📘 <b>Учить новое</b>\n\n'
-        f'«Учить · {n}» — готовый набор на сегодня: показ слов и тренировка.\n'
-        '«Выбрать слова» — проверить что знаешь или открыть словарь.'
+        f'«Начать · {n}» — урок: по одному слову 🔊, потом тренировка.\n'
+        '«В словарь» — сам отметить слова (знаю / учу), без урока.'
     )
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
-        '📝 <b>Выбрать слова</b>\n\n'
-        '«Что знаешь?» — отметить знаю / учу по уровню.\n'
-        '«Словарь» — все слова по темам и уровням.\n'
-        '«Поиск» — найти слово.'
+        '📗 <b>В словарь</b>\n\n'
+        'Без урока — только добавить слова в свой список:\n'
+        '• «Что знаешь?» — быстро отметить знаю / учу / позже\n'
+        '• «Словарь» — листать по темам и уровням\n'
+        '• «Поиск» — найти нужное слово'
     )
 
 
@@ -272,6 +280,16 @@ def format_word_survey_levels_text(user_level: str) -> str:
         'Можно проверить и другие уровни — статистика копится отдельно.\n\n'
         'Выбери уровень: покажу 10 слов, отметь знаю / учу / позже.'
     )
+
+
+def _english_for_topic(topic: str, *, base_qs=None) -> list[str]:
+    """Headwords matching a canonical topic (works with legacy DB tags)."""
+    canon = canonical_topic(topic)
+    qs = base_qs or WordBankEntry.objects.filter(is_active=True)
+    rows = qs.only('english', 'topics')
+    if canon == 'general':
+        return [e.english for e in rows if normalize_topics(e.topics) == ['general']]
+    return [e.english for e in rows if topic_matches(e.topics, canon)]
 
 
 def format_word_repeat_section_text(
@@ -348,18 +366,8 @@ def list_personal_words(
         ).values_list('english', flat=True)
         qs = qs.filter(word__english__in=english_set)
     if topic:
-        if topic == 'general':
-            bank_qs = WordBankEntry.objects.filter(is_active=True)
-            general_eng = [
-                e.english for e in bank_qs
-                if normalize_topics(e.topics) == ['general']
-            ]
-            qs = qs.filter(word__english__in=general_eng)
-        else:
-            english_set = WordBankEntry.objects.filter(
-                is_active=True, topics__contains=[topic],
-            ).values_list('english', flat=True)
-            qs = qs.filter(word__english__in=english_set)
+        english_set = _english_for_topic(topic)
+        qs = qs.filter(word__english__in=english_set)
 
     qs = qs.order_by('-updated_at')
     total = qs.count()
@@ -389,7 +397,8 @@ def list_personal_topic_counts(user_id: int) -> list[tuple[str, int]]:
         entry = by_en.get(uwp.word.english.lower())
         topics = normalize_topics(entry.topics if entry else None)
         for topic in topics:
-            counts[topic] = counts.get(topic, 0) + 1
+            canon = canonical_topic(topic)
+            counts[canon] = counts.get(canon, 0) + 1
     return sorted(counts.items(), key=lambda x: (-x[1], x[0]))
 
 
@@ -426,13 +435,12 @@ def browse_bank_entries(
         )
         qs = qs.exclude(id__in=marked)
     if topic:
-        if topic == 'general':
-            # Entries without specific topics land in "general".
-            all_entries = list(qs.only('id', 'topics'))
-            ids = [e.id for e in all_entries if normalize_topics(e.topics) == ['general']]
-            qs = WordBankEntry.objects.filter(id__in=ids)
-        else:
-            qs = qs.filter(topics__contains=[topic])
+        canon = canonical_topic(topic)
+        matched_ids = [
+            e.id for e in qs.only('id', 'topics')
+            if topic_matches(e.topics, canon)
+        ]
+        qs = qs.filter(id__in=matched_ids)
     qs = qs.order_by('cefr_level', 'english')
     total = qs.count()
     pages = max(1, (total + page_size - 1) // page_size)
@@ -480,8 +488,7 @@ def format_personal_dict_hub(summary: dict[str, Any]) -> str:
         f"Всего <b>{summary['total']}</b> · "
         f"учу {summary['learning']} · "
         f"знаю {summary['known']} · "
-        f"выучил {summary['mastered']}\n"
-        f"К повторению: <b>{summary['due']}</b>"
+        f"выучил {summary['mastered']}"
     )
 
 
