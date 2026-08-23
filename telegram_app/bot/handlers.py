@@ -3481,7 +3481,7 @@ async def _handle_word_survey_action(
 
 async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    user_level = profile.get('level_code') or 'a1'
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
     pack = await db.prepare_daily_word_intro(profile['id'], user_level, limit=10)
     intro = pack['intro']
     if not intro:
@@ -3648,8 +3648,8 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from learning.word_bank.drill import (
         build_english_choice,
         build_translation_choice,
+        format_drill_english_prompt,
         format_drill_header,
-        format_drill_listen_prompt,
         format_drill_meaning_prompt,
         format_drill_recall_prompt,
         option_button_label,
@@ -3666,23 +3666,6 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = format_drill_header(word_pos=word_pos, word_total=word_total, step=step)
     pool = context.user_data.get('drill_words') or []
 
-    if step == 'listen':
-        options_words, correct_idx = build_english_choice(word, pool)
-        context.user_data['drill_choice_words'] = options_words
-        context.user_data['drill_correct_idx'] = correct_idx
-        labels = [option_button_label(w['english']) for w in options_words]
-        context.user_data['drill_choice_options'] = labels
-        speak = word['english'] if not word.get('example') else f'{word["english"]}. {word["example"]}'
-        context.user_data['tts_text'] = speak
-        await _send(
-            context, chat_id,
-            format_drill_listen_prompt(header),
-            reply_markup=keyboards.word_drill_choice_kb(labels, step='listen'),
-            parse_mode=ParseMode.HTML,
-        )
-        await _play_tts(context, chat_id, speak)
-        return
-
     if step == 'meaning':
         options, correct_idx = build_translation_choice(word, pool)
         context.user_data['drill_choice_options'] = options
@@ -3693,6 +3676,19 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context, chat_id,
             format_drill_meaning_prompt(header, _esc(word['english'])),
             reply_markup=keyboards.word_drill_choice_kb(labels, step='meaning'),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if step == 'english':
+        options_words, correct_idx = build_english_choice(word, pool)
+        context.user_data['drill_choice_words'] = options_words
+        context.user_data['drill_correct_idx'] = correct_idx
+        labels = [option_button_label(w['english']) for w in options_words]
+        await _send(
+            context, chat_id,
+            format_drill_english_prompt(header, _esc(word['translation'])),
+            reply_markup=keyboards.word_drill_choice_kb(labels, step='english'),
             parse_mode=ParseMode.HTML,
         )
         return
@@ -3754,17 +3750,27 @@ async def _handle_drill_pick(
     word = _current_drill_word(context)
     if not word or context.user_data.get('drill_await_continue'):
         return
+    pool = context.user_data.get('drill_words') or []
     correct_idx = int(context.user_data.get('drill_correct_idx', -1))
     if option_idx == correct_idx:
         msg = format_choice_correct(word)
-    elif step == 'listen':
+        is_correct = True
+    elif step == 'english':
         options_words = context.user_data.get('drill_choice_words') or []
         picked = options_words[option_idx] if 0 <= option_idx < len(options_words) else {}
         msg = format_choice_wrong(picked=picked, correct=word)
+        is_correct = False
     else:
         options = context.user_data.get('drill_choice_options') or []
         picked = options[option_idx] if 0 <= option_idx < len(options) else '?'
-        msg = format_translation_choice_wrong(picked=picked, correct=word)
+        msg = format_translation_choice_wrong(picked=picked, correct=word, pool=pool)
+        is_correct = False
+
+    if step == 'english' and word.get('word_id'):
+        await db.record_word_review(
+            context.user_data['profile_id'], word['word_id'], is_correct,
+        )
+
     context.user_data['drill_await_continue'] = True
     context.user_data['tts_text'] = (
         word['english'] if not word.get('example')
@@ -3773,6 +3779,20 @@ async def _handle_drill_pick(
     await _send(
         context, _chat_id(update), msg,
         reply_markup=keyboards.word_drill_continue_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_drill_word_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from learning.word_bank.drill import format_word_cheatsheet
+
+    words = context.user_data.get('drill_words') or []
+    if not words:
+        return
+    await _send(
+        context, _chat_id(update),
+        format_word_cheatsheet(words),
+        reply_markup=keyboards.word_drill_continue_kb(show_words=False),
         parse_mode=ParseMode.HTML,
     )
 
@@ -3792,8 +3812,6 @@ async def _handle_drill_recall(update, context, answer_text: str):
         msg = format_recall_correct(word, heard=guess or answer_text)
     else:
         msg = format_recall_wrong(word, heard=answer_text)
-    if word.get('example'):
-        msg += f'\n📝 {word["example"]}'
 
     context.user_data['drill_await_continue'] = True
     context.user_data['tts_text'] = (
@@ -4839,6 +4857,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _handle_drill_pick(update, context, step=step, option_idx=opt_idx)
     elif data == 'wd:cont':
         await _handle_drill_continue(update, context)
+    elif data == 'wd:words':
+        await _show_drill_word_list(update, context)
     elif data == 'wd:hint':
         word = _current_drill_word(context)
         if word:

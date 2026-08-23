@@ -138,8 +138,10 @@ class SeedWordBankCommandTests(TestCase):
 
 class WordDrillTests(SimpleTestCase):
     def test_build_english_choice_includes_target(self):
-        from learning.word_bank.drill import build_english_choice
+        from learning.word_bank.drill import build_english_choice, steps_for
 
+        self.assertEqual(steps_for(new_words=True), ('meaning', 'english'))
+        self.assertEqual(steps_for(new_words=False), ('recall',))
         target = {'english': 'coffee', 'translation': 'кофе'}
         pool = [
             target,

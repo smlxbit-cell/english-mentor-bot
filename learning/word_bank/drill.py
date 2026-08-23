@@ -1,16 +1,16 @@
-"""Word training drill: listen → meaning → recall (new words); recall-only for SRS."""
+"""Word training drill: EN→RU choice, RU→EN choice (new); recall for SRS review."""
 
 from __future__ import annotations
 
 import random
 from typing import Any
 
-STEPS_NEW = ('listen', 'meaning', 'recall')
+STEPS_NEW = ('meaning', 'english')
 STEPS_REVIEW = ('recall',)
 
 STEP_LABELS = {
-    'listen': '🔊 на слух',
     'meaning': '🇬🇧→🇷🇺',
+    'english': '🇷🇺→🇬🇧',
     'recall': '🇷🇺→🇬🇧',
 }
 
@@ -21,18 +21,6 @@ def steps_for(*, new_words: bool) -> tuple[str, ...]:
 
 def step_label(step: str) -> str:
     return STEP_LABELS.get(step, step)
-
-
-def _unique_words(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[str] = set()
-    out: list[dict[str, Any]] = []
-    for w in words:
-        key = (w.get('english') or '').lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        out.append(w)
-    return out
 
 
 def pick_distractors(
@@ -112,19 +100,19 @@ def format_intro_card(
 
 
 def format_intro_summary(*, learn_count: int, known_count: int) -> str:
-    return f'✅ <b>Знаю {known_count}</b> · <b>учить {learn_count}</b> → практика'
+    return f'✅ Знаю {known_count} · учить {learn_count} → тест'
 
 
 def format_drill_header(*, word_pos: int, word_total: int, step: str) -> str:
-    return f'🎯 <b>{word_pos}/{word_total}</b> · {step_label(step)}'
-
-
-def format_drill_listen_prompt(header: str) -> str:
-    return f'{header}\n\nЧто услышали?'
+    return f'🎯 {word_pos}/{word_total} · {step_label(step)}'
 
 
 def format_drill_meaning_prompt(header: str, english: str) -> str:
-    return f'{header}\n\n🇬🇧 <b>{english}</b>\n\nВыберите перевод:'
+    return f'{header}\n\n🇬🇧 <b>{english}</b>\n\nКакой перевод?'
+
+
+def format_drill_english_prompt(header: str, translation: str) -> str:
+    return f'{header}\n\n🇷🇺 <b>{translation}</b>\n\nКак по-английски?'
 
 
 def format_drill_recall_prompt(header: str, translation: str) -> str:
@@ -135,38 +123,67 @@ def format_drill_recall_prompt(header: str, translation: str) -> str:
     )
 
 
+def format_word_cheatsheet(words: list[dict[str, Any]]) -> str:
+    lines = ['📖 <b>Все слова</b>', '']
+    for w in words:
+        lines.append(f'🇬🇧 <b>{w["english"]}</b> — {w["translation"]}')
+        if w.get('example'):
+            lines.append(f'   📝 {w["example"]}')
+    return '\n'.join(lines)
+
+
 def format_choice_correct(word: dict[str, Any]) -> str:
-    return f'✅ <b>{word["english"]}</b> — {word["translation"]}'
+    msg = f'✅ <b>{word["english"]}</b> — {word["translation"]}'
+    if word.get('example'):
+        msg += f'\n📝 {word["example"]}'
+    return msg
 
 
 def format_choice_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
-    picked_en = picked.get('english') or picked.get('translation') or '?'
+    picked_en = picked.get('english') or '?'
     picked_ru = picked.get('translation') or ''
-    line = f'❌ «{picked_en}»'
+    msg = f'❌ <b>{picked_en}</b>'
     if picked_ru:
-        line += f' — {picked_ru}'
-    return (
-        f'{line}\n\n'
-        f'✅ Нужно: <b>{correct["english"]}</b> — {correct["translation"]}'
+        msg += f' — {picked_ru}'
+    msg += (
+        f'\n\n✅ Нужно: <b>{correct["english"]}</b> — {correct["translation"]}'
     )
+    if correct.get('example'):
+        msg += f'\n📝 {correct["example"]}'
+    return msg
 
 
-def format_translation_choice_wrong(*, picked: str, correct: dict[str, Any]) -> str:
-    return (
-        f'❌ «{picked}»\n\n'
-        f'✅ <b>{correct["english"]}</b> — {correct["translation"]}'
+def format_translation_choice_wrong(
+    *,
+    picked: str,
+    correct: dict[str, Any],
+    pool: list[dict[str, Any]],
+) -> str:
+    picked_word = next(
+        (w for w in pool if (w.get('translation') or '').strip() == picked.strip()),
+        None,
     )
+    msg = f'❌ «{picked}»'
+    if picked_word:
+        msg += f' — это <b>{picked_word["english"]}</b>'
+    msg += (
+        f'\n\n✅ Нужно: <b>{correct["english"]}</b> — {correct["translation"]}'
+    )
+    if correct.get('example'):
+        msg += f'\n📝 {correct["example"]}'
+    return msg
 
 
 def format_recall_correct(word: dict[str, Any], *, heard: str = '') -> str:
-    msg = f'✅ <b>{word["english"]}</b>'
+    msg = format_choice_correct(word)
     if heard and heard.strip():
         msg += f'\n(услышал: «{heard.strip()}»)'
     return msg
 
 
 def format_recall_wrong(word: dict[str, Any], *, heard: str = '') -> str:
-    msg = f'❌ <b>{word["english"]}</b> — {word["translation"]}'
-    if heard and heard.strip():
-        msg += f'\n(было: «{heard.strip()}»)'
+    msg = format_choice_wrong(
+        picked={'english': heard or '?', 'translation': ''},
+        correct=word,
+    )
     return msg

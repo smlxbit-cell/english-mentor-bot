@@ -245,8 +245,9 @@ def pick_daily_intro_entries(
     *,
     limit: int = DAILY_NEW_WORDS,
 ) -> list[WordBankEntry]:
-    """Unseen words for today's intro lesson (not marked until training starts)."""
-    return pick_unseen_entries(user_id, user_level, limit=limit)
+    """Unseen words at the user's CEFR level only (not lower levels)."""
+    level = (user_level or 'a1').lower()
+    return pick_unseen_entries_for_level(user_id, level, limit=limit)
 
 
 def commit_daily_learning_entries(
@@ -291,11 +292,8 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
     n = overview['daily_new']
     lvl = overview['user_level'].upper()
     return (
-        '📘 <b>Новые слова</b>\n\n'
-        f'«Начать · {n}» — {n} новых слов до {lvl}: '
-        '🔊 послушать → «Учить» или «Знаю» → практика (слух · перевод · ответ).\n\n'
-        '«📖 Выбрать в словаре» — выбрать слова и отметить: <b>знаю</b> / <b>учить</b>. '
-        '«Учить» → 🎯 <b>Тренировка</b>.'
+        f'📘 <b>Новые слова · {lvl}</b>\n\n'
+        f'«Начать · {n}» — 🔊 слушаете → «Учить» / «Знаю» → тест'
     )
 
 

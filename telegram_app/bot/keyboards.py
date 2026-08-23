@@ -266,10 +266,11 @@ def word_drill_choice_kb(options: list[str], *, step: str) -> InlineKeyboardMark
     return InlineKeyboardMarkup(rows)
 
 
-def word_drill_continue_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton('Дальше →', callback_data='wd:cont')],
-    ])
+def word_drill_continue_kb(*, show_words: bool = True) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton('Дальше →', callback_data='wd:cont')]]
+    if show_words:
+        rows.append([InlineKeyboardButton('📖 Все слова', callback_data='wd:words')])
+    return InlineKeyboardMarkup(rows)
 
 
 def word_drill_recall_kb() -> InlineKeyboardMarkup:
