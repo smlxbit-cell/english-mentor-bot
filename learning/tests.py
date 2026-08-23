@@ -159,3 +159,24 @@ class WordDrillTests(SimpleTestCase):
         self.assertEqual(words_count_ru(1), '1 слово')
         self.assertEqual(words_count_ru(3), '3 слова')
         self.assertEqual(words_count_ru(43), '43 слова')
+
+    def test_wrong_feedback_explains_mismatch(self):
+        from learning.word_bank.drill import format_english_wrong, format_meaning_wrong
+
+        pool = [
+            {'english': 'admire', 'translation': 'восхищаться'},
+            {'english': 'ache', 'translation': 'боль'},
+        ]
+        msg = format_meaning_wrong(
+            picked='боль',
+            correct=pool[0],
+            pool=pool,
+        )
+        self.assertIn('ache', msg)
+        self.assertIn('admire', msg)
+        msg2 = format_english_wrong(
+            picked=pool[1],
+            correct=pool[0],
+        )
+        self.assertIn('восхищаться', msg2)
+        self.assertIn('admire', msg2)

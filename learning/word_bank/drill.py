@@ -139,18 +139,47 @@ def format_choice_correct(word: dict[str, Any]) -> str:
     return msg
 
 
-def format_choice_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
-    picked_en = picked.get('english') or '?'
-    picked_ru = picked.get('translation') or ''
-    msg = f'❌ <b>{picked_en}</b>'
-    if picked_ru:
-        msg += f' — {picked_ru}'
-    msg += (
-        f'\n\n✅ Нужно: <b>{correct["english"]}</b> — {correct["translation"]}'
+def format_meaning_wrong(
+    *,
+    picked: str,
+    correct: dict[str, Any],
+    pool: list[dict[str, Any]],
+) -> str:
+    """EN→RU: user picked wrong Russian option."""
+    picked_word = next(
+        (w for w in pool if (w.get('translation') or '').strip() == picked.strip()),
+        None,
     )
+    if picked_word:
+        wrong = (
+            f'❌ «{picked}» — это <b>{picked_word["english"]}</b>, '
+            f'а вопрос про <b>{correct["english"]}</b>.'
+        )
+    else:
+        wrong = f'❌ «{picked}» — не подходит к <b>{correct["english"]}</b>.'
+    msg = f'{wrong}\n\n✅ <b>{correct["english"]}</b> — {correct["translation"]}'
     if correct.get('example'):
         msg += f'\n📝 {correct["example"]}'
     return msg
+
+
+def format_english_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
+    """RU→EN: user picked wrong English option."""
+    picked_en = picked.get('english') or '?'
+    picked_ru = (picked.get('translation') or '').strip()
+    correct_ru = (correct.get('translation') or '').strip()
+    msg = f'❌ <b>{picked_en}</b>'
+    if picked_ru:
+        msg += f' — «{picked_ru}»'
+    msg += f'\nЭто не ответ на «{correct_ru}».\n\n'
+    msg += f'✅ <b>{correct["english"]}</b> — {correct_ru}'
+    if correct.get('example'):
+        msg += f'\n📝 {correct["example"]}'
+    return msg
+
+
+def format_choice_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
+    return format_english_wrong(picked=picked, correct=correct)
 
 
 def format_translation_choice_wrong(
@@ -159,19 +188,7 @@ def format_translation_choice_wrong(
     correct: dict[str, Any],
     pool: list[dict[str, Any]],
 ) -> str:
-    picked_word = next(
-        (w for w in pool if (w.get('translation') or '').strip() == picked.strip()),
-        None,
-    )
-    msg = f'❌ «{picked}»'
-    if picked_word:
-        msg += f' — это <b>{picked_word["english"]}</b>'
-    msg += (
-        f'\n\n✅ Нужно: <b>{correct["english"]}</b> — {correct["translation"]}'
-    )
-    if correct.get('example'):
-        msg += f'\n📝 {correct["example"]}'
-    return msg
+    return format_meaning_wrong(picked=picked, correct=correct, pool=pool)
 
 
 def format_recall_correct(word: dict[str, Any], *, heard: str = '') -> str:
@@ -182,8 +199,11 @@ def format_recall_correct(word: dict[str, Any], *, heard: str = '') -> str:
 
 
 def format_recall_wrong(word: dict[str, Any], *, heard: str = '') -> str:
-    msg = format_choice_wrong(
-        picked={'english': heard or '?', 'translation': ''},
-        correct=word,
+    heard = (heard or '').strip()
+    msg = f'❌ Не «{heard}»' if heard else '❌ Неверно'
+    msg += (
+        f'\n\n✅ <b>{word["english"]}</b> — {word["translation"]}'
     )
+    if word.get('example'):
+        msg += f'\n📝 {word["example"]}'
     return msg

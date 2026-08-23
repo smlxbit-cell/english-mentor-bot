@@ -3771,6 +3771,17 @@ async def _handle_drill_pick(
             context.user_data['profile_id'], word['word_id'], is_correct,
         )
 
+    if is_correct:
+        query = update.callback_query
+        if query:
+            await _ack_callback(query, '✅')
+        advanced = _advance_drill(context)
+        if advanced is None:
+            await _finish_word_drill(update, context)
+        else:
+            await _show_drill_step(update, context)
+        return
+
     context.user_data['drill_await_continue'] = True
     context.user_data['tts_text'] = (
         word['english'] if not word.get('example')
@@ -3809,9 +3820,14 @@ async def _handle_drill_recall(update, context, answer_text: str):
     await db.record_word_review(context.user_data['profile_id'], word['word_id'], correct)
 
     if correct:
-        msg = format_recall_correct(word, heard=guess or answer_text)
-    else:
-        msg = format_recall_wrong(word, heard=answer_text)
+        advanced = _advance_drill(context)
+        if advanced is None:
+            await _finish_word_drill(update, context)
+        else:
+            await _show_drill_step(update, context)
+        return
+
+    msg = format_recall_wrong(word, heard=answer_text)
 
     context.user_data['drill_await_continue'] = True
     context.user_data['tts_text'] = (
