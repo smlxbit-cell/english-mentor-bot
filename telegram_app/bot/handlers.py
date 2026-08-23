@@ -3791,10 +3791,12 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan_code = (detail.get('plan_code') or '').lower()
         plan_ru = PLAN_NAMES_RU.get(plan_code, limits['plan_name'])
         text = (
-            f'<b>{plan_ru}</b>\n'
-            f'Голос наставника: ~{limits["voice_remaining_minutes"]} мин · '
-            f'сообщений: ~{limits["tutor_messages_remaining"]}\n'
-            'Вся программа открыта.'
+            f'✅ <b>{plan_ru}</b> · все эпизоды открыты\n\n'
+            f'🎙 <b>Голосовой диалог</b> с наставником: '
+            f'~{limits["voice_remaining_minutes"]} мин\n'
+            f'💬 <b>Чат</b> с наставником: '
+            f'~{limits["tutor_messages_remaining"]} сообщ.\n\n'
+            '🔊 Озвучка уроков (кнопка «Слушать») — без лимита на любом тарифе.'
         )
         await _send(
             context, _chat_id(update),
@@ -3831,7 +3833,7 @@ async def show_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if plan.get('plan_kind') == 'subscription':
             sub_lines.append(
                 f'• {plan["name"]}: {plan["price_rub"]} ₽ / {days} дней — '
-                f'{plan.get("voice_minutes_monthly", 0)} мин голоса наставника/мес'
+                f'{plan.get("voice_minutes_monthly", 0)} мин голосового диалога 🎙/мес'
             )
     addon = next((p for p in plans if p.get('code') == 'voice_100'), None)
     addon_line = ''

@@ -49,18 +49,14 @@ class Command(BaseCommand):
         for u in users:
             plan = u['plan']
             payload = format_compact_reminder(u['profile_id'], today, plan)
-            rows = []
+            row = []
             if payload.get('tts_text'):
-                rows.append([
-                    InlineKeyboardButton('🔊 Слушать', callback_data='reminder:listen'),
-                ])
-            rows.append([
-                InlineKeyboardButton(
-                    payload.get('cta', '▶️ Начать'),
-                    callback_data='plan:continue',
-                ),
-            ])
-            kb = InlineKeyboardMarkup(rows)
+                row.append(InlineKeyboardButton('🔊 Слушать', callback_data='reminder:listen'))
+            row.append(InlineKeyboardButton(
+                payload.get('cta', '▶️ Начать'),
+                callback_data='plan:continue',
+            ))
+            kb = InlineKeyboardMarkup([row])
             try:
                 await bot.send_message(
                     chat_id=u['telegram_id'],

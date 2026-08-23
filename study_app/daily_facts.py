@@ -291,8 +291,8 @@ def format_compact_reminder(
     if plan.get('is_rest_day'):
         text = (
             f'{icon} <b>{label}</b>\n\n'
-            f'{fact_ru}\n\n'
-            f'🇬🇧 <i>{fact_en}</i>\n\n'
+            f'🇷🇺 {fact_ru}\n'
+            f'🇬🇧 {fact_en}\n\n'
             '🌿 Сегодня отдых — короткая разминка ~5 мин.'
         )
         return {'text': text, 'tts_text': fact_en, 'cta': '▶️ Начать'}
@@ -304,12 +304,10 @@ def format_compact_reminder(
         hook += f' · ~{total_m} мин'
 
     lines = [hook, '']
-    if fact_ru:
-        lines.append(fact_ru)
     if fact_en:
-        lines.append(f'🇬🇧 <i>{fact_en}</i>')
-    lines.append('')
-    lines.append('▶️ Жми «Начать» — сразу в тренировку, без длинного плана.')
+        lines.append(f'🇬🇧 {fact_en}')
+    if fact_ru:
+        lines.append(f'🇷🇺 {fact_ru}')
 
     return {
         'text': '\n'.join(lines),

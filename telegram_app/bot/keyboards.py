@@ -758,20 +758,38 @@ def paywall_kb(
                 callback_data='tier:free',
             ),
         ])
-    for plan in plans:
-        if plan.get('plan_kind') != 'subscription':
-            continue
+    sub_plans = [p for p in plans if p.get('plan_kind') == 'subscription']
+    if len(sub_plans) >= 2:
         rows.append([
             InlineKeyboardButton(
-                plan_button_label(plan),
-                callback_data=f'buy:{plan["code"]}',
+                plan_button_label(sub_plans[0]),
+                callback_data=f'buy:{sub_plans[0]["code"]}',
+            ),
+            InlineKeyboardButton(
+                plan_button_label(sub_plans[1]),
+                callback_data=f'buy:{sub_plans[1]["code"]}',
             ),
         ])
+        if len(sub_plans) > 2:
+            rows.append([
+                InlineKeyboardButton(
+                    plan_button_label(sub_plans[2]),
+                    callback_data=f'buy:{sub_plans[2]["code"]}',
+                ),
+            ])
+    else:
+        for plan in sub_plans:
+            rows.append([
+                InlineKeyboardButton(
+                    plan_button_label(plan),
+                    callback_data=f'buy:{plan["code"]}',
+                ),
+            ])
     addon_cb = 'buy:voice_100' if has_subscription else 'addon:info'
     rows.append([
         InlineKeyboardButton(PLAN_BUTTON_LABELS['voice_100'], callback_data=addon_cb),
+        InlineKeyboardButton('ℹ️ Условия', callback_data='terms'),
     ])
-    rows.append([InlineKeyboardButton('ℹ️ Условия оплаты', callback_data='terms')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -785,14 +803,15 @@ def subscription_kb(*, has_subscription: bool, voice_remaining: int = 0) -> Inli
                 PLAN_BUTTON_LABELS['voice_100'],
                 callback_data='buy:voice_100',
             ),
+            InlineKeyboardButton('ℹ️ Условия', callback_data='terms'),
         ])
     else:
-        rows.append([InlineKeyboardButton('💳 Выбрать тариф', callback_data='paywall:plans')])
         rows.append([
+            InlineKeyboardButton('💳 Тарифы', callback_data='paywall:plans'),
             InlineKeyboardButton(
                 PLAN_BUTTON_LABELS['voice_100'],
                 callback_data='addon:info',
             ),
         ])
-    rows.append([InlineKeyboardButton('ℹ️ Условия оплаты', callback_data='terms')])
+        rows.append([InlineKeyboardButton('ℹ️ Условия оплаты', callback_data='terms')])
     return InlineKeyboardMarkup(rows)
