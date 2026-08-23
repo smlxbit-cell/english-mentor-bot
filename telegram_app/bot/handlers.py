@@ -3469,6 +3469,7 @@ async def _show_word_survey_card(update, context):
         reply_markup=keyboards.word_survey_kb(word['bank_entry_id']),
         parse_mode=ParseMode.HTML,
     )
+    await _play_tts(context, chat_id, context.user_data['tts_text'])
 
 
 async def _handle_word_survey_action(

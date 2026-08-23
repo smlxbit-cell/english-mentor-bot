@@ -217,13 +217,11 @@ def dict_listen_kb(has_words: bool = True) -> InlineKeyboardMarkup:
 
 
 def word_hub_kb(*, due_count: int = 0, unseen_total: int = 0) -> InlineKeyboardMarkup:
-    """Hub: три раздела в одну строку (короткие подписи для телефона)."""
+    """Hub: три кнопки на всю ширину — Telegram не обрезает текст на телефоне."""
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton('🎯 Практика', callback_data='words:repeat'),
-            InlineKeyboardButton('📘 Новые', callback_data='words:new'),
-            InlineKeyboardButton('📗 Мои', callback_data='words:mydict'),
-        ],
+        [InlineKeyboardButton('🎯 Практика', callback_data='words:repeat')],
+        [InlineKeyboardButton('📘 Новые', callback_data='words:new')],
+        [InlineKeyboardButton('📗 Мои слова', callback_data='words:mydict')],
     ])
 
 
@@ -253,7 +251,6 @@ def word_new_pick_kb() -> InlineKeyboardMarkup:
 
 def word_daily_intro_card_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
         [
             InlineKeyboardButton('🎯 Учить', callback_data='words:intro:next'),
             InlineKeyboardButton('✅ Знаю', callback_data='words:intro:known'),
@@ -489,7 +486,6 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton('✅ Знаю', callback_data=f'words:survey:known:{bid}'),
             InlineKeyboardButton('🎯 Учить', callback_data=f'words:survey:learn:{bid}'),
         ],
-        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
     ])
 
 
