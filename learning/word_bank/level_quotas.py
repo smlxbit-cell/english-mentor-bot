@@ -142,19 +142,6 @@ def apply_level_quotas(
     dropped: set[str] = set()
     reserved: set[str] = set()
 
-    # Keep native Kelly C1/B2 at their bands before lower levels promote them away.
-    for lvl in ('c1', 'b2'):
-        for slug, row in sorted(
-            by_level.get(lvl) or [],
-            key=lambda pair: _row_sort_key(pair[1], kelly_ranks),
-        ):
-            if slug in reserved:
-                continue
-            copy = dict(row)
-            copy['cefr_level'] = lvl
-            kept[slug] = copy
-            reserved.add(slug)
-
     for lvl in CEFR_LEVELS:
         native = list(by_level.get(lvl) or [])
         if lvl not in active_levels:
