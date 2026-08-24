@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 PY="${PY:-.venv/bin/python}"
 LOG="${LOG:-/tmp/finish_word_bank.log}"
 
-log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
+log() { echo "[$(date -Iseconds)] $*" >> "$LOG"; echo "[$(date -Iseconds)] $*"; }
 
 seed_level() {
   local level="$1"
@@ -22,7 +22,7 @@ fill_level() {
 }
 
 stats() {
-  "$PY" manage.py shell <<'PY' | tee -a "$LOG"
+  "$PY" manage.py shell <<'PY' >> "$LOG" 2>&1
 from learning.models import WordBankEntry
 from django.db.models import Q
 targets = {'a1': 500, 'a2': 1000, 'b1': 2000, 'b2': 4000, 'c1': 8000}
@@ -32,6 +32,7 @@ for lvl, target in targets.items():
     with_ex = qs.exclude(Q(example='') | Q(example__isnull=True)).count()
     print(f'{lvl.upper()}: {total}/{target} words, {with_ex} examples')
 PY
+  tail -5 "$LOG"
 }
 
 log "=== START word bank finish ==="
