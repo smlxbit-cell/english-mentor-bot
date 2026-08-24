@@ -46,9 +46,6 @@ for level in a1 a2 b1 b2 c1; do
   log "=== Phase 2: ${level} examples ==="
   fill_level "$level"
   seed_level "$level"
-  if [[ "$level" != "a2" ]]; then
-    seed_level a2
-  fi
   stats
 done
 
