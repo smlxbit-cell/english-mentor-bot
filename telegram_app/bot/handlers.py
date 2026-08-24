@@ -3681,6 +3681,7 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from learning.word_bank.drill import (
         build_english_choice,
         build_translation_choice,
+        drill_tts_text,
         format_drill_english_prompt,
         format_drill_header,
         format_drill_meaning_prompt,
@@ -3705,12 +3706,14 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['drill_correct_idx'] = correct_idx
         context.user_data.pop('drill_choice_words', None)
         labels = [option_button_label(o) for o in options]
+        context.user_data['tts_text'] = drill_tts_text(word)
         await _send(
             context, chat_id,
             format_drill_meaning_prompt(header, _esc(word['english'])),
             reply_markup=keyboards.word_drill_choice_kb(labels, step='meaning'),
             parse_mode=ParseMode.HTML,
         )
+        await _play_tts(context, chat_id, context.user_data['tts_text'])
         return
 
     if step == 'english':
@@ -3718,6 +3721,7 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['drill_choice_words'] = options_words
         context.user_data['drill_correct_idx'] = correct_idx
         labels = [option_button_label(w['english']) for w in options_words]
+        context.user_data.pop('tts_text', None)
         await _send(
             context, chat_id,
             format_drill_english_prompt(header, _esc(word['translation'])),
@@ -3729,6 +3733,7 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('drill_choice_words', None)
     context.user_data.pop('drill_choice_options', None)
     context.user_data.pop('drill_correct_idx', None)
+    context.user_data.pop('tts_text', None)
     await _send(
         context, chat_id,
         format_drill_recall_prompt(header, _esc(word['translation'])),
@@ -3778,6 +3783,7 @@ async def _handle_drill_pick(
         format_choice_correct,
         format_choice_wrong,
         format_translation_choice_wrong,
+        drill_tts_text,
     )
 
     word = _current_drill_word(context)
@@ -3823,10 +3829,7 @@ async def _handle_drill_pick(
         return
 
     context.user_data['drill_await_continue'] = True
-    context.user_data['tts_text'] = (
-        word['english'] if not word.get('example')
-        else f'{word["english"]}. {word["example"]}'
-    )
+    context.user_data['tts_text'] = drill_tts_text(word)
     await _send(
         context, _chat_id(update), msg,
         reply_markup=keyboards.word_drill_continue_kb(),
@@ -3872,10 +3875,9 @@ async def _handle_drill_recall(update, context, answer_text: str):
     msg = format_recall_wrong(word, heard=answer_text)
 
     context.user_data['drill_await_continue'] = True
-    context.user_data['tts_text'] = (
-        word['english'] if not word.get('example')
-        else f'{word["english"]}. {word["example"]}'
-    )
+    from learning.word_bank.drill import drill_tts_text
+
+    context.user_data['tts_text'] = drill_tts_text(word)
     await _send(
         context, chat_id, msg,
         reply_markup=keyboards.word_drill_continue_kb(),

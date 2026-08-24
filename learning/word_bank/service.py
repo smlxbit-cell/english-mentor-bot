@@ -694,11 +694,19 @@ def get_review_words_for_entries(profile_id: int, entries: list[WordBankEntry]) 
             word = sync_word_from_bank(
                 profile_id, entry, status=UserWordBankStatus.Status.LEARNING,
             )
+        from learning.english_display import display_word_fields
+
+        display = display_word_fields(
+            english=entry.english,
+            translation=word.translation or entry.translation,
+            example=word.example or entry.example or '',
+            part_of_speech=entry.part_of_speech or '',
+        )
         out.append({
             'word_id': word.id,
-            'english': word.english,
-            'translation': word.translation or entry.translation,
-            'example': word.example or entry.example,
+            'english': display['english'],
+            'translation': display['translation'],
+            'example': display['example'],
             'bank_entry_id': entry.id,
         })
     return out

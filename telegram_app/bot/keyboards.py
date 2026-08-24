@@ -259,7 +259,7 @@ def word_daily_intro_card_kb() -> InlineKeyboardMarkup:
 
 
 def word_drill_choice_kb(options: list[str], *, step: str) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton('🔊 Ещё раз', callback_data='tts:say')]]
+    rows = []
     for i, opt in enumerate(options):
         label = opt if len(opt) <= 36 else f'{opt[:35]}…'
         rows.append([InlineKeyboardButton(label, callback_data=f'wd:pick:{step}:{i}')])
@@ -275,7 +275,6 @@ def word_drill_continue_kb(*, show_words: bool = True) -> InlineKeyboardMarkup:
 
 def word_drill_recall_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🔊 Слушать', callback_data='tts:say')],
         [InlineKeyboardButton('💡 Подсказка', callback_data='wd:hint')],
     ])
 

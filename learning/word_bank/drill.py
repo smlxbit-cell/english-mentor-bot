@@ -107,6 +107,13 @@ def format_drill_header(*, word_pos: int, word_total: int, step: str) -> str:
     return f'🎯 {word_pos}/{word_total} · {step_label(step)}'
 
 
+def drill_tts_text(word: dict[str, Any]) -> str:
+    """English phrase to voice for the current drill word."""
+    en = (word.get('english') or '').strip()
+    ex = (word.get('example') or '').strip()
+    return en if not ex else f'{en}. {ex}'
+
+
 def format_drill_meaning_prompt(header: str, english: str) -> str:
     return f'{header}\n\n🇬🇧 <b>{english}</b>\n\nКакой перевод?'
 
