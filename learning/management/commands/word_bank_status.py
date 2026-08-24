@@ -17,7 +17,10 @@ class Command(BaseCommand):
         for lvl, target in LEVEL_TARGETS.items():
             qs = WordBankEntry.objects.filter(cefr_level=lvl, is_active=True)
             total = qs.count()
-            with_ex = qs.exclude(Q(example='') | Q(example__isnull=True)).count()
+            with_ex = qs.exclude(
+                Q(example='') | Q(example__isnull=True)
+                | Q(example_ru='') | Q(example_ru__isnull=True)
+            ).count()
             pct = (with_ex * 100 // total) if total else 0
             lines.append(
                 f'{lvl.upper()}: {total}/{target} words · '
