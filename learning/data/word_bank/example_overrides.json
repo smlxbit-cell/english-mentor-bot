@@ -38,5 +38,17 @@
   "book": {
     "example": "She is reading an interesting book.",
     "example_ru": "Она читает интересную книгу."
+  },
+  "center": {
+    "example": "The hotel is in the center of town.",
+    "example_ru": "Отель в центре города."
+  },
+  "color": {
+    "example": "What color is your car?",
+    "example_ru": "Какого цвета твоя машина?"
+  },
+  "learn": {
+    "example": "I learn ten new words every week.",
+    "example_ru": "Я учу десять новых слов каждую неделю."
   }
 }

@@ -9,6 +9,7 @@ from typing import Iterator
 
 from .normalize import word_slug
 from .translation_enrich import enrich_translation
+from .american_spelling import americanize_headword
 
 KELLY_EN_URL = (
     'https://raw.githubusercontent.com/kotoshu/frequency-list-kelly/main/data/en.json'
@@ -106,6 +107,7 @@ def iter_remote_rows(
             freedict_text=freedict.get(en, ''),
             part_of_speech=pos,
         )
+        en = americanize_headword(en)
         row = {
             'slug': word_slug(en),
             'english': en,

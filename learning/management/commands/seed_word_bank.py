@@ -105,7 +105,23 @@ def collect_word_bank_rows(
             merge_existing=True,
         )
         tatoeba_lookup = {**tatoeba_lookup, **new_lookup}
-    return enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup), dropped_slugs
+    merged = enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup), dropped_slugs
+    return _americanize_merged_rows(merged), dropped_slugs
+
+
+def _americanize_merged_rows(rows: dict[str, dict]) -> dict[str, dict]:
+    """Re-key rows when British headwords map to American spellings."""
+    from learning.word_bank.american_spelling import americanize_headword
+    from learning.word_bank.normalize import word_slug
+
+    out: dict[str, dict] = {}
+    for row in rows.values():
+        en = americanize_headword(row.get('english') or '')
+        row = dict(row)
+        row['english'] = en
+        row['slug'] = word_slug(en)
+        out[row['slug']] = row
+    return out
 
 
 class Command(BaseCommand):
@@ -233,6 +249,15 @@ class Command(BaseCommand):
                 is_active=False,
             )
             self.stdout.write(f'Deactivated {n} words over level quota')
+
+        from learning.word_bank.american_spelling import HEADWORD_TO_AMERICAN
+
+        n_brit = WordBankEntry.objects.filter(
+            english__in=list(HEADWORD_TO_AMERICAN.keys()),
+            is_active=True,
+        ).update(is_active=False)
+        if n_brit:
+            self.stdout.write(f'Deactivated {n_brit} British-spelling duplicates')
 
         from learning.word_bank.service import refresh_words_from_bank
 
