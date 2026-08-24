@@ -88,6 +88,8 @@ def collect_word_bank_rows(
     if quota_levels:
         merged, dropped_slugs = apply_level_quotas(merged, levels=quota_levels)
 
+    merged = _americanize_merged_rows(merged)
+
     if fetch_tatoeba and data_dir:
         if tatoeba_headwords is None:
             if tatoeba_levels:
@@ -106,7 +108,7 @@ def collect_word_bank_rows(
         )
         tatoeba_lookup = {**tatoeba_lookup, **new_lookup}
     merged = enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup)
-    return _americanize_merged_rows(merged), dropped_slugs
+    return merged, dropped_slugs
 
 
 def _americanize_merged_rows(rows: dict[str, dict]) -> dict[str, dict]:
