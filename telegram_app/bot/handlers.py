@@ -3176,12 +3176,10 @@ async def _show_personal_topics(update: Update, context: ContextTypes.DEFAULT_TY
 async def _show_word_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
-    overview = await db.get_word_bank_overview(profile['id'], user_level)
     text = (
-        '📖 <b>Словарь</b>\n\n'
-        f'Твой уровень: <b>{overview["user_level"].upper()}</b>\n'
-        'Нажми <b>слово</b> в списке → <b>Знаю</b> / <b>Учить</b>.\n'
-        '«Учить» → 🎯 Тренировка на главном экране «Слова».'
+        '📖 <b>Словарь · по уровню</b>\n\n'
+        f'Ваш уровень: <b>{user_level.upper()}</b>\n'
+        'Выберите уровень → слово → <b>Знаю</b> / <b>Учить</b>.'
     )
     await _send(
         context, _chat_id(update), text,
@@ -3244,13 +3242,12 @@ async def _show_bank_page(
     data = await db.browse_bank_entries(
         profile['id'], user_level, level=level, topic=topic, page=page,
     )
-    summary = await db.get_personal_dict_summary(profile['id'])
     if level:
-        title = f'📖 {level.upper()}'
+        title = f'📖 Словарь · {level.upper()}'
     elif topic:
         title = f'📖 {topic_label(topic)}'
     else:
-        title = '📖 Все слова'
+        title = '📖 Словарь'
     text = await db.format_word_list_page(
         title=title,
         items=data['items'],
@@ -3260,11 +3257,11 @@ async def _show_bank_page(
     )
     if topic == 'general':
         text += (
-            '\n\n<i>Базовые слова без узкой темы. '
-            'Удобнее смотреть по темам или уровню.</i>'
+            '\n\n<i>Базовые слова без узкой темы.</i>'
         )
-    text += '\n\n<i>Нажми кнопку со словом ниже.</i>'
+    text += '\n\n<i>Нажмите слово ниже.</i>'
     context.user_data['bank_page_cb'] = f'{prefix}:{page}'
+    back_data = 'words:bank' if level else 'words:new:pick'
     await _send(
         context, _chat_id(update), text,
         reply_markup=keyboards.word_bank_list_page_kb(
@@ -3272,8 +3269,7 @@ async def _show_bank_page(
             prefix,
             page=data['page'],
             pages=data['pages'],
-            back_data='words:bank',
-            learning_count=summary.get('learning', 0),
+            back_data=back_data,
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -3286,7 +3282,6 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
             await _ack_callback(update.callback_query, 'Слово не найдено', show_alert=True)
         return
     profile_id = context.user_data.get('profile_id')
-    summary = await db.get_personal_dict_summary(profile_id) if profile_id else {}
     lines = [
         f'📝 <b>{_esc(entry_dict["english"])}</b> · '
         f'{entry_dict["cefr_level"].upper()}',
@@ -3294,20 +3289,17 @@ async def _show_bank_entry(update, context, bank_entry_id: int):
     ]
     if entry_dict.get('example'):
         lines.append(f'📝 {_esc(entry_dict["example"])}')
-    lines.append('\n<i>«Учить» → 🎯 Тренировка</i>')
     context.user_data['tts_text'] = entry_dict['english']
     page_cb = context.user_data.get('bank_page_cb', 'words:bank')
-    learning = summary.get('learning', 0)
     await _send(
         context, _chat_id(update), '\n'.join(lines),
         reply_markup=keyboards.word_bank_entry_kb(
             bank_entry_id,
             page_cb=page_cb,
-            show_train=True,
-            learning_count=learning,
         ),
         parse_mode=ParseMode.HTML,
     )
+    await _play_tts(context, _chat_id(update), context.user_data['tts_text'])
 
 
 async def _prompt_word_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3894,8 +3886,30 @@ async def _start_daily_word_quiz(update, context):
 # Vocabulary spaced-repetition review
 # --------------------------------------------------------------------------- #
 
-async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                            *, from_plan: bool = False):
+async def _start_practice_intro(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    words: list[dict],
+    *,
+    source: str,
+    from_plan: bool = False,
+) -> None:
+    context.user_data['drill_from_plan'] = from_plan
+    context.user_data['mode'] = 'daily_intro'
+    context.user_data['daily_intro_source'] = source
+    context.user_data['daily_intro_queue'] = list(words)
+    context.user_data['daily_intro_selected'] = []
+    context.user_data['daily_intro_known_count'] = 0
+    context.user_data['daily_intro_total'] = len(words)
+    await _show_daily_intro_card(update, context)
+
+
+async def _start_practice_flow(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    from_plan: bool = False,
+) -> None:
     from learning.word_bank.service import DAILY_NEW_WORDS
 
     profile = await _ensure_profile(update, context)
@@ -3906,24 +3920,39 @@ async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return
 
     due = await db.get_due_words(profile['id'], limit=DAILY_NEW_WORDS)
-    if not due:
+    if due:
+        await _start_practice_intro(
+            update, context, due, source='training', from_plan=from_plan,
+        )
+        return
+
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    interests = profile.get('interests') or []
+    pack = await db.prepare_practice_fallback_intro(
+        profile['id'], user_level, interests, limit=DAILY_NEW_WORDS,
+    )
+    intro = pack.get('intro') or []
+    if not intro:
         if from_plan:
             plan = context.user_data.get('daily_plan') or await db.get_daily_plan(profile['id'])
             await _mark_plan_item_by_type(profile['id'], plan, 'words')
-        await _send(context, chat_id,
-                    'Сейчас нет слов к повторению 👍',
-                    reply_markup=keyboards.word_repeat_section_kb())
+        await _send(
+            context, chat_id,
+            'На вашем уровне новых слов не осталось 🎉',
+            reply_markup=keyboards.word_hub_kb(),
+        )
         if from_plan:
             await show_daily_plan(update, context)
         return
-    context.user_data['drill_from_plan'] = from_plan
-    context.user_data['mode'] = 'daily_intro'
-    context.user_data['daily_intro_source'] = 'training'
-    context.user_data['daily_intro_queue'] = list(due)
-    context.user_data['daily_intro_selected'] = []
-    context.user_data['daily_intro_known_count'] = 0
-    context.user_data['daily_intro_total'] = len(due)
-    await _show_daily_intro_card(update, context)
+
+    await _start_practice_intro(
+        update, context, intro, source='new', from_plan=from_plan,
+    )
+
+
+async def start_word_review(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                            *, from_plan: bool = False):
+    await _start_practice_flow(update, context, from_plan=from_plan)
 
 
 async def _ask_next_word(update, context):
@@ -4866,7 +4895,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'words:new:pick':
         await _show_word_new_pick_section(update, context)
     elif data == 'words:repeat':
-        await _show_word_repeat_section(update, context)
+        await _start_practice_flow(update, context)
     elif data in ('words:repeat:list', 'words:add'):
         await _show_word_hub(update, context)
     elif data == 'words:mydict':

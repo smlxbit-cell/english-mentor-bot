@@ -277,6 +277,58 @@ def pick_daily_intro_entries(
     return pick_unseen_entries_for_level(user_id, level, limit=limit)
 
 
+def pick_practice_fallback_entries(
+    user_id: int,
+    user_level: str,
+    interest_tokens: list[str] | None = None,
+    *,
+    limit: int = DAILY_NEW_WORDS,
+) -> list[WordBankEntry]:
+    """Unseen words at user level, shuffled; prefer the learner's interest topics."""
+    from study_app.daily_facts import interest_tokens_to_topics
+
+    level = (user_level or 'a1').lower()
+    marked_ids = UserWordBankStatus.objects.filter(user_id=user_id).values_list(
+        'bank_entry_id', flat=True,
+    )
+    pool = list(
+        WordBankEntry.objects.filter(is_active=True, cefr_level=level)
+        .exclude(id__in=marked_ids),
+    )
+    if not pool:
+        return []
+
+    preferred = interest_tokens_to_topics(interest_tokens or [])
+    if preferred:
+        matched = [
+            entry for entry in pool
+            if preferred.intersection(set(normalize_topics(entry.topics)))
+        ]
+        if len(matched) >= limit:
+            pool = matched
+        elif matched:
+            rest = [entry for entry in pool if entry not in matched]
+            random.shuffle(matched)
+            random.shuffle(rest)
+            pool = matched + rest
+
+    random.shuffle(pool)
+    return pool[:limit]
+
+
+def prepare_practice_fallback_intro(
+    user_id: int,
+    user_level: str,
+    interest_tokens: list[str] | None = None,
+    *,
+    limit: int = DAILY_NEW_WORDS,
+) -> dict[str, Any]:
+    entries = pick_practice_fallback_entries(
+        user_id, user_level, interest_tokens, limit=limit,
+    )
+    return {'intro': [entry_to_dict(entry) for entry in entries]}
+
+
 def commit_daily_learning_entries(
     user_id: int,
     entries: list[WordBankEntry],
@@ -326,8 +378,7 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
     return (
         '📖 <b>Добавить из словаря</b>\n\n'
-        'Нажмите слово → <b>Учить</b> или <b>Знаю ✅</b>\n'
-        '«Учить» → 🎯 Тренировка · «Знаю» → уже знаю'
+        'Выберите <b>уровень</b> → слово → <b>Знаю</b> / <b>Учить</b>.'
     )
 
 
@@ -356,13 +407,11 @@ def format_word_repeat_section_text(
     summary: dict[str, Any],
 ) -> str:
     due = summary.get('due', overview.get('due_count', 0))
-    if summary['learning'] == 0:
-        n = overview.get('daily_new', DAILY_NEW_WORDS)
+    if summary['learning'] == 0 and due == 0:
         return (
             '🎯 <b>Тренировка</b>\n\n'
-            'Пока пусто — слова попадают сюда только после «🎯 Учить».\n\n'
-            f'📘 <b>Словарь</b> → «Начать · {n}» (ваш уровень) '
-            'или выберите слова вручную.'
+            'Подберём <b>10 слов</b> вашего уровня по интересам — '
+            'отметьте «🎯 Учить» или «✅ Знаю».'
         )
     stats = format_word_stats_line(summary)
     if due:

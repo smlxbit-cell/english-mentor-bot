@@ -1398,6 +1398,18 @@ def prepare_daily_word_intro(profile_id: int, user_level: str, limit: int = 10) 
 
 
 @sync_to_async
+def prepare_practice_fallback_intro(
+    profile_id: int,
+    user_level: str,
+    interest_tokens: list[str] | None = None,
+    limit: int = 10,
+) -> dict:
+    from learning.word_bank.service import prepare_practice_fallback_intro as _fn
+
+    return _fn(profile_id, user_level, interest_tokens, limit=limit)
+
+
+@sync_to_async
 def start_daily_word_quiz(profile_id: int, intro_words: list[dict]) -> list[dict]:
     from learning.models import WordBankEntry
     from learning.word_bank.service import (
