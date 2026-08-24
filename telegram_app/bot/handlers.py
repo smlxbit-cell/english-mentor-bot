@@ -3136,7 +3136,13 @@ async def _show_word_level_detail(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton('👀 Проверить 10', callback_data=f'words:survey:level:{level}'),
+                InlineKeyboardButton(
+                    f'👀 Проверить ({min(stat["unseen"], 80)})',
+                    callback_data=f'words:survey:level:{level}',
+                ) if stat['unseen'] else InlineKeyboardButton(
+                    '👀 Проверить',
+                    callback_data=f'words:survey:level:{level}',
+                ),
                 InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
             [InlineKeyboardButton('← Добавить слова', callback_data='words:new:pick')],
@@ -3289,7 +3295,13 @@ async def _show_bank_page(
         text += (
             '\n\n<i>Базовые слова без узкой темы.</i>'
         )
-    text += '\n\n<i>Нажмите слово ниже.</i>'
+    if level:
+        text += (
+            '\n\n<i>✅ Знаю / 🎯 Учить — на кнопках. '
+            '«Проверить по одному» — карточка с переводом и примером.</i>'
+        )
+    else:
+        text += '\n\n<i>✅ или 🎯 на кнопках рядом со словом.</i>'
     context.user_data['bank_page_cb'] = f'{prefix}:{page}'
     back_data = 'words:bank' if level else 'words:new:pick'
     await _send(
@@ -3300,9 +3312,31 @@ async def _show_bank_page(
             page=data['page'],
             pages=data['pages'],
             back_data=back_data,
+            level=level,
+            unseen_total=data['total'],
         ),
         parse_mode=ParseMode.HTML,
     )
+
+
+async def _refresh_bank_list_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    page_cb = context.user_data.get('bank_page_cb', 'words:bank')
+    parts = page_cb.rsplit(':', 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        prefix, page = parts[0], int(parts[1])
+        if ':level:' in prefix:
+            lvl = prefix.rsplit(':', 1)[1]
+            await _show_bank_page(
+                update, context, prefix=prefix, page=page, level=lvl,
+            )
+            return
+        if ':topic:' in prefix:
+            topic = prefix.split('words:bank:topic:', 1)[1]
+            await _show_bank_page(
+                update, context, prefix=prefix, page=page, topic=topic,
+            )
+            return
+    await _show_word_bank_hub(update, context)
 
 
 async def _show_bank_entry(update, context, bank_entry_id: int):
@@ -3385,8 +3419,12 @@ async def _show_survey_level_menu(update: Update, context: ContextTypes.DEFAULT_
 async def start_word_survey_for_level(
     update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
 ):
+    from learning.word_bank.service import SURVEY_LEVEL_MAX
+
     profile = await _ensure_profile(update, context)
-    batch = await db.pick_word_survey_batch_for_level(profile['id'], level, limit=10)
+    batch = await db.pick_word_survey_batch_for_level(
+        profile['id'], level, limit=SURVEY_LEVEL_MAX,
+    )
     if not batch:
         await _send(
             context, _chat_id(update),
@@ -3417,6 +3455,7 @@ async def _show_word_survey_card(update, context):
     queue = context.user_data.get('word_survey_queue') or []
     chat_id = _chat_id(update)
     if not queue:
+        done_total = context.user_data.get('word_survey_total') or 0
         context.user_data['mode'] = None
         context.user_data.pop('word_survey_total', None)
         context.user_data.pop('word_survey_level', None)
@@ -3441,7 +3480,7 @@ async def _show_word_survey_card(update, context):
             )
             await _send(
                 context, chat_id,
-                '✅ <b>10 слов готово</b>\n\n'
+                f'✅ <b>{done_total} слов готово</b>\n\n'
                 f'{stats}\n'
                 'Сразу тренировка 👇',
                 reply_markup=keyboards.word_survey_finish_kb(
@@ -3453,7 +3492,7 @@ async def _show_word_survey_card(update, context):
         else:
             await _send(
                 context, chat_id,
-                '✅ <b>10 слов готово</b>\n\n'
+                f'✅ <b>{done_total} слов готово</b>\n\n'
                 'Отметили только «знаю» — для тренировки выберите «Учить».',
                 reply_markup=keyboards.word_survey_finish_kb(
                     learning_count=0,
@@ -5216,32 +5255,46 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bid = int(data.rsplit(':', 1)[1])
         await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'known')
         await _ack_callback(query, 'Знаю ✅')
-        await _show_bank_entry(update, context, bid)
+        if context.user_data.get('bank_page_cb'):
+            await _refresh_bank_list_page(update, context)
+        else:
+            await _show_bank_entry(update, context, bid)
     elif data.startswith('words:bank:learn:'):
         bid = int(data.rsplit(':', 1)[1])
         await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'learning')
         await _ack_callback(query, 'Учить 📗')
-        await _show_bank_entry(update, context, bid)
+        if context.user_data.get('bank_page_cb'):
+            await _refresh_bank_list_page(update, context)
+        else:
+            await _show_bank_entry(update, context, bid)
+    elif data.startswith('words:bank:page:known:') or data.startswith('words:bank:page:learn:'):
+        parts = data.split(':')
+        if len(parts) < 6:
+            return
+        status = 'known' if parts[3] == 'known' else 'learning'
+        level = parts[4]
+        page = int(parts[5])
+        profile = await _ensure_profile(update, context)
+        user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+        page_data = await db.browse_bank_entries(
+            profile['id'], user_level, level=level, page=page,
+        )
+        ids = [
+            w['bank_entry_id'] for w in page_data['items']
+            if w.get('bank_entry_id')
+        ]
+        n = await db.mark_word_bank_entries_bulk(profile['id'], ids, status)
+        label = 'Знаю ✅' if status == 'known' else 'Учить 📗'
+        await _ack_callback(query, f'{label} · {n}')
+        prefix = f'words:bank:level:{level}'
+        await _show_bank_page(
+            update, context, prefix=prefix, page=page, level=level,
+        )
     elif data.startswith('words:bank:skip:'):
         bid = int(data.rsplit(':', 1)[1])
         await db.mark_word_bank_entry(context.user_data['profile_id'], bid, 'skipped')
         await _ack_callback(query, 'Позже ⏭️')
-        page_cb = context.user_data.get('bank_page_cb', 'words:bank')
-        parts = page_cb.rsplit(':', 1)
-        if len(parts) == 2 and parts[1].isdigit():
-            prefix, page = parts[0], int(parts[1])
-            if ':level:' in prefix:
-                level = prefix.rsplit(':', 1)[1]
-                await _show_bank_page(
-                    update, context, prefix=prefix, page=page, level=level,
-                )
-            elif ':topic:' in prefix:
-                topic = prefix.split('words:bank:topic:', 1)[1]
-                await _show_bank_page(
-                    update, context, prefix=prefix, page=page, topic=topic,
-                )
-        else:
-            await _show_word_bank_hub(update, context)
+        await _refresh_bank_list_page(update, context)
     elif data.startswith('words:bank:level:'):
         from learning.word_bank.navigation import parse_paged_callback
         parsed = parse_paged_callback(data, 'words:bank:level:')

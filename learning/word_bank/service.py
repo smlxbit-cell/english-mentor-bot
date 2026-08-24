@@ -22,6 +22,7 @@ from learning.word_bank.level_quotas import LEVEL_TARGETS as RECOMMENDED_TARGETS
 
 DAILY_NEW_WORDS = 10
 SURVEY_BATCH = 10
+SURVEY_LEVEL_MAX = 80
 
 
 def _levels_up_to(level: str) -> list[str]:
@@ -605,6 +606,19 @@ def list_bank_topic_counts(user_id: int, user_level: str) -> list[tuple[str, int
         for topic in normalize_topics(entry.topics):
             counts[topic] = counts.get(topic, 0) + 1
     return sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+
+
+def mark_bank_entries_bulk(
+    user_id: int,
+    bank_entry_ids: list[int],
+    status: str,
+) -> int:
+    """Mark many bank entries; returns count successfully marked."""
+    n = 0
+    for eid in bank_entry_ids:
+        if mark_bank_entry(user_id, eid, status) is not None:
+            n += 1
+    return n
 
 
 def browse_bank_entries(

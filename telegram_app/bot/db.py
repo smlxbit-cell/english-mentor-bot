@@ -1483,6 +1483,17 @@ def list_bank_topic_counts(profile_id: int, user_level: str) -> list[tuple[str, 
 
 
 @sync_to_async
+def mark_word_bank_entries_bulk(
+    profile_id: int,
+    bank_entry_ids: list[int],
+    status: str,
+) -> int:
+    from learning.word_bank.service import mark_bank_entries_bulk
+
+    return mark_bank_entries_bulk(profile_id, bank_entry_ids, status)
+
+
+@sync_to_async
 def browse_bank_entries(
     profile_id: int,
     user_level: str,

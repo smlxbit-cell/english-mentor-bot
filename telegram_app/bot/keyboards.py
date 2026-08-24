@@ -369,18 +369,31 @@ def word_bank_list_page_kb(
     page: int,
     pages: int,
     back_data: str = 'words:bank',
+    level: str | None = None,
+    unseen_total: int = 0,
 ) -> InlineKeyboardMarkup:
-    """Bank browse: tap a word to mark know / learn."""
+    """Bank browse: ✅/🎯 per word without opening each card."""
     rows: list[list[InlineKeyboardButton]] = []
+    if level and unseen_total > 0:
+        n = min(unseen_total, 80)
+        rows.append([InlineKeyboardButton(
+            f'▶️ Проверить по одному ({n})',
+            callback_data=f'words:survey:level:{level}',
+        )])
     for w in items:
         bid = w.get('bank_entry_id')
         if not bid:
             continue
-        en = (w.get('english') or '?')[:28]
-        rows.append([InlineKeyboardButton(
-            en,
-            callback_data=f'words:bank:open:{bid}',
-        )])
+        en = (w.get('english') or '?')[:22]
+        rows.append([
+            InlineKeyboardButton(f'✅ {en}', callback_data=f'words:bank:known:{bid}'),
+            InlineKeyboardButton(f'🎯 {en}', callback_data=f'words:bank:learn:{bid}'),
+        ])
+    if level and items:
+        rows.append([
+            InlineKeyboardButton('✅ Знаю · страница', callback_data=f'words:bank:page:known:{level}:{page}'),
+            InlineKeyboardButton('🎯 Учить · страница', callback_data=f'words:bank:page:learn:{level}:{page}'),
+        ])
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton('◀️', callback_data=f'{prefix}:{page - 1}'))
