@@ -140,7 +140,7 @@ class WordDrillTests(SimpleTestCase):
     def test_build_english_choice_includes_target(self):
         from learning.word_bank.drill import build_english_choice, steps_for
 
-        self.assertEqual(steps_for(new_words=True), ('meaning', 'english', 'listening'))
+        self.assertEqual(steps_for(new_words=True), ('meaning', 'english', 'listening', 'context'))
         self.assertEqual(steps_for(new_words=False), ('recall',))
         target = {'english': 'coffee', 'translation': 'кофе'}
         pool = [
@@ -155,14 +155,15 @@ class WordDrillTests(SimpleTestCase):
 
     def test_advance_drill_text_before_listening(self):
         from learning.word_bank.drill import (
+            DRILL_PHASE_CONTEXT,
             DRILL_PHASE_LISTENING,
             DRILL_PHASE_TEXT,
             advance_drill,
         )
 
         words = [
-            {'english': 'chip', 'translation': 'чип'},
-            {'english': 'board', 'translation': 'доска'},
+            {'english': 'chip', 'translation': 'чип', 'example': 'A small chip.'},
+            {'english': 'board', 'translation': 'доска', 'example': 'A wooden board.'},
         ]
         state = advance_drill(
             words=words,
@@ -202,8 +203,8 @@ class WordDrillTests(SimpleTestCase):
         self.assertEqual(len(state['listening_order']), 2)
 
         last = state
-        for _ in range(len(words) - 1):
-            last = advance_drill(
+        while last and last['phase'] == DRILL_PHASE_LISTENING:
+            nxt = advance_drill(
                 words=words,
                 new_words=True,
                 phase=last['phase'],
@@ -211,8 +212,34 @@ class WordDrillTests(SimpleTestCase):
                 step=last['step'],
                 listening_index=last['listening_index'],
                 listening_order=last['listening_order'],
+                context_index=last.get('context_index', 0),
+                context_order=last.get('context_order'),
             )
+            if nxt and nxt['phase'] == DRILL_PHASE_CONTEXT and last['phase'] == DRILL_PHASE_LISTENING:
+                last = nxt
+                break
+            last = nxt
             self.assertIsNotNone(last)
+
+        self.assertEqual(last['phase'], DRILL_PHASE_CONTEXT)
+        self.assertEqual(last['step'], 'context')
+
+        while last and last['phase'] == DRILL_PHASE_CONTEXT:
+            nxt = advance_drill(
+                words=words,
+                new_words=True,
+                phase=last['phase'],
+                word_index=last['word_index'],
+                step=last['step'],
+                listening_index=last['listening_index'],
+                listening_order=last['listening_order'],
+                context_index=last['context_index'],
+                context_order=last['context_order'],
+            )
+            if nxt is None:
+                break
+            last = nxt
+
         done = advance_drill(
             words=words,
             new_words=True,
@@ -221,8 +248,25 @@ class WordDrillTests(SimpleTestCase):
             step=last['step'],
             listening_index=last['listening_index'],
             listening_order=last['listening_order'],
+            context_index=last['context_index'],
+            context_order=last['context_order'],
         )
         self.assertIsNone(done)
+
+    def test_prepare_context_drill_blanks_headword(self):
+        from learning.word_bank.drill import prepare_context_drill
+
+        word = {
+            'english': 'coffee',
+            'translation': 'кофе',
+            'example': 'I drink coffee every day.',
+            'example_ru': 'Я пью кофе каждый день.',
+        }
+        ctx = prepare_context_drill(word)
+        self.assertIn('______', ctx['gap_sentence'])
+        self.assertNotIn('coffee', ctx['gap_sentence'].lower())
+        self.assertIn('coffee', ctx['tts'].lower())
+        self.assertEqual(ctx['example_ru'], 'Я пью кофе каждый день.')
 
     def test_words_count_ru(self):
         from learning.word_bank.service import words_count_ru

@@ -265,6 +265,8 @@ def word_drill_choice_kb(options: list[str], *, step: str) -> InlineKeyboardMark
         rows.append([InlineKeyboardButton(label, callback_data=f'wd:pick:{step}:{i}')])
     if step == 'listening':
         rows.append([InlineKeyboardButton('👀 Показать слово', callback_data='wd:hint')])
+    if step == 'context':
+        rows.append([InlineKeyboardButton('🇷🇺 Переводы вариантов', callback_data='wd:hint')])
     return InlineKeyboardMarkup(rows)
 
 
