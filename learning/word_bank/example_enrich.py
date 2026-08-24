@@ -10,10 +10,18 @@ from pathlib import Path
 _OVERRIDES_PATH = (
     Path(__file__).resolve().parent.parent / 'data' / 'word_bank' / 'example_overrides.json'
 )
-from learning.word_bank.level_examples import load_level_examples
 _TEMPLATE_RE = re.compile(
-    r'^I like .+[.!?]$|^This is .+[.!?]$|^It is about .+[.!?]$',
+    r'^I like .+[.!?]$|^This is .+[.!?]$|^It is about .+[.!?]$'
+    r'|^I want .+[.!?]$|^I need the .+[.!?]$',
     re.I,
+)
+_BRITISH_RE = re.compile(
+    r'\b(colou?r|favour|favourite|honour|centre|metre|organise|organised|'
+    r'organising|realise|recognise|travelled|travelling|grey|defence|licence)\b',
+    re.I,
+)
+_GARBAGE_RE = re.compile(
+    r'\b(lorem|ipsum|xxx|asdf|something something)\b', re.I,
 )
 
 
@@ -45,6 +53,20 @@ def headword_in_example(example: str, headword: str) -> bool:
     return bool(re.search(rf'\b{re.escape(headword.strip())}\b', example, re.I))
 
 
+def is_natural_american_example(example: str) -> bool:
+    """Reject British spellings, filler junk, and textbook-only phrasing."""
+    ex = (example or '').strip()
+    if not ex:
+        return False
+    if _BRITISH_RE.search(ex):
+        return False
+    if _GARBAGE_RE.search(ex):
+        return False
+    if ex.count('"') >= 4:
+        return False
+    return True
+
+
 def is_valid_context_example(
     word: dict,
     *,
@@ -57,6 +79,8 @@ def is_valid_context_example(
     if not ex or not ex_ru or not en:
         return False
     if _TEMPLATE_RE.match(ex):
+        return False
+    if not is_natural_american_example(ex):
         return False
     if not headword_in_example(ex, en):
         return False
@@ -72,6 +96,8 @@ def _pick_example_source(
     override: dict[str, str] | None,
     tatoeba: dict[str, str] | None,
 ) -> dict[str, str] | None:
+    from learning.word_bank.level_examples import load_level_examples
+
     if override and is_valid_context_example(
         row, example=override['example'], example_ru=override['example_ru'],
     ):

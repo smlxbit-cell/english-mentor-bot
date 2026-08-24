@@ -24,7 +24,12 @@ class ExampleEnrichTests(SimpleTestCase):
         }
         self.assertFalse(is_valid_context_example(row))
 
-    def test_override_replaces_bad_example(self):
+    def test_rejects_british_spelling(self):
+        from learning.word_bank.example_enrich import is_natural_american_example
+
+        self.assertFalse(is_natural_american_example('I went to the centre yesterday.'))
+        self.assertTrue(is_natural_american_example('I went to the center yesterday.'))
+
         row = {
             'english': 'apparent',
             'translation': 'очевидный',

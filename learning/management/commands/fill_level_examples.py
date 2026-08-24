@@ -14,50 +14,67 @@ from learning.word_bank.example_enrich import enrich_row_examples, is_valid_cont
 from learning.word_bank.level_examples import load_level_examples, save_level_examples
 from learning.word_bank.level_quotas import CEFR_LEVELS
 
-BATCH_SIZE = 15
+BATCH_SIZE = 12
 
 _LEVEL_PROMPT = {
-    'a1': 'A1 (beginner)',
-    'a2': 'A2 (elementary)',
-    'b1': 'B1 (intermediate)',
-    'b2': 'B2 (upper-intermediate)',
-    'c1': 'C1 (advanced)',
+    'a1': 'A1 beginner — very simple daily situations',
+    'a2': 'A2 elementary — everyday routines, travel, shopping',
+    'b1': 'B1 intermediate — work, news, opinions, real conversations',
+    'b2': 'B2 upper-intermediate — abstract topics, nuance, professional life',
+    'c1': 'C1 advanced — precise, natural, educated speech',
 }
+
+_SYSTEM = (
+    'You write example sentences for an American English tutor app used by Russian adults. '
+    'Every sentence must sound like something a real person would say in the United States today — '
+    'not textbook filler, not British English, not nonsense.'
+)
+
+
+def _build_prompt(batch: list[dict], *, level: str) -> str:
+    level_label = _LEVEL_PROMPT.get(level, level.upper())
+    items = [
+        {
+            'word': row['english'],
+            'translation_ru': row['translation'],
+            'part_of_speech': row.get('part_of_speech') or '',
+        }
+        for row in batch
+    ]
+    return (
+        f'Write ONE example sentence per headword ({level_label}).\n\n'
+        'Requirements:\n'
+        '- American English only (US spelling: color, center, organize).\n'
+        '- Natural spoken register — what people actually say at work, home, or on the street.\n'
+        '- Use the headword in its correct sense (match translation_ru).\n'
+        '- 4–14 words; headword must appear exactly as given.\n'
+        '- Concrete situation — not abstract definitions.\n'
+        '- Accurate Russian translation of the full sentence.\n\n'
+        'Never use:\n'
+        '- "I like …", "This is …", "I want …" as the whole sentence pattern\n'
+        '- British spellings (colour, favourite, centre)\n'
+        '- Made-up or absurd contexts\n\n'
+        'Return JSON: {"items": [{"word": "...", "example": "...", "example_ru": "..."}]}\n'
+        f'Words: {json.dumps(items, ensure_ascii=False)}'
+    )
 
 
 async def _generate_batch(batch: list[dict], *, level: str) -> dict[str, dict[str, str]]:
     from ai_app.services.registry import get_provider
     from ai_app.services.types import ChatMessage
 
-    level_label = _LEVEL_PROMPT.get(level, level.upper())
-    items = [
-        {
-            'word': row['english'],
-            'translation': row['translation'],
-            'pos': row.get('part_of_speech') or '',
-        }
-        for row in batch
-    ]
-    prompt = (
-        f'For each English headword, write ONE natural American English sentence ({level_label}) '
-        'that uses the word correctly, plus an accurate Russian translation.\n'
-        'Rules:\n'
-        '- Modern neutral American English, suitable for adult learners.\n'
-        '- 4–14 words in English; the headword must appear exactly as given.\n'
-        '- No templates like "I like X" or "This is X".\n'
-        '- Russian must match the English meaning precisely.\n'
-        'Return JSON: {"items": [{"word": "...", "example": "...", "example_ru": "..."}]}\n'
-        f'Words: {json.dumps(items, ensure_ascii=False)}'
-    )
     provider = get_provider()
     if provider.name == 'mock':
         return {}
 
     result = await provider.chat(
-        [ChatMessage(role='user', content=prompt)],
-        temperature=0.3,
+        [
+            ChatMessage(role='system', content=_SYSTEM),
+            ChatMessage(role='user', content=_build_prompt(batch, level=level)),
+        ],
+        temperature=0.2,
         json_mode=True,
-        max_tokens=2500,
+        max_tokens=2800,
     )
     data = json.loads(result.text)
     out: dict[str, dict[str, str]] = {}
@@ -111,18 +128,7 @@ class Command(BaseCommand):
             missing.append(row)
 
         active = WordBankEntry.objects.filter(is_active=True, cefr_level=level).count()
-        with_ex = sum(
-            1
-            for entry in WordBankEntry.objects.filter(is_active=True, cefr_level=level)
-            if is_valid_context_example({
-                'english': entry.english,
-                'translation': entry.translation,
-                'cefr_level': level,
-                'example': entry.example,
-                'example_ru': entry.example_ru,
-            })
-        )
-        self.stdout.write(f'{level.upper()} active: {active}, with examples in DB: {with_ex}')
+        self.stdout.write(f'{level.upper()} active: {active}')
         self.stdout.write(f'Missing examples: {len(missing)}')
 
         if options['dry_run'] or not missing:
@@ -131,6 +137,7 @@ class Command(BaseCommand):
         limit = options['limit'] or len(missing)
         to_fill = missing[:limit]
         generated = 0
+        rejected = 0
 
         for start in range(0, len(to_fill), BATCH_SIZE):
             batch = to_fill[start:start + BATCH_SIZE]
@@ -149,12 +156,15 @@ class Command(BaseCommand):
                     example=candidate['example'],
                     example_ru=candidate['example_ru'],
                 ):
+                    rejected += 1
                     continue
                 lookup[key] = candidate
                 generated += 1
 
         path = save_level_examples(level, lookup, data_dir=data_dir)
-        self.stdout.write(self.style.SUCCESS(f'Generated {generated} examples → {path}'))
+        self.stdout.write(self.style.SUCCESS(
+            f'Generated {generated} examples ({rejected} rejected) → {path}',
+        ))
         self.stdout.write(
             f'Re-run: python manage.py seed_word_bank --include-remote --apply-quotas --level {level}',
         )
