@@ -152,7 +152,8 @@ def apply_level_quotas(
             continue
 
         target = LEVEL_TARGETS.get(lvl, len(native))
-        pool = sorted(native, key=lambda pair: _row_sort_key(pair[1], kelly_ranks))
+        available = [(slug, row) for slug, row in native if slug not in reserved]
+        pool = sorted(available, key=lambda pair: _row_sort_key(pair[1], kelly_ranks))
         if len(pool) < target:
             donor = _LEVEL_FILL_FROM.get(lvl)
             if donor:

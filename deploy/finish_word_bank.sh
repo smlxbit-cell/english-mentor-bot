@@ -38,6 +38,10 @@ PY
 log "=== START word bank finish ==="
 stats
 
+log "=== Phase 0: refresh Kelly + EN/RU from remote ==="
+"$PY" manage.py seed_word_bank --fetch --include-remote --apply-quotas --level c1 >> "$LOG" 2>&1
+stats
+
 log "=== Phase 1: full quota seed (c1 path) ==="
 seed_level c1
 stats
