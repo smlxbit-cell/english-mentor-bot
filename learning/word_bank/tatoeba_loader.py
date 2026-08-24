@@ -7,12 +7,13 @@ import csv
 import io
 import json
 import re
+import tarfile
 import urllib.request
 from pathlib import Path
 
-TATOEBA_EN_URL = 'https://downloads.tatoeba.org/exports/per_lang/eng/eng_sentences.tsv.bz2'
-TATOEBA_RU_URL = 'https://downloads.tatoeba.org/exports/per_lang/rus/rus_sentences.tsv.bz2'
-TATOEBA_LINKS_URL = 'https://downloads.tatoeba.org/exports/links.csv.bz2'
+TATOEBA_EN_URL = 'https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2'
+TATOEBA_RU_URL = 'https://downloads.tatoeba.org/exports/per_language/rus/rus_sentences.tsv.bz2'
+TATOEBA_LINKS_URL = 'https://downloads.tatoeba.org/exports/links.tar.bz2'
 CACHE_FILENAME = 'tatoeba_examples.json'
 
 _WORD_RE = re.compile(r"[a-z']{2,}")
@@ -44,8 +45,17 @@ def _read_tatoeba_sentences(raw: bytes) -> dict[int, str]:
 
 def _read_tatoeba_links(raw: bytes) -> dict[int, int]:
     links: dict[int, int] = {}
-    with bz2.open(io.BytesIO(raw), 'rt', encoding='utf-8') as fh:
-        reader = csv.reader(fh, delimiter='\t')
+    with tarfile.open(fileobj=io.BytesIO(raw), mode='r:bz2') as tf:
+        member = next(
+            (m for m in tf.getmembers() if m.name.endswith('links.csv')),
+            None,
+        )
+        if member is None:
+            return links
+        fh = tf.extractfile(member)
+        if fh is None:
+            return links
+        reader = csv.reader(io.TextIOWrapper(fh, encoding='utf-8'), delimiter='\t')
         for row in reader:
             if len(row) < 2:
                 continue
