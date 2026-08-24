@@ -95,6 +95,8 @@ def iter_remote_rows(
     for en, meta in kelly.items():
         ru = lookup.get(en)
         if not ru:
+            ru = (freedict.get(en) or '').strip()
+        if not ru:
             continue
         level = meta['level']
         pos = meta.get('pos') or ''

@@ -2,7 +2,7 @@
 
 from django.test import SimpleTestCase
 
-from learning.word_bank.level_quotas import LEVEL_TARGETS, apply_level_quotas
+from learning.word_bank.level_quotas import LEVEL_TARGETS, apply_level_quotas, quota_levels_for_requested
 
 
 class LevelQuotaTests(SimpleTestCase):
@@ -37,3 +37,7 @@ class LevelQuotaTests(SimpleTestCase):
         self.assertEqual(len([r for r in kept.values() if r['cefr_level'] == 'a1']), LEVEL_TARGETS['a1'])
         self.assertIn('curated', kept)
         self.assertIn('remote', dropped)
+
+    def test_quota_levels_for_requested_includes_lower_bands(self):
+        self.assertEqual(quota_levels_for_requested(('a2',)), ('a1', 'a2'))
+

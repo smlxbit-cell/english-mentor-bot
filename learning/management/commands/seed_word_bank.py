@@ -17,7 +17,12 @@ from learning.word_bank.loader import load_directory
 from learning.word_bank.seed_words import iter_builtin_rows
 from learning.word_bank.tatoeba_loader import CACHE_FILENAME as TATOEBA_CACHE
 from learning.word_bank.tatoeba_loader import cache_tatoeba_examples, load_tatoeba_examples
-from learning.word_bank.level_quotas import CEFR_LEVELS, LEVEL_TARGETS, apply_level_quotas
+from learning.word_bank.level_quotas import (
+    CEFR_LEVELS,
+    LEVEL_TARGETS,
+    apply_level_quotas,
+    quota_levels_for_requested,
+)
 from learning.word_bank.topic_classifier import resolve_topics
 from learning.word_bank.translation_enrich import enrich_rows
 
@@ -160,7 +165,10 @@ class Command(BaseCommand):
 
         quota_levels: tuple[str, ...] | None = None
         if options['apply_quotas']:
-            quota_levels = tuple(options['levels']) if options['levels'] else CEFR_LEVELS
+            if options['levels']:
+                quota_levels = quota_levels_for_requested(tuple(options['levels']))
+            else:
+                quota_levels = CEFR_LEVELS
 
         rows, dropped_slugs = collect_word_bank_rows(
             data_dir=data_dir,
