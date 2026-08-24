@@ -67,7 +67,7 @@ def load_directory(data_dir: Path) -> list[dict]:
     for path in sorted(data_dir.glob('*')):
         if path.name.lower() in {
             'remote.json', 'freedict_ru.json', 'translation_overrides.json',
-            'tatoeba_examples.json', 'example_overrides.json',
+            'tatoeba_examples.json', 'example_overrides.json', 'a1_examples.json',
         }:
             continue
         if path.suffix.lower() == '.json':
