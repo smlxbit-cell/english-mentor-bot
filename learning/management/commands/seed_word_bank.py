@@ -105,7 +105,7 @@ def collect_word_bank_rows(
             merge_existing=True,
         )
         tatoeba_lookup = {**tatoeba_lookup, **new_lookup}
-    merged = enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup), dropped_slugs
+    merged = enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup)
     return _americanize_merged_rows(merged), dropped_slugs
 
 
