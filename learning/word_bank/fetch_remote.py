@@ -63,7 +63,12 @@ def load_kelly_cefr(*, url: str = KELLY_EN_URL) -> dict[str, dict[str, str]]:
             continue
         prev = levels.get(word)
         if prev is None or _level_rank(level) < _level_rank(prev['level']):
-            levels[word] = {'level': level, 'pos': pos}
+            rank = item.get('rank')
+            levels[word] = {
+                'level': level,
+                'pos': pos,
+                'rank': rank if isinstance(rank, int) else 999_999,
+            }
     return levels
 
 
@@ -107,6 +112,7 @@ def iter_remote_rows(
             'example_ru': '',
             'cefr_level': level,
             'part_of_speech': pos,
+            'kelly_rank': meta.get('rank', 999_999),
             'topics': resolve_topics(
                 ['remote'],
                 english=en,

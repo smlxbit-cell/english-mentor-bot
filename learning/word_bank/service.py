@@ -16,15 +16,9 @@ from progress_app.models import UserWordBankStatus, UserWordProgress
 CEFR_LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
 LEVEL_INDEX = {level: idx for idx, level in enumerate(CEFR_LEVELS)}
 
-# CEFR vocabulary goals for progress display (known / target).
-# Bank corpus can be smaller while we seed; bar tracks learner vs goal.
-RECOMMENDED_TARGETS = {
-    'a1': 500,
-    'a2': 1000,
-    'b1': 2000,
-    'b2': 4000,
-    'c1': 8000,
-}
+# CEFR vocabulary goals for progress display (known / target per band).
+# Each level has its own word set — not cumulative totals.
+from learning.word_bank.level_quotas import LEVEL_TARGETS as RECOMMENDED_TARGETS
 
 DAILY_NEW_WORDS = 10
 SURVEY_BATCH = 10

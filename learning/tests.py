@@ -54,7 +54,7 @@ class SeedCorpusTests(TestCase):
         self.assertGreaterEqual(len(rows), 250)
 
     def test_collect_includes_builtin(self):
-        merged = collect_word_bank_rows()
+        merged, _dropped = collect_word_bank_rows()
         self.assertIn('hello', merged)
         self.assertIn('coffee', merged)
 
@@ -62,7 +62,7 @@ class SeedCorpusTests(TestCase):
         data_dir = Path(settings.BASE_DIR) / 'learning' / 'data' / 'word_bank'
         if not (data_dir / 'remote.json').is_file():
             self.skipTest('remote.json not cached')
-        merged = collect_word_bank_rows(data_dir=data_dir, include_remote=True)
+        merged, _dropped = collect_word_bank_rows(data_dir=data_dir, include_remote=True)
         self.assertGreater(len(merged), 500)
 
 

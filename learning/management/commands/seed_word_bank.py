@@ -17,6 +17,7 @@ from learning.word_bank.loader import load_directory
 from learning.word_bank.seed_words import iter_builtin_rows
 from learning.word_bank.tatoeba_loader import CACHE_FILENAME as TATOEBA_CACHE
 from learning.word_bank.tatoeba_loader import cache_tatoeba_examples, load_tatoeba_examples
+from learning.word_bank.level_quotas import CEFR_LEVELS, LEVEL_TARGETS, apply_level_quotas
 from learning.word_bank.topic_classifier import resolve_topics
 from learning.word_bank.translation_enrich import enrich_rows
 
@@ -30,7 +31,10 @@ def collect_word_bank_rows(
     fetch_remote: bool = False,
     fetch_freedict: bool = False,
     fetch_tatoeba: bool = False,
-) -> dict[str, dict]:
+    quota_levels: tuple[str, ...] | None = None,
+    tatoeba_headwords: list[str] | None = None,
+    tatoeba_levels: tuple[str, ...] | None = None,
+) -> tuple[dict[str, dict], set[str]]:
     """Return slug → row dict; later sources override earlier ones."""
     merged: dict[str, dict] = {}
     freedict_lookup: dict[str, str] = {}
@@ -74,10 +78,29 @@ def collect_word_bank_rows(
             merged[row['slug']] = row
 
     merged = enrich_rows(merged, freedict_lookup=freedict_lookup)
+
+    dropped_slugs: set[str] = set()
+    if quota_levels:
+        merged, dropped_slugs = apply_level_quotas(merged, levels=quota_levels)
+
     if fetch_tatoeba and data_dir:
-        headwords = [row['english'] for row in merged.values()]
-        tatoeba_lookup = cache_tatoeba_examples(data_dir / TATOEBA_CACHE, headwords=headwords)
-    return enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup)
+        if tatoeba_headwords is None:
+            if tatoeba_levels:
+                tatoeba_headwords = [
+                    row['english']
+                    for row in merged.values()
+                    if row.get('cefr_level') in tatoeba_levels
+                ]
+            else:
+                tatoeba_headwords = [row['english'] for row in merged.values()]
+        cache_path = data_dir / TATOEBA_CACHE
+        new_lookup = cache_tatoeba_examples(
+            cache_path,
+            headwords=tatoeba_headwords,
+            merge_existing=True,
+        )
+        tatoeba_lookup = {**tatoeba_lookup, **new_lookup}
+    return enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup), dropped_slugs
 
 
 class Command(BaseCommand):
@@ -114,6 +137,18 @@ class Command(BaseCommand):
             action='store_true',
             help='Merge cached remote.json (offline) into the bank',
         )
+        parser.add_argument(
+            '--apply-quotas',
+            action='store_true',
+            help='Trim each level to LEVEL_TARGETS (use with --level to limit bands)',
+        )
+        parser.add_argument(
+            '--level',
+            action='append',
+            choices=CEFR_LEVELS,
+            dest='levels',
+            help='Limit quota/Tatoeba to these CEFR bands (repeatable)',
+        )
 
     def handle(self, *args, **options):
         data_dir = options.get('data_dir') or ''
@@ -123,20 +158,35 @@ class Command(BaseCommand):
             data_dir = Path(data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        rows = collect_word_bank_rows(
+        quota_levels: tuple[str, ...] | None = None
+        if options['apply_quotas']:
+            quota_levels = tuple(options['levels']) if options['levels'] else CEFR_LEVELS
+
+        rows, dropped_slugs = collect_word_bank_rows(
             data_dir=data_dir,
             include_remote=options['include_remote'] or options['fetch'],
             fetch_remote=options['fetch'],
             fetch_freedict=options['fetch_freedict'] or options['fetch'],
             fetch_tatoeba=options['fetch_tatoeba'],
+            quota_levels=quota_levels,
+            tatoeba_levels=tuple(options['levels']) if options['levels'] else None,
         )
         if options['dry_run']:
             by_level: dict[str, int] = {}
+            ex_by_level: dict[str, int] = {}
             for row in rows.values():
-                by_level[row['cefr_level']] = by_level.get(row['cefr_level'], 0) + 1
-            self.stdout.write(f'Would upsert {len(rows)} words')
-            for level in ('a1', 'a2', 'b1', 'b2', 'c1'):
-                self.stdout.write(f'  {level.upper()}: {by_level.get(level, 0)}')
+                lvl = row['cefr_level']
+                by_level[lvl] = by_level.get(lvl, 0) + 1
+                if row.get('example') and row.get('example_ru'):
+                    ex_by_level[lvl] = ex_by_level.get(lvl, 0) + 1
+            self.stdout.write(f'Would upsert {len(rows)} words (drop {len(dropped_slugs)})')
+            for level in CEFR_LEVELS:
+                target = LEVEL_TARGETS.get(level, 0)
+                count = by_level.get(level, 0)
+                ex = ex_by_level.get(level, 0)
+                self.stdout.write(
+                    f'  {level.upper()}: {count}/{target} words, {ex} with examples',
+                )
             return
 
         created = updated = 0
@@ -170,9 +220,27 @@ class Command(BaseCommand):
                 f'Word bank: {created} created, {updated} updated ({len(rows)} total slugs)',
             ),
         )
+        if dropped_slugs:
+            n = WordBankEntry.objects.filter(slug__in=dropped_slugs, is_active=True).update(
+                is_active=False,
+            )
+            self.stdout.write(f'Deactivated {n} words over level quota')
+
         from learning.word_bank.service import refresh_words_from_bank
 
         synced = refresh_words_from_bank()
         self.stdout.write(
             self.style.SUCCESS(f'Learner words synced from bank: {synced}'),
         )
+
+        if quota_levels:
+            for level in quota_levels:
+                target = LEVEL_TARGETS.get(level, 0)
+                active = WordBankEntry.objects.filter(is_active=True, cefr_level=level).count()
+                with_ex = WordBankEntry.objects.filter(
+                    is_active=True,
+                    cefr_level=level,
+                ).exclude(example='').exclude(example_ru='').count()
+                self.stdout.write(
+                    f'  {level.upper()}: {active}/{target} active, {with_ex} with examples',
+                )

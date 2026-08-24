@@ -90,11 +90,17 @@ def _load_ru_sentences(raw: bytes, wanted_ids: set[int]) -> dict[int, str]:
     return out
 
 
-def cache_tatoeba_examples(path: Path, *, headwords: list[str]) -> dict[str, dict[str, str]]:
+def cache_tatoeba_examples(
+    path: Path,
+    *,
+    headwords: list[str],
+    merge_existing: bool = False,
+) -> dict[str, dict[str, str]]:
     """Match Tatoeba EN sentences to bank headwords without loading the full corpus."""
+    existing = load_tatoeba_examples(path) if merge_existing and path.is_file() else {}
     targets = {h.lower() for h in headwords if h.strip()}
     if not targets:
-        return {}
+        return existing
 
     best: dict[str, tuple[tuple[int, int], str, int]] = {}
 
@@ -152,6 +158,7 @@ def cache_tatoeba_examples(path: Path, *, headwords: list[str]) -> dict[str, dic
             continue
         lookup[hw] = {'example': en_text, 'example_ru': ru_text}
 
+    lookup = {**existing, **lookup}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(lookup, ensure_ascii=False, indent=0), encoding='utf-8')
     return lookup

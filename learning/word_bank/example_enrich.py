@@ -10,6 +10,9 @@ from pathlib import Path
 _OVERRIDES_PATH = (
     Path(__file__).resolve().parent.parent / 'data' / 'word_bank' / 'example_overrides.json'
 )
+_A1_EXAMPLES_PATH = (
+    Path(__file__).resolve().parent.parent / 'data' / 'word_bank' / 'a1_examples.json'
+)
 _TEMPLATE_RE = re.compile(
     r'^I like .+[.!?]$|^This is .+[.!?]$|^It is about .+[.!?]$',
     re.I,
@@ -38,6 +41,23 @@ def example_overrides() -> dict[str, dict[str, str]]:
     return _load_overrides()
 
 
+@lru_cache(maxsize=1)
+def a1_examples() -> dict[str, dict[str, str]]:
+    if not _A1_EXAMPLES_PATH.is_file():
+        return {}
+    data = json.loads(_A1_EXAMPLES_PATH.read_text(encoding='utf-8'))
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(k).lower(): {
+            'example': str(v.get('example', '')).strip(),
+            'example_ru': str(v.get('example_ru', '')).strip(),
+        }
+        for k, v in data.items()
+        if isinstance(v, dict)
+    }
+
+
 def headword_in_example(example: str, headword: str) -> bool:
     if not example or not headword:
         return False
@@ -59,9 +79,35 @@ def is_valid_context_example(
         return False
     if not headword_in_example(ex, en):
         return False
-    if len(ex.split()) < 4:
+    min_words = 3 if (word.get('cefr_level') or '').lower() == 'a1' else 4
+    if len(ex.split()) < min_words:
         return False
     return True
+
+
+def _pick_example_source(
+    row: dict,
+    *,
+    override: dict[str, str] | None,
+    tatoeba: dict[str, str] | None,
+) -> dict[str, str] | None:
+    if override and is_valid_context_example(
+        row, example=override['example'], example_ru=override['example_ru'],
+    ):
+        return override
+    if (row.get('cefr_level') or '').lower() == 'a1':
+        a1 = a1_examples().get((row.get('english') or '').strip().lower())
+        if a1 and is_valid_context_example(row, example=a1['example'], example_ru=a1['example_ru']):
+            return a1
+    if is_valid_context_example(row):
+        return {'example': row.get('example', ''), 'example_ru': row.get('example_ru', '')}
+    if tatoeba and is_valid_context_example(
+        row,
+        example=tatoeba.get('example', ''),
+        example_ru=tatoeba.get('example_ru', ''),
+    ):
+        return tatoeba
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -94,30 +140,16 @@ def enrich_row_examples(
     if not english:
         return row
     key = english.lower()
-    override = example_overrides().get(key)
-    tatoeba = (tatoeba_lookup or {}).get(key)
-    current_ex = (row.get('example') or '').strip()
-    current_ru = (row.get('example_ru') or '').strip()
-
-    if override and is_valid_context_example(row, example=override['example'], example_ru=override['example_ru']):
-        row = dict(row)
-        row['example'] = override['example']
-        row['example_ru'] = override['example_ru']
-        return row
-
-    if is_valid_context_example(row):
-        return row
-
-    if tatoeba and is_valid_context_example(
+    picked = _pick_example_source(
         row,
-        example=tatoeba.get('example', ''),
-        example_ru=tatoeba.get('example_ru', ''),
-    ):
+        override=example_overrides().get(key),
+        tatoeba=(tatoeba_lookup or {}).get(key),
+    )
+    if picked:
         row = dict(row)
-        row['example'] = tatoeba['example']
-        row['example_ru'] = tatoeba['example_ru']
+        row['example'] = picked['example']
+        row['example_ru'] = picked['example_ru']
         return row
-
     row = dict(row)
     row['example'] = ''
     row['example_ru'] = ''
