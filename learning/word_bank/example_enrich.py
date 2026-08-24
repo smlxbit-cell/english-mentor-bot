@@ -16,8 +16,10 @@ _TEMPLATE_RE = re.compile(
     re.I,
 )
 _BRITISH_RE = re.compile(
-    r'\b(colou?r|favour|favourite|honour|centre|metre|organise|organised|'
-    r'organising|realise|recognise|travelled|travelling|grey|defence|licence)\b',
+    r'\b(colour|colours|favour|favourite|favourites|honour|centre|centres|'
+    r'metre|metres|organise|organised|organising|realise|recognise|recognised|'
+    r'travelled|travelling|grey|defence|licence|behaviour|analyse|catalogue|'
+    r'programme)\b',
     re.I,
 )
 _GARBAGE_RE = re.compile(

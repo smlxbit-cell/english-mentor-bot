@@ -29,6 +29,7 @@ class ExampleEnrichTests(SimpleTestCase):
 
         self.assertFalse(is_natural_american_example('I went to the centre yesterday.'))
         self.assertTrue(is_natural_american_example('I went to the center yesterday.'))
+        self.assertTrue(is_natural_american_example('What color is your car?'))
 
         row = {
             'english': 'apparent',
