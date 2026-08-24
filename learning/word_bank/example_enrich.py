@@ -64,6 +64,27 @@ def is_valid_context_example(
     return True
 
 
+@lru_cache(maxsize=1)
+def _tatoeba_lookup() -> dict[str, dict[str, str]]:
+    try:
+        from django.conf import settings
+    except Exception:  # noqa: BLE001
+        return {}
+    path = (
+        Path(settings.BASE_DIR) / 'learning' / 'data' / 'word_bank' / 'tatoeba_examples.json'
+    )
+    if not path.is_file():
+        return {}
+    from .tatoeba_loader import load_tatoeba_examples
+
+    return load_tatoeba_examples(path)
+
+
+def resolve_word_examples(row: dict) -> dict:
+    """Best EN/RU usage examples for UI and drills (overrides → Tatoeba → stored)."""
+    return enrich_row_examples(row, tatoeba_lookup=_tatoeba_lookup())
+
+
 def enrich_row_examples(
     row: dict,
     *,
@@ -97,9 +118,9 @@ def enrich_row_examples(
         row['example_ru'] = tatoeba['example_ru']
         return row
 
-    if current_ex and not current_ru:
-        row = dict(row)
-        row['example'] = ''
+    row = dict(row)
+    row['example'] = ''
+    row['example_ru'] = ''
     return row
 
 

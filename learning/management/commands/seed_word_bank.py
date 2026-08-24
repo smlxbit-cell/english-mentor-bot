@@ -44,7 +44,7 @@ def collect_word_bank_rows(
             freedict_lookup = cache_freedict_lookup(freedict_path)
         elif freedict_path.is_file():
             freedict_lookup = load_freedict_lookup(freedict_path)
-        elif tatoeba_path.is_file():
+        if tatoeba_path.is_file():
             tatoeba_lookup = load_tatoeba_examples(tatoeba_path)
 
     if fetch_remote:

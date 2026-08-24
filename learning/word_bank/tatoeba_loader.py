@@ -29,45 +29,6 @@ def _fetch_bytes(url: str, *, timeout: int = 300) -> bytes:
         return resp.read()
 
 
-def _read_tatoeba_sentences(raw: bytes) -> dict[int, str]:
-    out: dict[int, str] = {}
-    with bz2.open(io.BytesIO(raw), 'rt', encoding='utf-8') as fh:
-        for line in fh:
-            parts = line.rstrip('\n').split('\t')
-            if len(parts) < 3:
-                continue
-            sid = int(parts[0])
-            text = parts[2].strip()
-            if text:
-                out[sid] = text
-    return out
-
-
-def _read_tatoeba_links(raw: bytes) -> dict[int, int]:
-    links: dict[int, int] = {}
-    with tarfile.open(fileobj=io.BytesIO(raw), mode='r:bz2') as tf:
-        member = next(
-            (m for m in tf.getmembers() if m.name.endswith('links.csv')),
-            None,
-        )
-        if member is None:
-            return links
-        fh = tf.extractfile(member)
-        if fh is None:
-            return links
-        reader = csv.reader(io.TextIOWrapper(fh, encoding='utf-8'), delimiter='\t')
-        for row in reader:
-            if len(row) < 2:
-                continue
-            try:
-                a, b = int(row[0]), int(row[1])
-            except ValueError:
-                continue
-            links.setdefault(a, b)
-            links.setdefault(b, a)
-    return links
-
-
 def _sentence_tokens(text: str) -> set[str]:
     return {m.group(0).lower() for m in _WORD_RE.finditer(text)}
 
@@ -91,56 +52,105 @@ def _score_sentence(text: str, headword: str) -> tuple[int, int]:
     return (penalty, len(text))
 
 
-def _build_word_index(
-    en_sentences: dict[int, str],
-    ru_sentences: dict[int, str],
-    links: dict[int, int],
-) -> dict[str, list[tuple[str, str]]]:
-    by_word: dict[str, list[tuple[str, str, tuple[int, int]]]] = {}
-    for en_id, en_text in en_sentences.items():
-        ru_id = links.get(en_id)
+def _stream_en_sentences(raw: bytes):
+    with bz2.open(io.BytesIO(raw), 'rt', encoding='utf-8') as fh:
+        for line in fh:
+            parts = line.rstrip('\n').split('\t')
+            if len(parts) < 3:
+                continue
+            try:
+                sid = int(parts[0])
+            except ValueError:
+                continue
+            text = parts[2].strip()
+            if text:
+                yield sid, text
+
+
+def _load_ru_sentences(raw: bytes, wanted_ids: set[int]) -> dict[int, str]:
+    out: dict[int, str] = {}
+    if not wanted_ids:
+        return out
+    with bz2.open(io.BytesIO(raw), 'rt', encoding='utf-8') as fh:
+        for line in fh:
+            parts = line.rstrip('\n').split('\t')
+            if len(parts) < 3:
+                continue
+            try:
+                sid = int(parts[0])
+            except ValueError:
+                continue
+            if sid not in wanted_ids:
+                continue
+            text = parts[2].strip()
+            if text:
+                out[sid] = text
+            if len(out) >= len(wanted_ids):
+                break
+    return out
+
+
+def cache_tatoeba_examples(path: Path, *, headwords: list[str]) -> dict[str, dict[str, str]]:
+    """Match Tatoeba EN sentences to bank headwords without loading the full corpus."""
+    targets = {h.lower() for h in headwords if h.strip()}
+    if not targets:
+        return {}
+
+    best: dict[str, tuple[tuple[int, int], str, int]] = {}
+
+    for en_id, en_text in _stream_en_sentences(_fetch_bytes(TATOEBA_EN_URL)):
+        matched = _sentence_tokens(en_text) & targets
+        if not matched:
+            continue
+        for hw in matched:
+            score = _score_sentence(en_text, hw)
+            if score[0] >= 998:
+                continue
+            prev = best.get(hw)
+            if prev is None or score < prev[0]:
+                best[hw] = (score, en_text, en_id)
+
+    en_ids = {item[2] for item in best.values()}
+    ru_by_en: dict[int, int] = {}
+    with tarfile.open(
+        fileobj=io.BytesIO(_fetch_bytes(TATOEBA_LINKS_URL)),
+        mode='r:bz2',
+    ) as tf:
+        member = next(
+            (m for m in tf.getmembers() if m.name.endswith('links.csv')),
+            None,
+        )
+        if member is not None:
+            fh = tf.extractfile(member)
+            if fh is not None:
+                reader = csv.reader(
+                    io.TextIOWrapper(fh, encoding='utf-8'),
+                    delimiter='\t',
+                )
+                for row in reader:
+                    if len(row) < 2:
+                        continue
+                    try:
+                        a, b = int(row[0]), int(row[1])
+                    except ValueError:
+                        continue
+                    if a in en_ids:
+                        ru_by_en[a] = b
+                    elif b in en_ids:
+                        ru_by_en[b] = a
+
+    ru_ids = set(ru_by_en.values())
+    ru_sentences = _load_ru_sentences(_fetch_bytes(TATOEBA_RU_URL), ru_ids)
+
+    lookup: dict[str, dict[str, str]] = {}
+    for hw, (_score, en_text, en_id) in best.items():
+        ru_id = ru_by_en.get(en_id)
         if not ru_id:
             continue
         ru_text = ru_sentences.get(ru_id, '')
         if not ru_text:
             continue
-        for token in _sentence_tokens(en_text):
-            score = _score_sentence(en_text, token)
-            if score[0] >= 998:
-                continue
-            by_word.setdefault(token, []).append((en_text, ru_text, score))
-
-    index: dict[str, list[tuple[str, str]]] = {}
-    for word, rows in by_word.items():
-        rows.sort(key=lambda item: (item[2], len(item[0])))
-        seen: set[str] = set()
-        cleaned: list[tuple[str, str]] = []
-        for en_text, ru_text, _score in rows:
-            key = en_text.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            cleaned.append((en_text, ru_text))
-            if len(cleaned) >= 3:
-                break
-        if cleaned:
-            index[word] = cleaned
-    return index
-
-
-def cache_tatoeba_examples(path: Path, *, headwords: list[str]) -> dict[str, dict[str, str]]:
-    en_sentences = _read_tatoeba_sentences(_fetch_bytes(TATOEBA_EN_URL))
-    ru_sentences = _read_tatoeba_sentences(_fetch_bytes(TATOEBA_RU_URL))
-    links = _read_tatoeba_links(_fetch_bytes(TATOEBA_LINKS_URL))
-    index = _build_word_index(en_sentences, ru_sentences, links)
-
-    lookup: dict[str, dict[str, str]] = {}
-    for headword in headwords:
-        rows = index.get(headword.lower())
-        if not rows:
-            continue
-        en_text, ru_text = rows[0]
-        lookup[headword.lower()] = {'example': en_text, 'example_ru': ru_text}
+        lookup[hw] = {'example': en_text, 'example_ru': ru_text}
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(lookup, ensure_ascii=False, indent=0), encoding='utf-8')

@@ -479,11 +479,18 @@ def format_daily_intro_finish(count: int) -> str:
 
 def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:
     from learning.english_display import display_word_fields
+    from learning.word_bank.example_enrich import resolve_word_examples
 
+    resolved = resolve_word_examples({
+        'english': entry.english,
+        'translation': entry.translation,
+        'example': entry.example or '',
+        'example_ru': entry.example_ru or '',
+    })
     display = display_word_fields(
         english=entry.english,
         translation=entry.translation,
-        example=entry.example or '',
+        example=resolved['example'],
         part_of_speech=entry.part_of_speech or '',
     )
     return {
@@ -491,7 +498,7 @@ def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:
         'english': display['english'],
         'translation': display['translation'],
         'example': display['example'],
-        'example_ru': entry.example_ru,
+        'example_ru': resolved['example_ru'],
         'cefr_level': entry.cefr_level,
         'topics': normalize_topics(entry.topics),
     }
@@ -716,19 +723,7 @@ def get_review_words_for_entries(profile_id: int, entries: list[WordBankEntry]) 
             word = sync_word_from_bank(
                 profile_id, entry, status=UserWordBankStatus.Status.LEARNING,
             )
-        from learning.english_display import display_word_fields
-
-        display = display_word_fields(
-            english=entry.english,
-            translation=entry.translation or word.translation,
-            example=entry.example or word.example or '',
-            part_of_speech=entry.part_of_speech or '',
-        )
-        out.append({
-            'word_id': word.id,
-            'english': display['english'],
-            'translation': display['translation'],
-            'example': display['example'],
-            'bank_entry_id': entry.id,
-        })
+        row = entry_to_dict(entry)
+        row['word_id'] = word.id
+        out.append(row)
     return out

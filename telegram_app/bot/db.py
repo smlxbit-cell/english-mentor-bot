@@ -1211,21 +1211,27 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
             english__iexact=uwp.word.english,
             is_active=True,
         ).first()
-        pos = (entry.part_of_speech or '') if entry else ''
-        display = display_word_fields(
-            english=uwp.word.english,
-            translation=(entry.translation if entry else '') or uwp.word.translation,
-            example=(entry.example if entry else '') or uwp.word.example,
-            part_of_speech=pos,
-        )
-        out.append({
-            'word_id': uwp.word_id,
-            'bank_entry_id': entry.id if entry else None,
-            'english': display['english'],
-            'translation': display['translation'],
-            'example': display['example'],
-            'cefr_level': entry.cefr_level if entry else '',
-        })
+        if entry:
+            row = entry_to_dict(entry)
+            row['word_id'] = uwp.word_id
+            out.append(row)
+        else:
+            pos = ''
+            display = display_word_fields(
+                english=uwp.word.english,
+                translation=uwp.word.translation,
+                example=uwp.word.example,
+                part_of_speech=pos,
+            )
+            out.append({
+                'word_id': uwp.word_id,
+                'bank_entry_id': None,
+                'english': display['english'],
+                'translation': display['translation'],
+                'example': display['example'],
+                'example_ru': '',
+                'cefr_level': '',
+            })
         seen.add(uwp.word.english.lower())
     # Bank-marked «учить» without SRS row yet — treat as due now.
     if len(out) < limit:

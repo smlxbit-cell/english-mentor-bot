@@ -28,9 +28,10 @@ class ExampleEnrichTests(SimpleTestCase):
         row = {
             'english': 'apparent',
             'translation': 'очевидный',
-            'example': '',
-            'example_ru': '',
+            'example': 'I like apparent.',
+            'example_ru': 'Мне нравится видимый.',
         }
         enriched = enrich_row_examples(row)
         self.assertIn('apparent', enriched['example'].lower())
         self.assertTrue(enriched['example_ru'])
+        self.assertNotRegex(enriched['example'], r'^I like ')
