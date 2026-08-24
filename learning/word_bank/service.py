@@ -112,10 +112,10 @@ def sync_word_from_bank(user_id: int, entry: WordBankEntry, *, status: str) -> W
         },
     )
     changed = False
-    if not word.translation and entry.translation:
+    if entry.translation and word.translation != entry.translation:
         word.translation = entry.translation
         changed = True
-    if not word.example and entry.example:
+    if entry.example and word.example != entry.example:
         word.example = entry.example
         changed = True
     if changed:
@@ -140,6 +140,28 @@ def sync_word_from_bank(user_id: int, entry: WordBankEntry, *, status: str) -> W
         defaults=defaults,
     )
     return word
+
+
+def refresh_words_from_bank() -> int:
+    """Push canonical WordBankEntry text into learner Word rows."""
+    updated = 0
+    for entry in WordBankEntry.objects.filter(is_active=True).only(
+        'english', 'translation', 'example',
+    ):
+        rows = Word.objects.filter(english__iexact=entry.english)
+        for word in rows:
+            fields: list[str] = []
+            if entry.translation and word.translation != entry.translation:
+                word.translation = entry.translation
+                fields.append('translation')
+            if entry.example and word.example != entry.example:
+                word.example = entry.example
+                fields.append('example')
+            if fields:
+                fields.append('updated_at')
+                word.save(update_fields=fields)
+                updated += 1
+    return updated
 
 
 def mark_bank_entry(user_id: int, bank_entry_id: int, status: str) -> WordBankEntry | None:
@@ -698,8 +720,8 @@ def get_review_words_for_entries(profile_id: int, entries: list[WordBankEntry]) 
 
         display = display_word_fields(
             english=entry.english,
-            translation=word.translation or entry.translation,
-            example=word.example or entry.example or '',
+            translation=entry.translation or word.translation,
+            example=entry.example or word.example or '',
             part_of_speech=entry.part_of_speech or '',
         )
         out.append({

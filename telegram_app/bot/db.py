@@ -1214,8 +1214,8 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
         pos = (entry.part_of_speech or '') if entry else ''
         display = display_word_fields(
             english=uwp.word.english,
-            translation=uwp.word.translation or (entry.translation if entry else ''),
-            example=uwp.word.example or (entry.example if entry else ''),
+            translation=(entry.translation if entry else '') or uwp.word.translation,
+            example=(entry.example if entry else '') or uwp.word.example,
             part_of_speech=pos,
         )
         out.append({

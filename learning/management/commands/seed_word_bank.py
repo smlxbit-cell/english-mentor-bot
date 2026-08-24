@@ -151,3 +151,9 @@ class Command(BaseCommand):
                 f'Word bank: {created} created, {updated} updated ({len(rows)} total slugs)',
             ),
         )
+        from learning.word_bank.service import refresh_words_from_bank
+
+        synced = refresh_words_from_bank()
+        self.stdout.write(
+            self.style.SUCCESS(f'Learner words synced from bank: {synced}'),
+        )
