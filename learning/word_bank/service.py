@@ -456,11 +456,19 @@ def format_daily_intro_finish(count: int) -> str:
 
 
 def entry_to_dict(entry: WordBankEntry) -> dict[str, Any]:
+    from learning.english_display import display_word_fields
+
+    display = display_word_fields(
+        english=entry.english,
+        translation=entry.translation,
+        example=entry.example or '',
+        part_of_speech=entry.part_of_speech or '',
+    )
     return {
         'bank_entry_id': entry.id,
-        'english': entry.english,
-        'translation': entry.translation,
-        'example': entry.example,
+        'english': display['english'],
+        'translation': display['translation'],
+        'example': display['example'],
         'example_ru': entry.example_ru,
         'cefr_level': entry.cefr_level,
         'topics': normalize_topics(entry.topics),

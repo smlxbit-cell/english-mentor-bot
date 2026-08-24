@@ -1183,8 +1183,10 @@ def get_dictionary_words(profile_id: int, limit: int = 12) -> list[dict]:
 @sync_to_async
 def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
     from learning.models import WordBankEntry
-    from learning.word_bank.service import DAILY_NEW_WORDS, _learning_bank_english
+    from learning.word_bank.service import DAILY_NEW_WORDS, _learning_bank_english, entry_to_dict
     from progress_app.models import UserWordProgress
+
+    from learning.english_display import display_word_fields
 
     if limit is None:
         limit = DAILY_NEW_WORDS
@@ -1209,12 +1211,19 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
             english__iexact=uwp.word.english,
             is_active=True,
         ).first()
+        pos = (entry.part_of_speech or '') if entry else ''
+        display = display_word_fields(
+            english=uwp.word.english,
+            translation=uwp.word.translation or (entry.translation if entry else ''),
+            example=uwp.word.example or (entry.example if entry else ''),
+            part_of_speech=pos,
+        )
         out.append({
             'word_id': uwp.word_id,
             'bank_entry_id': entry.id if entry else None,
-            'english': uwp.word.english,
-            'translation': uwp.word.translation or (entry.translation if entry else ''),
-            'example': uwp.word.example or (entry.example if entry else ''),
+            'english': display['english'],
+            'translation': display['translation'],
+            'example': display['example'],
             'cefr_level': entry.cefr_level if entry else '',
         })
         seen.add(uwp.word.english.lower())
@@ -1229,14 +1238,9 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
             ).first()
             if not entry:
                 continue
-            out.append({
-                'word_id': None,
-                'bank_entry_id': entry.id,
-                'english': entry.english,
-                'translation': entry.translation,
-                'example': entry.example,
-                'cefr_level': entry.cefr_level,
-            })
+            row = entry_to_dict(entry)
+            row['word_id'] = None
+            out.append(row)
             seen.add(en.lower())
             if len(out) >= limit:
                 break

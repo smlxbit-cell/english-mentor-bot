@@ -518,10 +518,17 @@ def _english_text_for_tts(reply: str) -> str:
             _add(chunk)
 
     if parts:
-        return '. '.join(p.rstrip('.').strip() for p in parts[:6])[:800]
+        from learning.english_display import format_english_text
+
+        joined = '. '.join(p.rstrip('.').strip() for p in parts[:6])[:800]
+        return format_english_text(joined)
 
     clean = plain.strip()
-    return clean if _is_english(clean) else ''
+    if _is_english(clean):
+        from learning.english_display import format_english_text
+
+        return format_english_text(clean)
+    return ''
 
 
 def _tts_from_tutor_history(context) -> str:
@@ -779,11 +786,24 @@ def _speak_text_for_step(step: dict) -> str | None:
 
     if stype == 'vocabulary' and content.get('words'):
         chunks = []
+        from learning.english_display import display_word_fields
+
         for w in content['words']:
-            en = w.get('en', '')
-            if not en:
+            en_raw = w.get('en', '') or w.get('english', '')
+            if not en_raw:
                 continue
-            chunks.append(en if not w.get('example') else f'{en}. {w["example"]}')
+            pos = w.get('part_of_speech') or w.get('pos') or ''
+            disp = display_word_fields(
+                english=en_raw,
+                translation='',
+                example=w.get('example', '') or w.get('example_en', ''),
+                part_of_speech=pos,
+            )
+            chunks.append(
+                disp['english']
+                if not disp.get('example')
+                else f'{disp["english"]}. {disp["example"]}'
+            )
         return '. '.join(chunks) or None
 
     if stype == 'speaking':
@@ -2353,6 +2373,8 @@ def _exercise_parse_mode(step: dict, extra_html: str = '') -> str | None:
 
 
 def _compose_step_text(step: dict) -> str:
+    from learning.english_display import display_word_fields, format_headword, format_english_text
+
     parts = []
     if step.get('title'):
         parts.append(step['title'])
@@ -2363,11 +2385,19 @@ def _compose_step_text(step: dict) -> str:
     if step['step_type'] == 'vocabulary' and content.get('words'):
         lines = ['📖 Слова:']
         for w in content['words']:
-            line = f'• {w.get("en", "")} — {w.get("ru", "")}'
-            if w.get('example'):
+            en_raw = w.get('en', '') or w.get('english', '')
+            pos = w.get('part_of_speech') or w.get('pos') or ''
+            disp = display_word_fields(
+                english=en_raw,
+                translation=w.get('ru', '') or w.get('translation', ''),
+                example=w.get('example', '') or w.get('example_en', ''),
+                part_of_speech=pos,
+            )
+            line = f'• {disp["english"]} — {disp["translation"]}'
+            if disp.get('example'):
                 if w.get('example_ru'):
                     line += f'\n   ({w["example_ru"]})'
-                line += f'\n   🇬🇧 {w["example"]}'
+                line += f'\n   🇬🇧 {disp["example"]}'
             lines.append(line)
         parts.append('\n'.join(lines))
 
@@ -2375,7 +2405,7 @@ def _compose_step_text(step: dict) -> str:
         lines = []
         for ln in content['lines']:
             speaker = ln.get('speaker', '')
-            en = ln.get('text', '')
+            en = format_english_text(ln.get('text', ''))
             ru = ln.get('ru', '')
             row = f'{speaker}: 🇬🇧 {en}' if speaker else f'🇬🇧 {en}'
             if ru:
