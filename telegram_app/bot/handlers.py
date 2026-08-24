@@ -3136,14 +3136,7 @@ async def _show_word_level_detail(
         context, _chat_id(update), text,
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(
-                    f'👀 Проверить ({min(stat["unseen"], 80)})',
-                    callback_data=f'words:survey:level:{level}',
-                ) if stat['unseen'] else InlineKeyboardButton(
-                    '👀 Проверить',
-                    callback_data=f'words:survey:level:{level}',
-                ),
-                InlineKeyboardButton('📖 Слова уровня', callback_data=f'words:bank:level:{level}:0'),
+                InlineKeyboardButton('📖 Словарь уровня', callback_data=f'words:bank:level:{level}:0'),
             ],
             [InlineKeyboardButton('← Добавить слова', callback_data='words:new:pick')],
         ]),
@@ -3297,11 +3290,11 @@ async def _show_bank_page(
         )
     if level:
         text += (
-            '\n\n<i>✅ Знаю / 🎯 Учить — на кнопках. '
-            '«Проверить по одному» — карточка с переводом и примером.</i>'
+            '\n\n<i>Три кнопки ниже: '
+            '✅/🎯 — вся страница, ▶️ — по одному слову с переводом.</i>'
         )
     else:
-        text += '\n\n<i>✅ или 🎯 на кнопках рядом со словом.</i>'
+        text += '\n\n<i>Листайте страницы стрелками.</i>'
     context.user_data['bank_page_cb'] = f'{prefix}:{page}'
     back_data = 'words:bank' if level else 'words:new:pick'
     await _send(
@@ -3313,7 +3306,6 @@ async def _show_bank_page(
             pages=data['pages'],
             back_data=back_data,
             level=level,
-            unseen_total=data['total'],
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -3416,6 +3408,42 @@ async def _show_survey_level_menu(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+async def start_word_survey_for_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    level: str,
+    page: int,
+):
+    profile = await _ensure_profile(update, context)
+    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    data = await db.browse_bank_entries(
+        profile['id'], user_level, level=level, page=page,
+    )
+    batch = data['items']
+    if not batch:
+        if update.callback_query:
+            await _ack_callback(
+                update.callback_query,
+                'На этой странице нет новых слов',
+                show_alert=True,
+            )
+        return
+    prefix = f'words:bank:level:{level}'
+    context.user_data['bank_page_cb'] = f'{prefix}:{page}'
+    context.user_data['word_survey_return'] = f'{prefix}:{page}'
+    context.user_data['mode'] = 'word_survey'
+    context.user_data['word_survey_total'] = len(batch)
+    context.user_data['word_survey_queue'] = list(batch)
+    context.user_data['word_survey_level'] = level.lower()
+    await _send(
+        context, _chat_id(update),
+        f'👀 <b>{level.upper()}</b> · стр. {page + 1} · {len(batch)} слов\n'
+        '✅ Знаю · 🎯 Учить',
+        parse_mode=ParseMode.HTML,
+    )
+    await _show_word_survey_card(update, context)
+
+
 async def start_word_survey_for_level(
     update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
 ):
@@ -3456,6 +3484,7 @@ async def _show_word_survey_card(update, context):
     chat_id = _chat_id(update)
     if not queue:
         done_total = context.user_data.get('word_survey_total') or 0
+        back_data = context.user_data.pop('word_survey_return', None)
         context.user_data['mode'] = None
         context.user_data.pop('word_survey_total', None)
         context.user_data.pop('word_survey_level', None)
@@ -3486,6 +3515,7 @@ async def _show_word_survey_card(update, context):
                 reply_markup=keyboards.word_survey_finish_kb(
                     learning_count=learning,
                     due_count=due,
+                    back_data=back_data,
                 ),
                 parse_mode=ParseMode.HTML,
             )
@@ -3497,6 +3527,7 @@ async def _show_word_survey_card(update, context):
                 reply_markup=keyboards.word_survey_finish_kb(
                     learning_count=0,
                     due_count=0,
+                    back_data=back_data,
                 ),
                 parse_mode=ParseMode.HTML,
             )
@@ -5153,6 +5184,12 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_survey_level_menu(update, context)
     elif data == 'words:survey:start':
         await _show_survey_level_menu(update, context)
+    elif data.startswith('words:survey:page:'):
+        parts = data.split(':')
+        if len(parts) >= 5:
+            level = parts[3]
+            page = int(parts[4])
+            await start_word_survey_for_page(update, context, level, page)
     elif data.startswith('words:survey:level:'):
         level = data.rsplit(':', 1)[1]
         await start_word_survey_for_level(update, context, level)

@@ -370,30 +370,24 @@ def word_bank_list_page_kb(
     pages: int,
     back_data: str = 'words:bank',
     level: str | None = None,
-    unseen_total: int = 0,
 ) -> InlineKeyboardMarkup:
-    """Bank browse: ✅/🎯 per word without opening each card."""
+    """Bank browse: three actions per page — know all, learn all, check one-by-one."""
     rows: list[list[InlineKeyboardButton]] = []
-    if level and unseen_total > 0:
-        n = min(unseen_total, 80)
-        rows.append([InlineKeyboardButton(
-            f'▶️ Проверить по одному ({n})',
-            callback_data=f'words:survey:level:{level}',
-        )])
-    for w in items:
-        bid = w.get('bank_entry_id')
-        if not bid:
-            continue
-        en = (w.get('english') or '?')[:22]
-        rows.append([
-            InlineKeyboardButton(f'✅ {en}', callback_data=f'words:bank:known:{bid}'),
-            InlineKeyboardButton(f'🎯 {en}', callback_data=f'words:bank:learn:{bid}'),
-        ])
     if level and items:
         rows.append([
-            InlineKeyboardButton('✅ Знаю · страница', callback_data=f'words:bank:page:known:{level}:{page}'),
-            InlineKeyboardButton('🎯 Учить · страница', callback_data=f'words:bank:page:learn:{level}:{page}'),
+            InlineKeyboardButton(
+                '✅ Знаю · вся страница',
+                callback_data=f'words:bank:page:known:{level}:{page}',
+            ),
+            InlineKeyboardButton(
+                '🎯 Учить · вся страница',
+                callback_data=f'words:bank:page:learn:{level}:{page}',
+            ),
         ])
+        rows.append([InlineKeyboardButton(
+            '▶️ Проверить по одному',
+            callback_data=f'words:survey:page:{level}:{page}',
+        )])
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton('◀️', callback_data=f'{prefix}:{page - 1}'))
@@ -485,7 +479,12 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def word_survey_finish_kb(*, learning_count: int, due_count: int = 0) -> InlineKeyboardMarkup:
+def word_survey_finish_kb(
+    *,
+    learning_count: int,
+    due_count: int = 0,
+    back_data: str | None = None,
+) -> InlineKeyboardMarkup:
     rows = []
     if learning_count > 0:
         count = due_count or learning_count
@@ -493,6 +492,8 @@ def word_survey_finish_kb(*, learning_count: int, due_count: int = 0) -> InlineK
             f'🎯 Тренировка · {count}',
             callback_data='srs:start',
         )])
+    if back_data:
+        rows.append([InlineKeyboardButton('← К списку', callback_data=back_data)])
     rows.append([InlineKeyboardButton('← Слова', callback_data='words:hub')])
     return InlineKeyboardMarkup(rows)
 
