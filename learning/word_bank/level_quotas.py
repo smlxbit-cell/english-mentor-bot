@@ -1,4 +1,4 @@
-"""Per-level word quotas — each CEFR band has its own non-overlapping word set."""
+"""Per-level word quotas — exclusive non-overlapping sets, native Kelly band only."""
 
 from __future__ import annotations
 
@@ -9,20 +9,13 @@ from typing import Any
 CEFR_LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
 LEVEL_INDEX = {level: idx for idx, level in enumerate(CEFR_LEVELS)}
 
-# Exclusive targets: each level has its own word count (not cumulative).
+# Exclusive targets (~5000 conversational words total).
 LEVEL_TARGETS: dict[str, int] = {
     'a1': 500,
-    'a2': 1000,
-    'b1': 2000,
-    'b2': 4000,
-    'c1': 8000,
-}
-
-# When native Kelly pool is smaller than target, promote words from the next band.
-_LEVEL_FILL_FROM: dict[str, str] = {
-    'a2': 'b1',
-    'b1': 'b2',
-    'b2': 'c1',
+    'a2': 500,
+    'b1': 1000,
+    'b2': 1500,
+    'c1': 1500,
 }
 
 KELLY_EN_URL = (
@@ -72,7 +65,14 @@ def _is_curated(row: dict[str, Any]) -> bool:
 
 
 def _has_examples(row: dict[str, Any]) -> bool:
-    return bool((row.get('example') or '').strip() and (row.get('example_ru') or '').strip())
+    if (row.get('example') or '').strip() and (row.get('example_ru') or '').strip():
+        return True
+    extras = row.get('extra_examples') or []
+    return bool(
+        isinstance(extras, list)
+        and extras
+        and (extras[0].get('example') or '').strip()
+    )
 
 
 def _row_sort_key(row: dict[str, Any], kelly_ranks: dict[str, int]) -> tuple:
@@ -88,31 +88,6 @@ def _row_sort_key(row: dict[str, Any], kelly_ranks: dict[str, int]) -> tuple:
     )
 
 
-def _promote_rows(
-    *,
-    target_level: str,
-    need: int,
-    donor_level: str,
-    by_level: dict[str, list[tuple[str, dict[str, Any]]]],
-    kelly_ranks: dict[str, int],
-    reserved: set[str],
-) -> list[tuple[str, dict[str, Any]]]:
-    if need <= 0:
-        return []
-    donors = [
-        (slug, dict(row))
-        for slug, row in by_level.get(donor_level, [])
-        if slug not in reserved
-    ]
-    donors.sort(key=lambda pair: _row_sort_key(pair[1], kelly_ranks))
-    promoted: list[tuple[str, dict[str, Any]]] = []
-    for slug, row in donors[:need]:
-        row['cefr_level'] = target_level
-        promoted.append((slug, row))
-        reserved.add(slug)
-    return promoted
-
-
 def apply_level_quotas(
     rows: dict[str, dict[str, Any]],
     *,
@@ -120,9 +95,9 @@ def apply_level_quotas(
     kelly_ranks: dict[str, int] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], set[str]]:
     """
-    Keep up to LEVEL_TARGETS words per level; return (kept rows, dropped slugs).
+    Keep up to LEVEL_TARGETS words per native CEFR band — no cross-level promotion.
 
-    Only levels listed in ``levels`` are trimmed; others pass through unchanged.
+    Each slug appears in exactly one level (its native Kelly tag).
     """
     if kelly_ranks is None:
         kelly_ranks = load_kelly_ranks()
@@ -142,8 +117,7 @@ def apply_level_quotas(
     dropped: set[str] = set()
     reserved: set[str] = set()
 
-    # C1→A1: claim native C1 before B2 can promote those rows upward.
-    for lvl in reversed(CEFR_LEVELS):
+    for lvl in CEFR_LEVELS:
         native = list(by_level.get(lvl) or [])
         if lvl not in active_levels:
             for slug, row in native:
@@ -153,20 +127,10 @@ def apply_level_quotas(
             continue
 
         target = LEVEL_TARGETS.get(lvl, len(native))
-        available = [(slug, row) for slug, row in native if slug not in reserved]
-        pool = sorted(available, key=lambda pair: _row_sort_key(pair[1], kelly_ranks))
-        if len(pool) < target:
-            donor = _LEVEL_FILL_FROM.get(lvl)
-            if donor:
-                pool.extend(_promote_rows(
-                    target_level=lvl,
-                    need=target - len(pool),
-                    donor_level=donor,
-                    by_level=by_level,
-                    kelly_ranks=kelly_ranks,
-                    reserved=reserved,
-                ))
-                pool.sort(key=lambda pair: _row_sort_key(pair[1], kelly_ranks))
+        pool = sorted(
+            [(slug, row) for slug, row in native if slug not in reserved],
+            key=lambda pair: _row_sort_key(pair[1], kelly_ranks),
+        )
 
         for slug, row in pool[:target]:
             kept[slug] = row

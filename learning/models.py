@@ -63,6 +63,11 @@ class WordBankEntry(models.Model):
     translation = models.CharField(max_length=200, verbose_name='Перевод')
     example = models.TextField(blank=True, verbose_name='Пример (EN)')
     example_ru = models.TextField(blank=True, verbose_name='Пример (RU)')
+    extra_examples = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Доп. примеры',
+    )
     cefr_level = models.CharField(
         max_length=2,
         choices=CEFRLevel.choices,

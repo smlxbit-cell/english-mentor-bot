@@ -82,14 +82,12 @@ def collect_word_bank_rows(
         for row in load_directory(data_dir):
             merged[row['slug']] = row
 
-    if freedict_lookup:
-        from learning.word_bank.fetch_remote import iter_freedict_supplement_rows
+    from learning.word_bank.word_quality import filter_row
 
-        for row in iter_freedict_supplement_rows(
-            freedict_lookup,
-            existing_slugs=set(merged.keys()),
-        ):
-            merged[row['slug']] = row
+    merged = {
+        slug: row for slug, row in merged.items()
+        if filter_row(row)
+    }
 
     merged = enrich_rows(merged, freedict_lookup=freedict_lookup)
 
@@ -239,6 +237,7 @@ class Command(BaseCommand):
                     'translation': row['translation'],
                     'example': row.get('example', ''),
                     'example_ru': row.get('example_ru', ''),
+                    'extra_examples': row.get('extra_examples') or [],
                     'cefr_level': row['cefr_level'],
                     'part_of_speech': row.get('part_of_speech', ''),
                     'topics': topics,
@@ -260,6 +259,13 @@ class Command(BaseCommand):
                 is_active=False,
             )
             self.stdout.write(f'Deactivated {n} words over level quota')
+
+        if quota_levels:
+            n_purge = WordBankEntry.objects.exclude(slug__in=rows.keys()).update(
+                is_active=False,
+            )
+            if n_purge:
+                self.stdout.write(f'Deactivated {n_purge} words not in current bank')
 
         from learning.word_bank.american_spelling import HEADWORD_TO_AMERICAN
 

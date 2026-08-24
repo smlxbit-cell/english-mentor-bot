@@ -124,81 +124,10 @@ def iter_remote_rows(
                 part_of_speech=pos,
             ),
         }
+        from .word_quality import filter_row
+        if not filter_row(row):
+            continue
         yield row
         count += 1
         if max_rows and count >= max_rows:
-            break
-
-
-FREEDICT_C1_SUPPLEMENT_MAX = 2500
-
-
-def iter_freedict_supplement_rows(
-    freedict_lookup: dict[str, str],
-    *,
-    existing_slugs: set[str] | None = None,
-    max_rows: int = FREEDICT_C1_SUPPLEMENT_MAX,
-) -> Iterator[dict]:
-    """
-    Advanced headwords present in FreeDict but absent from Kelly.
-    Used to grow the C1 pool with real EN+RU pairs.
-    """
-    from .topic_classifier import resolve_topics
-    from .translation_enrich import enrich_translation, extract_freedict_senses
-
-    if not freedict_lookup or max_rows <= 0:
-        return
-    kelly = load_kelly_cefr()
-    taken = set(existing_slugs or ())
-    candidates: list[tuple[str, str]] = []
-    for en, text in freedict_lookup.items():
-        en = (en or '').strip().lower()
-        if not en or en in kelly or len(en) < 4:
-            continue
-        if not _WORD_RE.match(en):
-            continue
-        en_display = americanize_headword(en)
-        slug = word_slug(en_display)
-        if slug in taken:
-            continue
-        text = (text or '').strip()
-        if not text:
-            continue
-        senses = extract_freedict_senses(text)
-        if not senses:
-            continue
-        candidates.append((en_display, text))
-
-    candidates.sort(key=lambda pair: (-len(pair[0]), pair[0]))
-    count = 0
-    for en, text in candidates:
-        senses = extract_freedict_senses(text)
-        if not senses:
-            continue
-        ru = enrich_translation(en, senses[0], freedict_text=text)
-        if not ru.strip():
-            continue
-        slug = word_slug(en)
-        if slug in taken:
-            continue
-        taken.add(slug)
-        row = {
-            'slug': slug,
-            'english': en,
-            'translation': ru,
-            'example': '',
-            'example_ru': '',
-            'cefr_level': 'c1',
-            'part_of_speech': '',
-            'kelly_rank': 999_999,
-            'topics': resolve_topics(
-                ['remote', 'general'],
-                english=en,
-                translation=ru,
-                part_of_speech='',
-            ),
-        }
-        yield row
-        count += 1
-        if count >= max_rows:
             break

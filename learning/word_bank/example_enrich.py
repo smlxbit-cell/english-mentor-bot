@@ -107,8 +107,21 @@ def _pick_example_source(
     level = (row.get('cefr_level') or '').lower()
     if level in ('a1', 'a2', 'b1', 'b2', 'c1'):
         cached = load_level_examples(level).get((row.get('english') or '').strip().lower())
-        if cached and is_valid_context_example(row, example=cached['example'], example_ru=cached['example_ru']):
-            return cached
+        if cached:
+            examples = cached.get('examples') or []
+            if examples and is_valid_context_example(
+                row,
+                example=examples[0]['example'],
+                example_ru=examples[0]['example_ru'],
+            ):
+                return examples[0]
+            for alt in examples[1:]:
+                if is_valid_context_example(
+                    row,
+                    example=alt['example'],
+                    example_ru=alt['example_ru'],
+                ):
+                    return alt
     if is_valid_context_example(row):
         return {'example': row.get('example', ''), 'example_ru': row.get('example_ru', '')}
     if tatoeba and is_valid_context_example(
@@ -159,6 +172,16 @@ def enrich_row_examples(
         row = dict(row)
         row['example'] = picked['example']
         row['example_ru'] = picked['example_ru']
+        level = (row.get('cefr_level') or '').lower()
+        from learning.word_bank.level_examples import load_level_examples
+
+        cached = load_level_examples(level).get(key)
+        if cached:
+            extras = [
+                ex for ex in (cached.get('examples') or [])[1:]
+                if is_valid_context_example(row, example=ex['example'], example_ru=ex['example_ru'])
+            ]
+            row['extra_examples'] = extras[:2]
         return row
     row = dict(row)
     row['example'] = ''

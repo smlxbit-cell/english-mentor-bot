@@ -11,10 +11,17 @@ from django.core.management.base import BaseCommand
 
 from learning.models import WordBankEntry
 from learning.word_bank.example_enrich import enrich_row_examples, is_valid_context_example
-from learning.word_bank.level_examples import load_level_examples, save_level_examples
+from learning.word_bank.level_examples import (
+    EXAMPLES_PER_WORD,
+    examples_path,
+    load_level_examples,
+    save_level_examples,
+)
+
+MIN_EXAMPLES = 2
 from learning.word_bank.level_quotas import CEFR_LEVELS
 
-BATCH_SIZE = 12
+BATCH_SIZE = 8
 MAX_UNTIL_COMPLETE_ROUNDS = 8
 
 _LEVEL_PROMPT = {
@@ -43,19 +50,20 @@ def _build_prompt(batch: list[dict], *, level: str) -> str:
         for row in batch
     ]
     return (
-        f'Write ONE example sentence per headword ({level_label}).\n\n'
+        f'Write THREE different example sentences per headword ({level_label}).\n\n'
         'Requirements:\n'
         '- American English only (US spelling: color, center, organize).\n'
         '- Natural spoken register — what people actually say at work, home, or on the street.\n'
         '- Use the headword in its correct sense (match translation_ru).\n'
-        '- 4–14 words; headword must appear exactly as given.\n'
-        '- Concrete situation — not abstract definitions.\n'
-        '- Accurate Russian translation of the full sentence.\n\n'
+        '- 4–14 words each; headword must appear exactly as given.\n'
+        '- Three distinct situations — not paraphrases of the same line.\n'
+        '- Accurate Russian translation of each full sentence.\n\n'
         'Never use:\n'
         '- "I like …", "This is …", "I want …" as the whole sentence pattern\n'
         '- British spellings (colour, favourite, centre)\n'
         '- Made-up or absurd contexts\n\n'
-        'Return JSON: {"items": [{"word": "...", "example": "...", "example_ru": "..."}]}\n'
+        'Return JSON: {"items": [{"word": "...", "examples": ['
+        '{"example": "...", "example_ru": "..."}, ...]}]}\n'
         f'Words: {json.dumps(items, ensure_ascii=False)}'
     )
 
@@ -65,7 +73,7 @@ async def _generate_batch(
     *,
     level: str,
     temperature: float = 0.2,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, list[dict[str, str]]]:
     from ai_app.services.registry import get_provider
     from ai_app.services.types import ChatMessage
 
@@ -80,24 +88,49 @@ async def _generate_batch(
         ],
         temperature=temperature,
         json_mode=True,
-        max_tokens=2800,
+        max_tokens=4000,
     )
     data = json.loads(result.text)
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, list[dict[str, str]]] = {}
     for item in data.get('items') or []:
         if not isinstance(item, dict):
             continue
         word = str(item.get('word', '')).strip().lower()
-        ex = str(item.get('example', '')).strip()
-        ex_ru = str(item.get('example_ru', '')).strip()
-        if word and ex and ex_ru:
-            out[word] = {'example': ex, 'example_ru': ex_ru}
+        examples: list[dict[str, str]] = []
+        for ex_item in item.get('examples') or []:
+            if not isinstance(ex_item, dict):
+                continue
+            ex = str(ex_item.get('example', '')).strip()
+            ex_ru = str(ex_item.get('example_ru', '')).strip()
+            if ex and ex_ru:
+                examples.append({'example': ex, 'example_ru': ex_ru})
+        if word and examples:
+            out[word] = examples
     return out
+
+
+def _valid_example_count(row: dict, lookup: dict[str, dict]) -> int:
+    cached = lookup.get(row['english'].lower()) or {}
+    examples = cached.get('examples') or []
+    if not examples and cached.get('example'):
+        examples = [{'example': cached['example'], 'example_ru': cached['example_ru']}]
+    count = 0
+    for ex in examples:
+        if is_valid_context_example(
+            row,
+            example=ex.get('example', ''),
+            example_ru=ex.get('example_ru', ''),
+        ):
+            count += 1
+    enriched = enrich_row_examples(dict(row), tatoeba_lookup=lookup)
+    if is_valid_context_example(enriched):
+        count = max(count, 1)
+    return count
 
 
 def _collect_missing(
     level: str,
-    lookup: dict[str, dict[str, str]],
+    lookup: dict[str, dict],
 ) -> list[dict]:
     missing: list[dict] = []
     for entry in WordBankEntry.objects.filter(
@@ -112,14 +145,7 @@ def _collect_missing(
             'example': entry.example,
             'example_ru': entry.example_ru,
         }
-        cached = lookup.get(entry.english.lower())
-        if cached and is_valid_context_example(
-            row,
-            example=cached['example'],
-            example_ru=cached['example_ru'],
-        ):
-            continue
-        if is_valid_context_example(enrich_row_examples(dict(row), tatoeba_lookup=lookup)):
+        if _valid_example_count(row, lookup) >= MIN_EXAMPLES:
             continue
         missing.append(row)
     return missing
@@ -127,24 +153,30 @@ def _collect_missing(
 
 def _apply_batch_results(
     batch: list[dict],
-    batch_out: dict[str, dict[str, str]],
-    lookup: dict[str, dict[str, str]],
+    batch_out: dict[str, list[dict[str, str]]],
+    lookup: dict[str, dict],
 ) -> tuple[int, int]:
     generated = 0
     rejected = 0
     for row in batch:
         key = row['english'].lower()
-        candidate = batch_out.get(key)
-        if not candidate:
-            continue
-        if not is_valid_context_example(
-            row,
-            example=candidate['example'],
-            example_ru=candidate['example_ru'],
-        ):
+        candidates = batch_out.get(key) or []
+        valid: list[dict[str, str]] = []
+        for candidate in candidates:
+            if is_valid_context_example(
+                row,
+                example=candidate['example'],
+                example_ru=candidate['example_ru'],
+            ):
+                valid.append(candidate)
+        if len(valid) < MIN_EXAMPLES:
             rejected += 1
             continue
-        lookup[key] = candidate
+        lookup[key] = {
+            'examples': valid[:EXAMPLES_PER_WORD],
+            'example': valid[0]['example'],
+            'example_ru': valid[0]['example_ru'],
+        }
         generated += 1
     return generated, rejected
 
@@ -153,7 +185,7 @@ def _fill_missing(
     missing: list[dict],
     *,
     level: str,
-    lookup: dict[str, dict[str, str]],
+    lookup: dict[str, dict],
     limit: int,
 ) -> tuple[int, int]:
     to_fill = missing[:limit]
@@ -172,12 +204,7 @@ def _fill_missing(
 
     still_missing = [
         row for row in to_fill
-        if row['english'].lower() not in lookup
-        or not is_valid_context_example(
-            row,
-            example=lookup[row['english'].lower()]['example'],
-            example_ru=lookup[row['english'].lower()]['example_ru'],
-        )
+        if _valid_example_count(row, lookup) < MIN_EXAMPLES
     ]
     for row in still_missing:
         try:
@@ -200,8 +227,11 @@ class Command(BaseCommand):
         parser.add_argument('--level', required=True, choices=CEFR_LEVELS)
         parser.add_argument('--dry-run', action='store_true')
         parser.add_argument('--limit', type=int, default=0, help='Max words to generate')
-        parser.add_argument('--until-complete', action='store_true',
-                            help='Repeat until no gaps or max rounds reached')
+        parser.add_argument(
+            '--until-complete',
+            action='store_true',
+            help='Repeat until no gaps or max rounds reached',
+        )
         parser.add_argument('--data-dir', default='')
 
     def handle(self, *args, **options):
@@ -212,7 +242,9 @@ class Command(BaseCommand):
 
         active = WordBankEntry.objects.filter(is_active=True, cefr_level=level).count()
         self.stdout.write(f'{level.upper()} active: {active}')
-        self.stdout.write(f'Missing examples: {len(missing)}')
+        self.stdout.write(
+            f'Missing examples (<{MIN_EXAMPLES} each): {len(missing)}',
+        )
 
         if options['dry_run'] or not missing:
             return
@@ -239,9 +271,10 @@ class Command(BaseCommand):
             if not generated and missing:
                 break
 
-        path = save_level_examples(level, lookup, data_dir=data_dir)
+        save_level_examples(level, lookup, data_dir=data_dir)
         self.stdout.write(self.style.SUCCESS(
-            f'Generated {total_generated} examples ({total_rejected} rejected) → {path}',
+            f'Generated {total_generated} word sets ({total_rejected} rejected) → '
+            f'{examples_path(level, data_dir=data_dir)}',
         ))
         self.stdout.write(f'Still missing: {len(missing)}')
         if missing:

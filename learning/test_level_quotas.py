@@ -41,7 +41,7 @@ class LevelQuotaTests(SimpleTestCase):
     def test_quota_levels_for_requested_includes_lower_bands(self):
         self.assertEqual(quota_levels_for_requested(('a2',)), ('a1', 'a2'))
 
-    def test_c1_native_pool_not_drained_by_b2_promotion(self):
+    def test_native_levels_do_not_cross_promote(self):
         rows = {
             f'c1_{i}': {
                 'english': f'advanced{i}',
@@ -64,7 +64,11 @@ class LevelQuotaTests(SimpleTestCase):
             }
             for i in range(80)
         })
-        kept, _ = apply_level_quotas(rows, kelly_ranks={})
+        kept, _ = apply_level_quotas(rows, levels=('b2', 'c1'), kelly_ranks={})
         c1_kept = [r for r in kept.values() if r['cefr_level'] == 'c1']
+        b2_kept = [r for r in kept.values() if r['cefr_level'] == 'b2']
         self.assertEqual(len(c1_kept), 120)
+        self.assertEqual(len(b2_kept), 80)
 
+    def test_total_targets_about_five_thousand(self):
+        self.assertEqual(sum(LEVEL_TARGETS.values()), 5000)
