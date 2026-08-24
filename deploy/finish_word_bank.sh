@@ -43,13 +43,12 @@ seed_level c1
 stats
 
 for level in a1 a2 b1 b2 c1; do
-  log "=== Phase 2: ${level} examples ==="
+  log "=== Phase 2: ${level} examples (AI fill only) ==="
   fill_level "$level"
-  seed_level "$level"
   stats
 done
 
-log "=== Phase 3: final full seed ==="
+log "=== Phase 3: final seed — import all examples + full quotas ==="
 seed_level c1
 stats
 log "=== DONE word bank finish ==="
