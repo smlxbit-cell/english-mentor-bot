@@ -1,16 +1,17 @@
-"""Word training drill: EN→RU choice, RU→EN choice (new); recall for SRS review."""
+"""Word training drill: EN→RU, RU→EN, listen→RU (new); recall for SRS review."""
 
 from __future__ import annotations
 
 import random
 from typing import Any
 
-STEPS_NEW = ('meaning', 'english')
+STEPS_NEW = ('meaning', 'english', 'listening')
 STEPS_REVIEW = ('recall',)
 
 STEP_LABELS = {
     'meaning': '🇬🇧→🇷🇺',
     'english': '🇷🇺→🇬🇧',
+    'listening': '👂→🇷🇺',
     'recall': '🇷🇺→🇬🇧',
 }
 
@@ -114,12 +115,25 @@ def drill_tts_text(word: dict[str, Any]) -> str:
     return en if not ex else f'{en}. {ex}'
 
 
+def drill_listen_tts_text(word: dict[str, Any]) -> str:
+    """Headword only — listening step tests recognition by ear."""
+    return (word.get('english') or '').strip()
+
+
 def format_drill_meaning_prompt(header: str, english: str) -> str:
     return f'{header}\n\n🇬🇧 <b>{english}</b>\n\nКакой перевод?'
 
 
 def format_drill_english_prompt(header: str, translation: str) -> str:
     return f'{header}\n\n🇷🇺 <b>{translation}</b>\n\nКак по-английски?'
+
+
+def format_drill_listening_prompt(header: str) -> str:
+    return f'{header}\n\n👂 <b>Слушай</b> · какой перевод?'
+
+
+def format_drill_listening_hint(english: str) -> str:
+    return f'👀 <b>{english}</b>'
 
 
 def format_drill_recall_prompt(header: str, translation: str) -> str:

@@ -3677,6 +3677,60 @@ async def _start_word_drill(
     await _show_drill_step(update, context)
 
 
+async def _flash_drill_word_hint(
+    context,
+    chat_id: int,
+    english: str,
+    *,
+    seconds: float = 2.5,
+) -> None:
+    from learning.word_bank.drill import format_drill_listening_hint
+
+    hint = await context.bot.send_message(
+        chat_id,
+        format_drill_listening_hint(english),
+        parse_mode=ParseMode.HTML,
+    )
+    await asyncio.sleep(seconds)
+    try:
+        await context.bot.delete_message(chat_id, hint.message_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _show_drill_listening_step(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    header: str,
+    word: dict,
+    pool: list[dict],
+    chat_id: int,
+) -> None:
+    from learning.word_bank.drill import (
+        build_translation_choice,
+        drill_listen_tts_text,
+        format_drill_listening_prompt,
+        option_button_label,
+    )
+
+    await _flash_drill_word_hint(context, chat_id, _esc(word['english']))
+    options, correct_idx = build_translation_choice(word, pool)
+    context.user_data['drill_choice_options'] = options
+    context.user_data['drill_correct_idx'] = correct_idx
+    context.user_data.pop('drill_choice_words', None)
+    labels = [option_button_label(o) for o in options]
+    tts = drill_listen_tts_text(word)
+    context.user_data['tts_text'] = tts
+    await _send(
+        context, chat_id,
+        format_drill_listening_prompt(header),
+        reply_markup=keyboards.word_drill_choice_kb(labels, step='listening'),
+        parse_mode=ParseMode.HTML,
+    )
+    await _play_tts(context, chat_id, tts)
+
+
 async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from learning.word_bank.drill import (
         build_english_choice,
@@ -3714,6 +3768,13 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
         await _play_tts(context, chat_id, context.user_data['tts_text'])
+        return
+
+    if step == 'listening':
+        await _show_drill_listening_step(
+            update, context,
+            header=header, word=word, pool=pool, chat_id=chat_id,
+        )
         return
 
     if step == 'english':
@@ -3805,7 +3866,7 @@ async def _handle_drill_pick(
         msg = format_translation_choice_wrong(picked=picked, correct=word, pool=pool)
         is_correct = False
 
-    if step == 'english' and word.get('word_id'):
+    if step == 'listening' and word.get('word_id'):
         await db.record_word_review(
             context.user_data['profile_id'], word['word_id'], is_correct,
         )
