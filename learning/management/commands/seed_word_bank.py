@@ -10,9 +10,12 @@ from django.core.management.base import BaseCommand
 
 from learning.models import WordBankEntry
 from learning.word_bank.curriculum_words import iter_curriculum_rows
+from learning.word_bank.freedict_loader import CACHE_FILENAME as FREEDICT_CACHE
+from learning.word_bank.freedict_loader import cache_freedict_lookup, load_freedict_lookup
 from learning.word_bank.loader import load_directory
 from learning.word_bank.seed_words import iter_builtin_rows
 from learning.word_bank.topic_classifier import resolve_topics
+from learning.word_bank.translation_enrich import enrich_rows
 
 REMOTE_CACHE = 'remote.json'
 
@@ -22,16 +25,25 @@ def collect_word_bank_rows(
     data_dir: Path | None = None,
     include_remote: bool = False,
     fetch_remote: bool = False,
+    fetch_freedict: bool = False,
 ) -> dict[str, dict]:
     """Return slug → row dict; later sources override earlier ones."""
     merged: dict[str, dict] = {}
+    freedict_lookup: dict[str, str] = {}
+
+    if data_dir:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        freedict_path = data_dir / FREEDICT_CACHE
+        if fetch_freedict or fetch_remote:
+            freedict_lookup = cache_freedict_lookup(freedict_path)
+        elif freedict_path.is_file():
+            freedict_lookup = load_freedict_lookup(freedict_path)
 
     if fetch_remote:
         from learning.word_bank.fetch_remote import iter_remote_rows
 
-        remote_rows = list(iter_remote_rows())
+        remote_rows = list(iter_remote_rows(freedict_lookup=freedict_lookup))
         if data_dir:
-            data_dir.mkdir(parents=True, exist_ok=True)
             cache_path = data_dir / REMOTE_CACHE
             cache_path.write_text(
                 json.dumps(remote_rows, ensure_ascii=False, indent=0),
@@ -52,7 +64,7 @@ def collect_word_bank_rows(
     if data_dir and data_dir.is_dir():
         for row in load_directory(data_dir):
             merged[row['slug']] = row
-    return merged
+    return enrich_rows(merged, freedict_lookup=freedict_lookup)
 
 
 class Command(BaseCommand):
@@ -72,7 +84,12 @@ class Command(BaseCommand):
         parser.add_argument(
             '--fetch',
             action='store_true',
-            help='Download Kelly CEFR + EN↔RU dictionary and cache as remote.json',
+            help='Download Kelly CEFR + EN↔RU dictionary + FreeDict and cache locally',
+        )
+        parser.add_argument(
+            '--fetch-freedict',
+            action='store_true',
+            help='Download FreeDict eng-rus only (cached as freedict_ru.json)',
         )
         parser.add_argument(
             '--include-remote',
@@ -92,6 +109,7 @@ class Command(BaseCommand):
             data_dir=data_dir,
             include_remote=options['include_remote'] or options['fetch'],
             fetch_remote=options['fetch'],
+            fetch_freedict=options['fetch_freedict'] or options['fetch'],
         )
         if options['dry_run']:
             by_level: dict[str, int] = {}

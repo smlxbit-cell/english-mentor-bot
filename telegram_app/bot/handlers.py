@@ -3652,7 +3652,7 @@ async def _start_word_drill(
     *,
     new_words: bool,
 ):
-    from learning.word_bank.drill import steps_for
+    from learning.word_bank.drill import DRILL_PHASE_TEXT, initial_drill_step
 
     if not words:
         await _send(
@@ -3661,13 +3661,15 @@ async def _start_word_drill(
             reply_markup=keyboards.word_repeat_section_kb(),
         )
         return
-    steps = steps_for(new_words=new_words)
     context.user_data['mode'] = 'word_drill'
     context.user_data['drill_words'] = words
     context.user_data['drill_word_index'] = 0
-    context.user_data['drill_step'] = steps[0]
+    context.user_data['drill_phase'] = DRILL_PHASE_TEXT if new_words else 'review'
+    context.user_data['drill_step'] = initial_drill_step(new_words=new_words)
     context.user_data['drill_new'] = new_words
     context.user_data['drill_total'] = len(words)
+    context.user_data.pop('drill_listening_order', None)
+    context.user_data.pop('drill_listening_index', None)
     context.user_data.pop('drill_choice_words', None)
     context.user_data.pop('drill_choice_options', None)
     context.user_data.pop('drill_correct_idx', None)
@@ -3714,7 +3716,6 @@ async def _show_drill_listening_step(
         option_button_label,
     )
 
-    await _flash_drill_word_hint(context, chat_id, _esc(word['english']))
     options, correct_idx = build_translation_choice(word, pool)
     context.user_data['drill_choice_options'] = options
     context.user_data['drill_correct_idx'] = correct_idx
@@ -3736,6 +3737,7 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         build_english_choice,
         build_translation_choice,
         drill_tts_text,
+        drill_progress_pos,
         format_drill_english_prompt,
         format_drill_header,
         format_drill_meaning_prompt,
@@ -3749,7 +3751,12 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _finish_word_drill(update, context)
         return
     step = context.user_data.get('drill_step', 'recall')
-    word_pos = int(context.user_data.get('drill_word_index', 0)) + 1
+    phase = context.user_data.get('drill_phase', 'text')
+    word_pos = drill_progress_pos(
+        phase=phase,
+        word_index=int(context.user_data.get('drill_word_index', 0)),
+        listening_index=int(context.user_data.get('drill_listening_index', 0)),
+    )
     word_total = int(context.user_data.get('drill_total') or len(context.user_data.get('drill_words') or []))
     header = format_drill_header(word_pos=word_pos, word_total=word_total, step=step)
     pool = context.user_data.get('drill_words') or []
@@ -3804,23 +3811,26 @@ async def _show_drill_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _advance_drill(context) -> bool | None:
-    from learning.word_bank.drill import steps_for
+    from learning.word_bank.drill import advance_drill
 
-    steps = steps_for(new_words=bool(context.user_data.get('drill_new')))
-    step = context.user_data.get('drill_step', steps[-1])
-    try:
-        step_idx = steps.index(step)
-    except ValueError:
-        step_idx = len(steps) - 1
-    if step_idx + 1 < len(steps):
-        context.user_data['drill_step'] = steps[step_idx + 1]
-        return True
-    next_idx = int(context.user_data.get('drill_word_index', 0)) + 1
     words = context.user_data.get('drill_words') or []
-    if next_idx >= len(words):
+    nxt = advance_drill(
+        words=words,
+        new_words=bool(context.user_data.get('drill_new')),
+        phase=context.user_data.get('drill_phase', 'text'),
+        word_index=int(context.user_data.get('drill_word_index', 0)),
+        step=context.user_data.get('drill_step', 'meaning'),
+        listening_index=int(context.user_data.get('drill_listening_index', 0)),
+        listening_order=context.user_data.get('drill_listening_order'),
+    )
+    if nxt is None:
         return None
-    context.user_data['drill_word_index'] = next_idx
-    context.user_data['drill_step'] = steps[0]
+    context.user_data['drill_phase'] = nxt['phase']
+    context.user_data['drill_word_index'] = nxt['word_index']
+    context.user_data['drill_step'] = nxt['step']
+    context.user_data['drill_listening_index'] = nxt['listening_index']
+    if nxt.get('listening_order') is not None:
+        context.user_data['drill_listening_order'] = nxt['listening_order']
     return True
 
 
@@ -3952,6 +3962,9 @@ async def _finish_word_drill(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop('drill_words', None)
     context.user_data.pop('drill_word_index', None)
     context.user_data.pop('drill_step', None)
+    context.user_data.pop('drill_phase', None)
+    context.user_data.pop('drill_listening_order', None)
+    context.user_data.pop('drill_listening_index', None)
     context.user_data.pop('drill_new', None)
     context.user_data.pop('drill_total', None)
     context.user_data.pop('drill_choice_words', None)
@@ -5040,7 +5053,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_drill_word_list(update, context)
     elif data == 'wd:hint':
         word = _current_drill_word(context)
-        if word:
+        step = context.user_data.get('drill_step')
+        if word and step == 'listening':
+            await _ack_callback(query)
+            await _flash_drill_word_hint(
+                context, query.message.chat_id, _esc(word['english']),
+            )
+        elif word:
             await _ack_callback(
                 query,
                 f'🇬🇧 {word["english"]} — {word["translation"]}',

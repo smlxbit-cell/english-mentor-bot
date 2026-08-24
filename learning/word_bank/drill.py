@@ -7,6 +7,9 @@ from typing import Any
 
 STEPS_NEW = ('meaning', 'english', 'listening')
 STEPS_REVIEW = ('recall',)
+TEXT_STEPS = ('meaning', 'english')
+DRILL_PHASE_TEXT = 'text'
+DRILL_PHASE_LISTENING = 'listening'
 
 STEP_LABELS = {
     'meaning': '🇬🇧→🇷🇺',
@@ -18,6 +21,91 @@ STEP_LABELS = {
 
 def steps_for(*, new_words: bool) -> tuple[str, ...]:
     return STEPS_NEW if new_words else STEPS_REVIEW
+
+
+def initial_drill_step(*, new_words: bool) -> str:
+    return TEXT_STEPS[0] if new_words else STEPS_REVIEW[0]
+
+
+def advance_drill(
+    *,
+    words: list[dict[str, Any]],
+    new_words: bool,
+    phase: str,
+    word_index: int,
+    step: str,
+    listening_index: int,
+    listening_order: list[int] | None,
+) -> dict[str, Any] | None:
+    """
+    Return the next drill cursor, or None when the session is complete.
+
+    New-word flow: all words get EN→RU + RU→EN first, then a shuffled listening round.
+    """
+    if not words:
+        return None
+
+    if not new_words:
+        if word_index + 1 >= len(words):
+            return None
+        return {
+            'phase': phase,
+            'word_index': word_index + 1,
+            'step': STEPS_REVIEW[0],
+            'listening_index': listening_index,
+            'listening_order': listening_order,
+        }
+
+    if phase == DRILL_PHASE_TEXT:
+        if step == 'meaning':
+            return {
+                'phase': phase,
+                'word_index': word_index,
+                'step': 'english',
+                'listening_index': listening_index,
+                'listening_order': listening_order,
+            }
+        if word_index + 1 < len(words):
+            return {
+                'phase': phase,
+                'word_index': word_index + 1,
+                'step': 'meaning',
+                'listening_index': listening_index,
+                'listening_order': listening_order,
+            }
+        order = list(range(len(words)))
+        random.shuffle(order)
+        return {
+            'phase': DRILL_PHASE_LISTENING,
+            'word_index': order[0],
+            'step': 'listening',
+            'listening_index': 0,
+            'listening_order': order,
+        }
+
+    order = listening_order or list(range(len(words)))
+    next_listening = listening_index + 1
+    if next_listening >= len(order):
+        return None
+    return {
+        'phase': DRILL_PHASE_LISTENING,
+        'word_index': order[next_listening],
+        'step': 'listening',
+        'listening_index': next_listening,
+        'listening_order': order,
+    }
+
+
+def drill_progress_pos(
+    *,
+    phase: str,
+    word_index: int,
+    listening_index: int,
+) -> int:
+    """1-based position shown in drill headers."""
+    if phase == DRILL_PHASE_LISTENING:
+        return listening_index + 1
+    return word_index + 1
 
 
 def step_label(step: str) -> str:

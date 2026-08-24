@@ -36,11 +36,13 @@ Or `{"words": [ ... ]}`.
 2. `learning/word_bank/seed_words.py` — curated A1–C1 with examples
 3. Vocabulary steps from `content_app/curriculum.py`
 
-Refresh remote cache online:
+Refresh remote cache online (also downloads FreeDict for richer multi-sense RU):
 
 ```bash
 python manage.py seed_word_bank --fetch --include-remote
 ```
+
+Manual translation fixes for polysemous words: `learning/data/word_bank/translation_overrides.json`.
 
 Later rows override earlier ones when the same English slug matches.
 

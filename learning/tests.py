@@ -153,6 +153,77 @@ class WordDrillTests(SimpleTestCase):
         self.assertEqual(len(options), 4)
         self.assertEqual(options[idx]['english'], 'coffee')
 
+    def test_advance_drill_text_before_listening(self):
+        from learning.word_bank.drill import (
+            DRILL_PHASE_LISTENING,
+            DRILL_PHASE_TEXT,
+            advance_drill,
+        )
+
+        words = [
+            {'english': 'chip', 'translation': 'чип'},
+            {'english': 'board', 'translation': 'доска'},
+        ]
+        state = advance_drill(
+            words=words,
+            new_words=True,
+            phase=DRILL_PHASE_TEXT,
+            word_index=0,
+            step='meaning',
+            listening_index=0,
+            listening_order=None,
+        )
+        self.assertEqual(state['step'], 'english')
+        self.assertEqual(state['word_index'], 0)
+
+        state = advance_drill(
+            words=words,
+            new_words=True,
+            phase=DRILL_PHASE_TEXT,
+            word_index=0,
+            step='english',
+            listening_index=0,
+            listening_order=None,
+        )
+        self.assertEqual(state['step'], 'meaning')
+        self.assertEqual(state['word_index'], 1)
+
+        state = advance_drill(
+            words=words,
+            new_words=True,
+            phase=DRILL_PHASE_TEXT,
+            word_index=1,
+            step='english',
+            listening_index=0,
+            listening_order=None,
+        )
+        self.assertEqual(state['phase'], DRILL_PHASE_LISTENING)
+        self.assertEqual(state['step'], 'listening')
+        self.assertEqual(len(state['listening_order']), 2)
+
+        last = state
+        for _ in range(len(words) - 1):
+            last = advance_drill(
+                words=words,
+                new_words=True,
+                phase=last['phase'],
+                word_index=last['word_index'],
+                step=last['step'],
+                listening_index=last['listening_index'],
+                listening_order=last['listening_order'],
+            )
+            self.assertIsNotNone(last)
+        done = advance_drill(
+            words=words,
+            new_words=True,
+            phase=last['phase'],
+            word_index=last['word_index'],
+            step=last['step'],
+            listening_index=last['listening_index'],
+            listening_order=last['listening_order'],
+        )
+        self.assertIsNone(done)
+
     def test_words_count_ru(self):
         from learning.word_bank.service import words_count_ru
 

@@ -263,6 +263,8 @@ def word_drill_choice_kb(options: list[str], *, step: str) -> InlineKeyboardMark
     for i, opt in enumerate(options):
         label = opt if len(opt) <= 36 else f'{opt[:35]}…'
         rows.append([InlineKeyboardButton(label, callback_data=f'wd:pick:{step}:{i}')])
+    if step == 'listening':
+        rows.append([InlineKeyboardButton('👀 Показать слово', callback_data='wd:hint')])
     return InlineKeyboardMarkup(rows)
 
 

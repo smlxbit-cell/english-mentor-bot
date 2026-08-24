@@ -65,7 +65,7 @@ def load_directory(data_dir: Path) -> list[dict]:
     """Load all *.json and *.csv from a directory."""
     by_slug: dict[str, dict] = {}
     for path in sorted(data_dir.glob('*')):
-        if path.name.lower() == 'remote.json':
+        if path.name.lower() in {'remote.json', 'freedict_ru.json', 'translation_overrides.json'}:
             continue
         if path.suffix.lower() == '.json':
             items = load_json_file(path)

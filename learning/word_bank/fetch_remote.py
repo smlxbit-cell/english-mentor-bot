@@ -8,6 +8,7 @@ import urllib.request
 from typing import Iterator
 
 from .normalize import word_slug
+from .translation_enrich import enrich_translation
 
 KELLY_EN_URL = (
     'https://raw.githubusercontent.com/kotoshu/frequency-list-kelly/main/data/en.json'
@@ -71,13 +72,18 @@ def _level_rank(level: str) -> int:
     return order.get(level, 99)
 
 
-def iter_remote_rows(*, max_rows: int | None = None) -> Iterator[dict]:
+def iter_remote_rows(
+    *,
+    max_rows: int | None = None,
+    freedict_lookup: dict[str, str] | None = None,
+) -> Iterator[dict]:
     """
     Merge Kelly CEFR tags with EN↔RU dictionary.
     Only rows with a Russian translation are yielded.
     """
     lookup = load_en_ru_lookup()
     kelly = load_kelly_cefr()
+    freedict = freedict_lookup or {}
     count = 0
     from .topic_classifier import resolve_topics
 
@@ -87,6 +93,12 @@ def iter_remote_rows(*, max_rows: int | None = None) -> Iterator[dict]:
             continue
         level = meta['level']
         pos = meta.get('pos') or ''
+        ru = enrich_translation(
+            en,
+            ru,
+            freedict_text=freedict.get(en, ''),
+            part_of_speech=pos,
+        )
         row = {
             'slug': word_slug(en),
             'english': en,
