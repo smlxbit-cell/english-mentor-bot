@@ -390,9 +390,9 @@ def word_bank_list_page_kb(
         )])
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton('◀️', callback_data=f'{prefix}:{page - 1}'))
+        nav.append(InlineKeyboardButton('◀️ Назад', callback_data=f'{prefix}:{page - 1}'))
     if page + 1 < pages:
-        nav.append(InlineKeyboardButton('▶️', callback_data=f'{prefix}:{page + 1}'))
+        nav.append(InlineKeyboardButton('▶️ След. стр.', callback_data=f'{prefix}:{page + 1}'))
     if nav:
         rows.append(nav)
     rows.append([InlineKeyboardButton('← Уровни', callback_data=back_data)])
@@ -408,9 +408,9 @@ def word_list_page_kb(
 ) -> InlineKeyboardMarkup:
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton('◀️', callback_data=f'{prefix}:{page - 1}'))
+        nav.append(InlineKeyboardButton('◀️ Назад', callback_data=f'{prefix}:{page - 1}'))
     if page + 1 < pages:
-        nav.append(InlineKeyboardButton('▶️', callback_data=f'{prefix}:{page + 1}'))
+        nav.append(InlineKeyboardButton('▶️ След. стр.', callback_data=f'{prefix}:{page + 1}'))
     rows = []
     if nav:
         rows.append(nav)
