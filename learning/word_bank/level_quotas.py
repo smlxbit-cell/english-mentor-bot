@@ -142,7 +142,8 @@ def apply_level_quotas(
     dropped: set[str] = set()
     reserved: set[str] = set()
 
-    for lvl in CEFR_LEVELS:
+    # C1→A1: claim native C1 before B2 can promote those rows upward.
+    for lvl in reversed(CEFR_LEVELS):
         native = list(by_level.get(lvl) or [])
         if lvl not in active_levels:
             for slug, row in native:

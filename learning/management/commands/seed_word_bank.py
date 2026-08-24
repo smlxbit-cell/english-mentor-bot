@@ -82,6 +82,15 @@ def collect_word_bank_rows(
         for row in load_directory(data_dir):
             merged[row['slug']] = row
 
+    if freedict_lookup:
+        from learning.word_bank.fetch_remote import iter_freedict_supplement_rows
+
+        for row in iter_freedict_supplement_rows(
+            freedict_lookup,
+            existing_slugs=set(merged.keys()),
+        ):
+            merged[row['slug']] = row
+
     merged = enrich_rows(merged, freedict_lookup=freedict_lookup)
 
     dropped_slugs: set[str] = set()

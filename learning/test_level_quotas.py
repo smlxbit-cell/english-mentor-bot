@@ -41,3 +41,30 @@ class LevelQuotaTests(SimpleTestCase):
     def test_quota_levels_for_requested_includes_lower_bands(self):
         self.assertEqual(quota_levels_for_requested(('a2',)), ('a1', 'a2'))
 
+    def test_c1_native_pool_not_drained_by_b2_promotion(self):
+        rows = {
+            f'c1_{i}': {
+                'english': f'advanced{i}',
+                'cefr_level': 'c1',
+                'topics': ['remote'],
+                'kelly_rank': i,
+                'example': '',
+                'example_ru': '',
+            }
+            for i in range(120)
+        }
+        rows.update({
+            f'b2_{i}': {
+                'english': f'b2word{i}',
+                'cefr_level': 'b2',
+                'topics': ['remote'],
+                'kelly_rank': i,
+                'example': '',
+                'example_ru': '',
+            }
+            for i in range(80)
+        })
+        kept, _ = apply_level_quotas(rows, kelly_ranks={})
+        c1_kept = [r for r in kept.values() if r['cefr_level'] == 'c1']
+        self.assertEqual(len(c1_kept), 120)
+
