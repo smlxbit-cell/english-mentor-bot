@@ -42,7 +42,13 @@ Refresh remote cache online (also downloads FreeDict for richer multi-sense RU):
 python manage.py seed_word_bank --fetch --include-remote
 ```
 
-Manual translation fixes for polysemous words: `learning/data/word_bank/translation_overrides.json`.
+Fill real usage examples from Tatoeba (EN sentence + RU translation):
+
+```bash
+python manage.py seed_word_bank --fetch-tatoeba --include-remote
+```
+
+Manual fixes: `translation_overrides.json`, `example_overrides.json`.
 
 Later rows override earlier ones when the same English slug matches.
 

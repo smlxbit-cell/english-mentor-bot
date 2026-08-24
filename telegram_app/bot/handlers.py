@@ -3742,6 +3742,12 @@ async def _show_drill_context_step(
     )
 
     ctx = prepare_context_drill(word)
+    if not ctx:
+        if _advance_drill(context):
+            await _show_drill_step(update, context)
+        else:
+            await _finish_word_drill(update, context)
+        return
     context.user_data['drill_context_example'] = ctx['example']
     context.user_data['drill_context_example_ru'] = ctx['example_ru']
     options_words, correct_idx = build_english_choice(word, pool)

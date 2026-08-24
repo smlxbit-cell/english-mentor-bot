@@ -10,10 +10,13 @@ from django.core.management.base import BaseCommand
 
 from learning.models import WordBankEntry
 from learning.word_bank.curriculum_words import iter_curriculum_rows
+from learning.word_bank.example_enrich import enrich_rows_examples
 from learning.word_bank.freedict_loader import CACHE_FILENAME as FREEDICT_CACHE
 from learning.word_bank.freedict_loader import cache_freedict_lookup, load_freedict_lookup
 from learning.word_bank.loader import load_directory
 from learning.word_bank.seed_words import iter_builtin_rows
+from learning.word_bank.tatoeba_loader import CACHE_FILENAME as TATOEBA_CACHE
+from learning.word_bank.tatoeba_loader import cache_tatoeba_examples, load_tatoeba_examples
 from learning.word_bank.topic_classifier import resolve_topics
 from learning.word_bank.translation_enrich import enrich_rows
 
@@ -26,18 +29,23 @@ def collect_word_bank_rows(
     include_remote: bool = False,
     fetch_remote: bool = False,
     fetch_freedict: bool = False,
+    fetch_tatoeba: bool = False,
 ) -> dict[str, dict]:
     """Return slug → row dict; later sources override earlier ones."""
     merged: dict[str, dict] = {}
     freedict_lookup: dict[str, str] = {}
+    tatoeba_lookup: dict[str, dict[str, str]] = {}
 
     if data_dir:
         data_dir.mkdir(parents=True, exist_ok=True)
         freedict_path = data_dir / FREEDICT_CACHE
+        tatoeba_path = data_dir / TATOEBA_CACHE
         if fetch_freedict or fetch_remote:
             freedict_lookup = cache_freedict_lookup(freedict_path)
         elif freedict_path.is_file():
             freedict_lookup = load_freedict_lookup(freedict_path)
+        elif tatoeba_path.is_file():
+            tatoeba_lookup = load_tatoeba_examples(tatoeba_path)
 
     if fetch_remote:
         from learning.word_bank.fetch_remote import iter_remote_rows
@@ -64,7 +72,12 @@ def collect_word_bank_rows(
     if data_dir and data_dir.is_dir():
         for row in load_directory(data_dir):
             merged[row['slug']] = row
-    return enrich_rows(merged, freedict_lookup=freedict_lookup)
+
+    merged = enrich_rows(merged, freedict_lookup=freedict_lookup)
+    if fetch_tatoeba and data_dir:
+        headwords = [row['english'] for row in merged.values()]
+        tatoeba_lookup = cache_tatoeba_examples(data_dir / TATOEBA_CACHE, headwords=headwords)
+    return enrich_rows_examples(merged, tatoeba_lookup=tatoeba_lookup)
 
 
 class Command(BaseCommand):
@@ -92,6 +105,11 @@ class Command(BaseCommand):
             help='Download FreeDict eng-rus only (cached as freedict_ru.json)',
         )
         parser.add_argument(
+            '--fetch-tatoeba',
+            action='store_true',
+            help='Download Tatoeba EN↔RU examples and cache as tatoeba_examples.json',
+        )
+        parser.add_argument(
             '--include-remote',
             action='store_true',
             help='Merge cached remote.json (offline) into the bank',
@@ -110,6 +128,7 @@ class Command(BaseCommand):
             include_remote=options['include_remote'] or options['fetch'],
             fetch_remote=options['fetch'],
             fetch_freedict=options['fetch_freedict'] or options['fetch'],
+            fetch_tatoeba=options['fetch_tatoeba'],
         )
         if options['dry_run']:
             by_level: dict[str, int] = {}

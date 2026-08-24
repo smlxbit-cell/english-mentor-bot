@@ -110,7 +110,9 @@ def advance_drill(
                 'context_index': context_index,
                 'context_order': context_order,
             }
-        ctx_order = list(range(len(words)))
+        ctx_order = context_eligible_indices(words)
+        if not ctx_order:
+            return None
         random.shuffle(ctx_order)
         return {
             'phase': DRILL_PHASE_CONTEXT,
@@ -152,8 +154,28 @@ def drill_progress_pos(
     return word_index + 1
 
 
+def context_eligible_indices(words: list[dict[str, Any]]) -> list[int]:
+    from .example_enrich import is_valid_context_example
+
+    return [i for i, word in enumerate(words) if is_valid_context_example(word)]
+
+
 def step_label(step: str) -> str:
     return STEP_LABELS.get(step, step)
+
+
+def blank_headword(sentence: str, headword: str) -> str | None:
+    if not sentence or not headword:
+        return None
+    pattern = re.compile(r'\b' + re.escape(headword) + r'\b', re.I)
+    if pattern.search(sentence):
+        return pattern.sub(_GAP, sentence, count=1)
+    low = sentence.lower()
+    hw = headword.lower()
+    idx = low.find(hw)
+    if idx >= 0:
+        return sentence[:idx] + _GAP + sentence[idx + len(headword):]
+    return None
 
 
 def pick_distractors(
@@ -252,50 +274,18 @@ def drill_listen_tts_text(word: dict[str, Any]) -> str:
     return (word.get('english') or '').strip()
 
 
-def _first_translation(translation: str) -> str:
-    part = (translation or '').split(',')[0].strip()
-    return part or (translation or '').strip()
-
-
-def context_example_pair(word: dict[str, Any]) -> tuple[str, str]:
-    """Return (example_en, example_ru), synthesizing a minimal line if needed."""
-    ex = (word.get('example') or '').strip()
-    ex_ru = (word.get('example_ru') or '').strip()
-    if ex:
-        return ex, ex_ru
-    en = (word.get('english') or '').strip()
-    tr = _first_translation(word.get('translation') or '')
-    if tr:
-        return f'I like {en}.', f'Мне нравится {tr}.'
-    return f'This is {en}.', f'Это {en}.'
-
-
-def blank_headword(sentence: str, headword: str) -> str | None:
-    if not sentence or not headword:
-        return None
-    pattern = re.compile(r'\b' + re.escape(headword) + r'\b', re.I)
-    if pattern.search(sentence):
-        return pattern.sub(_GAP, sentence, count=1)
-    low = sentence.lower()
-    hw = headword.lower()
-    idx = low.find(hw)
-    if idx >= 0:
-        return sentence[:idx] + _GAP + sentence[idx + len(headword):]
-    return None
-
-
-def prepare_context_drill(word: dict[str, Any]) -> dict[str, str]:
+def prepare_context_drill(word: dict[str, Any]) -> dict[str, str] | None:
     """Build gap sentence, RU gloss, and TTS text for the context step."""
-    example, example_ru = context_example_pair(word)
+    from .example_enrich import is_valid_context_example
+
+    if not is_valid_context_example(word):
+        return None
+    example = (word.get('example') or '').strip()
+    example_ru = (word.get('example_ru') or '').strip()
     headword = (word.get('english') or '').strip()
     gap = blank_headword(example, headword)
     if not gap:
-        example, example_ru = context_example_pair({
-            **word,
-            'example': f'It is about {headword}.',
-            'example_ru': f'Речь о {_first_translation(word.get("translation") or headword)}.',
-        })
-        gap = blank_headword(example, headword) or f'It is about {_GAP}.'
+        return None
     return {
         'example': example,
         'example_ru': example_ru,

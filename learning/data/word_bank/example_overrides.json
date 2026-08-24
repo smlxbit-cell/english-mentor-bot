@@ -1,0 +1,42 @@
+{
+  "apparent": {
+    "example": "It was apparent that she was upset.",
+    "example_ru": "Было очевидно, что она расстроена."
+  },
+  "architect": {
+    "example": "The architect designed our new office.",
+    "example_ru": "Архитектор спроектировал наш новый офис."
+  },
+  "advertisement": {
+    "example": "I saw an advertisement for a new phone.",
+    "example_ru": "Я увидел рекламу нового телефона."
+  },
+  "coffee": {
+    "example": "I drink coffee every morning.",
+    "example_ru": "Я пью кофе каждое утро."
+  },
+  "chip": {
+    "example": "He ate a chip with his sandwich.",
+    "example_ru": "Он съел чипс с сэндвичем."
+  },
+  "work": {
+    "example": "I work from home on Fridays.",
+    "example_ru": "По пятницам я работаю из дома."
+  },
+  "run": {
+    "example": "I run in the park every morning.",
+    "example_ru": "Каждое утро я бегаю в парке."
+  },
+  "beautiful": {
+    "example": "What a beautiful day!",
+    "example_ru": "Какой прекрасный день!"
+  },
+  "bank": {
+    "example": "I need to go to the bank today.",
+    "example_ru": "Мне нужно сегодня сходить в банк."
+  },
+  "book": {
+    "example": "She is reading an interesting book.",
+    "example_ru": "Она читает интересную книгу."
+  }
+}

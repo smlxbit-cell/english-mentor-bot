@@ -162,8 +162,18 @@ class WordDrillTests(SimpleTestCase):
         )
 
         words = [
-            {'english': 'chip', 'translation': 'чип', 'example': 'A small chip.'},
-            {'english': 'board', 'translation': 'доска', 'example': 'A wooden board.'},
+            {
+                'english': 'chip',
+                'translation': 'чип',
+                'example': 'He ate a chip with his sandwich.',
+                'example_ru': 'Он съел чипс с сэндвичем.',
+            },
+            {
+                'english': 'board',
+                'translation': 'доска',
+                'example': 'The board is made of wood.',
+                'example_ru': 'Доска сделана из дерева.',
+            },
         ]
         state = advance_drill(
             words=words,
@@ -259,14 +269,25 @@ class WordDrillTests(SimpleTestCase):
         word = {
             'english': 'coffee',
             'translation': 'кофе',
-            'example': 'I drink coffee every day.',
-            'example_ru': 'Я пью кофе каждый день.',
+            'example': 'I drink coffee every morning.',
+            'example_ru': 'Я пью кофе каждое утро.',
         }
         ctx = prepare_context_drill(word)
+        assert ctx is not None
         self.assertIn('______', ctx['gap_sentence'])
         self.assertNotIn('coffee', ctx['gap_sentence'].lower())
         self.assertIn('coffee', ctx['tts'].lower())
-        self.assertEqual(ctx['example_ru'], 'Я пью кофе каждый день.')
+
+    def test_prepare_context_drill_rejects_template_fallback(self):
+        from learning.word_bank.drill import prepare_context_drill
+
+        word = {
+            'english': 'apparent',
+            'translation': 'очевидный',
+            'example': 'I like apparent.',
+            'example_ru': 'Мне нравится видимый.',
+        }
+        self.assertIsNone(prepare_context_drill(word))
 
     def test_words_count_ru(self):
         from learning.word_bank.service import words_count_ru
