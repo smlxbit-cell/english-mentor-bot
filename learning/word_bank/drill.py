@@ -236,6 +236,18 @@ def option_button_label(text: str, *, max_len: int = 36) -> str:
     return t[: max_len - 1] + '…'
 
 
+def append_example_lines(text: str, word: dict[str, Any]) -> str:
+    """Append EN example + RU gloss when present."""
+    example = (word.get('example') or '').strip()
+    if not example:
+        return text
+    example_ru = (word.get('example_ru') or '').strip()
+    msg = f'{text}\n📝 {example}'
+    if example_ru:
+        msg += f'\n   ({example_ru})'
+    return msg
+
+
 def format_intro_card(
     *,
     pos: int,
@@ -245,13 +257,20 @@ def format_intro_card(
     translation: str,
     learn_count: int,
     known_count: int,
+    example: str = '',
+    example_ru: str = '',
 ) -> str:
-    return (
+    text = (
         f'📘 <b>{pos}/{total}</b> · {level.upper()}\n\n'
         f'🇬🇧 <b>{english}</b>\n'
         f'🇷🇺 {translation}\n\n'
         f'<i>учить {learn_count} · уже знаю {known_count}</i>'
     )
+    if example:
+        text += f'\n📝 {example}'
+        if example_ru:
+            text += f'\n   ({example_ru})'
+    return text
 
 
 def format_intro_summary(*, learn_count: int, known_count: int) -> str:
@@ -384,17 +403,14 @@ def format_drill_recall_prompt(header: str, translation: str) -> str:
 def format_word_cheatsheet(words: list[dict[str, Any]]) -> str:
     lines = ['📖 <b>Все слова</b>', '']
     for w in words:
-        lines.append(f'🇬🇧 <b>{w["english"]}</b> — {w["translation"]}')
-        if w.get('example'):
-            lines.append(f'   📝 {w["example"]}')
+        block = f'🇬🇧 <b>{w["english"]}</b> — {w["translation"]}'
+        lines.append(append_example_lines(block, w))
     return '\n'.join(lines)
 
 
 def format_choice_correct(word: dict[str, Any]) -> str:
     msg = f'✅ <b>{word["english"]}</b> — {word["translation"]}'
-    if word.get('example'):
-        msg += f'\n📝 {word["example"]}'
-    return msg
+    return append_example_lines(msg, word)
 
 
 def format_meaning_wrong(
@@ -416,9 +432,7 @@ def format_meaning_wrong(
     else:
         wrong = f'❌ «{picked}» — не подходит к <b>{correct["english"]}</b>.'
     msg = f'{wrong}\n\n✅ <b>{correct["english"]}</b> — {correct["translation"]}'
-    if correct.get('example'):
-        msg += f'\n📝 {correct["example"]}'
-    return msg
+    return append_example_lines(msg, correct)
 
 
 def format_english_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
@@ -431,9 +445,7 @@ def format_english_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> 
         msg += f' — «{picked_ru}»'
     msg += f'\nЭто не ответ на «{correct_ru}».\n\n'
     msg += f'✅ <b>{correct["english"]}</b> — {correct_ru}'
-    if correct.get('example'):
-        msg += f'\n📝 {correct["example"]}'
-    return msg
+    return append_example_lines(msg, correct)
 
 
 def format_choice_wrong(*, picked: dict[str, Any], correct: dict[str, Any]) -> str:
@@ -462,6 +474,4 @@ def format_recall_wrong(word: dict[str, Any], *, heard: str = '') -> str:
     msg += (
         f'\n\n✅ <b>{word["english"]}</b> — {word["translation"]}'
     )
-    if word.get('example'):
-        msg += f'\n📝 {word["example"]}'
-    return msg
+    return append_example_lines(msg, word)

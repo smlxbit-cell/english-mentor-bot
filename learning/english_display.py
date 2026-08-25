@@ -136,7 +136,13 @@ def format_translation_display(
     part_of_speech: str = '',
 ) -> str:
     """Capitalize Russian proper-name translations when the EN headword is proper."""
-    tr = (translation or '').strip()
+    from learning.word_bank.translation_enrich import sanitize_translation_for_display
+
+    tr = sanitize_translation_for_display(
+        translation,
+        english=english,
+        part_of_speech=part_of_speech,
+    )
     if not tr:
         return tr
     if _is_proper_part_of_speech(part_of_speech) or (

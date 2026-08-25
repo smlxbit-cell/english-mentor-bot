@@ -186,6 +186,64 @@ def merge_translation_parts(
     return ', '.join(merged[:max_parts])
 
 
+def _translation_has_english_noise(text: str) -> bool:
+    """True when stored translation looks like a FreeDict dump, not a RU gloss."""
+    raw = (text or '').strip()
+    if not raw:
+        return False
+    if _IPA_RE.search(raw):
+        return True
+    if _POS_RE.search(raw):
+        return True
+    latin = re.findall(r'[a-zA-Z]{4,}', raw)
+    cyr = _CYR_WORD_RE.findall(raw)
+    if len(latin) >= 2 and cyr:
+        return True
+    if len(raw) > 72 and latin:
+        return True
+    return False
+
+
+def sanitize_translation_for_display(
+    translation: str,
+    *,
+    english: str = '',
+    part_of_speech: str = '',
+    max_parts: int = MAX_TRANSLATION_PARTS,
+) -> str:
+    """Strip IPA/EN definitions; keep concise Russian glosses for UI."""
+    raw = (translation or '').strip()
+    if not raw:
+        return raw
+    en = (english or '').strip().lower()
+    override = translation_overrides().get(en)
+    if override:
+        return merge_translation_parts(en, override, max_parts=max_parts)
+
+    if not _translation_has_english_noise(raw):
+        parts = split_translation_parts(raw)
+        if parts:
+            return ', '.join(parts[:max_parts])
+        return raw
+
+    senses = extract_freedict_senses(
+        raw,
+        max_senses=max_parts,
+        part_of_speech=part_of_speech,
+    )
+    if senses:
+        return merge_translation_parts(en, ', '.join(senses), max_parts=max_parts)
+
+    cyr_parts = [
+        strip_stress(part)
+        for part in _CYR_WORD_RE.findall(raw)
+        if len(normalize_ru(part)) >= 2
+    ]
+    if cyr_parts:
+        return merge_translation_parts(en, ', '.join(cyr_parts), max_parts=max_parts)
+    return raw
+
+
 def enrich_translation(
     english: str,
     primary: str,
@@ -194,11 +252,20 @@ def enrich_translation(
     part_of_speech: str = '',
     max_parts: int = MAX_TRANSLATION_PARTS,
 ) -> str:
-    primary_parts = split_translation_parts(primary)
+    primary_clean = sanitize_translation_for_display(
+        primary,
+        english=english,
+        part_of_speech=part_of_speech,
+        max_parts=max_parts,
+    )
+    primary_parts = split_translation_parts(primary_clean)
     if translation_overrides().get((english or '').strip().lower()):
-        return merge_translation_parts(english, primary, max_parts=max_parts)
+        return merge_translation_parts(english, primary_clean, max_parts=max_parts)
+    raw_parts = split_translation_parts((primary or '').strip())
+    if len(raw_parts) >= 3 and not _translation_has_english_noise(primary):
+        return (primary or '').strip()
     if len(primary_parts) >= 3:
-        return primary.strip()
+        return primary_clean
 
     loanword = _find_loanword(english, freedict_text)
     extra = extract_freedict_senses(
@@ -207,8 +274,14 @@ def enrich_translation(
         part_of_speech=part_of_speech,
     )
     extra_text = ', '.join(extra)
-    return merge_translation_parts(
-        english, primary, extra_text, loanword, max_parts=max_parts,
+    merged = merge_translation_parts(
+        english, primary_clean, extra_text, loanword, max_parts=max_parts,
+    )
+    return sanitize_translation_for_display(
+        merged,
+        english=english,
+        part_of_speech=part_of_speech,
+        max_parts=max_parts,
     )
 
 

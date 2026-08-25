@@ -1181,7 +1181,12 @@ def get_dictionary_words(profile_id: int, limit: int = 12) -> list[dict]:
 
 
 @sync_to_async
-def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
+def get_due_words(
+    profile_id: int,
+    limit: int | None = None,
+    *,
+    cefr_level: str | None = None,
+) -> list[dict]:
     from learning.models import WordBankEntry
     from learning.word_bank.service import DAILY_NEW_WORDS, _learning_bank_english, entry_to_dict
     from progress_app.models import UserWordProgress
@@ -1190,6 +1195,7 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
 
     if limit is None:
         limit = DAILY_NEW_WORDS
+    level = (cefr_level or '').strip().lower() or None
     learning_en = _learning_bank_english(profile_id)
     if not learning_en:
         return []
@@ -1202,20 +1208,26 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
         .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
         .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
         .select_related('word')
-        .order_by('next_review_at')[:limit]
+        .order_by('next_review_at')
     )
     out: list[dict] = []
     seen: set[str] = set()
     for uwp in qs:
+        if len(out) >= limit:
+            break
         entry = WordBankEntry.objects.filter(
             english__iexact=uwp.word.english,
             is_active=True,
         ).first()
+        if level and (not entry or entry.cefr_level != level):
+            continue
         if entry:
             row = entry_to_dict(entry)
             row['word_id'] = uwp.word_id
             out.append(row)
         else:
+            if level:
+                continue
             pos = ''
             display = display_word_fields(
                 english=uwp.word.english,
@@ -1236,6 +1248,8 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
     # Bank-marked «учить» without SRS row yet — treat as due now.
     if len(out) < limit:
         for en in learning_en:
+            if len(out) >= limit:
+                break
             if en.lower() in seen:
                 continue
             entry = WordBankEntry.objects.filter(
@@ -1244,12 +1258,12 @@ def get_due_words(profile_id: int, limit: int | None = None) -> list[dict]:
             ).first()
             if not entry:
                 continue
+            if level and entry.cefr_level != level:
+                continue
             row = entry_to_dict(entry)
             row['word_id'] = None
             out.append(row)
             seen.add(en.lower())
-            if len(out) >= limit:
-                break
     return out
 
 
@@ -1420,6 +1434,36 @@ def prepare_practice_fallback_intro(
 
 
 @sync_to_async
+def ensure_min_learning_queue(
+    profile_id: int,
+    user_level: str,
+    interest_tokens: list[str] | None = None,
+) -> int:
+    from learning.word_bank.service import ensure_min_learning_queue as _fn
+
+    return _fn(profile_id, user_level, interest_tokens)
+
+
+@sync_to_async
+def pick_training_words(
+    profile_id: int,
+    user_level: str,
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    from learning.word_bank.service import pick_training_words as _fn
+
+    return _fn(profile_id, user_level, limit=limit)
+
+
+@sync_to_async
+def get_review_words_for_dicts(profile_id: int, word_dicts: list[dict]) -> list[dict]:
+    from learning.word_bank.service import get_review_words_for_dicts as _fn
+
+    return _fn(profile_id, word_dicts)
+
+
+@sync_to_async
 def start_daily_word_quiz(profile_id: int, intro_words: list[dict]) -> list[dict]:
     from learning.models import WordBankEntry
     from learning.word_bank.service import (
@@ -1450,6 +1494,13 @@ def get_personal_dict_summary(profile_id: int) -> dict:
 @sync_to_async
 def format_personal_dict_hub(summary: dict) -> str:
     from learning.word_bank.service import format_personal_dict_hub as _fn
+
+    return _fn(summary)
+
+
+@sync_to_async
+def format_training_queue_line(summary: dict) -> str:
+    from learning.word_bank.service import format_training_queue_line as _fn
 
     return _fn(summary)
 

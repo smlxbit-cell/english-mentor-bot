@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from learning.word_bank.level_examples import is_level_examples_cache_file
+from learning.word_bank.normalize import word_slug
 
 CEFR_LEVELS = frozenset({'a1', 'a2', 'b1', 'b2', 'c1'})
 
@@ -66,7 +67,7 @@ def load_directory(data_dir: Path) -> list[dict]:
     by_slug: dict[str, dict] = {}
     for path in sorted(data_dir.glob('*')):
         if path.name.lower() in {
-            'remote.json', 'freedict_ru.json', 'translation_overrides.json',
+            'remote.json', 'supplement.json', 'freedict_ru.json', 'translation_overrides.json',
             'tatoeba_examples.json', 'example_overrides.json',
         } or is_level_examples_cache_file(path.name):
             continue

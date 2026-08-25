@@ -6,6 +6,7 @@ from learning.word_bank.translation_enrich import (
     enrich_translation,
     extract_freedict_senses,
     merge_translation_parts,
+    sanitize_translation_for_display,
     split_translation_parts,
 )
 
@@ -52,3 +53,17 @@ class TranslationEnrichTests(SimpleTestCase):
     def test_merge_promotes_loanword(self):
         merged = merge_translation_parts('disk', 'дискета', 'диск, накопитель')
         self.assertTrue(merged.startswith('диск'))
+
+    def test_sanitize_aggressive_freedict_blob(self):
+        blob = (
+            '/ əˈɡɹɛs.ɪv / adjective Characterized by aggression; highly combative; '
+            'prone to behave in a way that involves attacking or arguing. '
+            '(pathology, of a tumour or disease) That spreads quickly; virulent. '
+            'агрессивный воинственный агрессивный'
+        )
+        result = sanitize_translation_for_display(
+            blob, english='aggressive', part_of_speech='adjective',
+        )
+        self.assertIn('агрессивный', result)
+        self.assertNotIn('Characterized', result)
+        self.assertNotIn('/', result)

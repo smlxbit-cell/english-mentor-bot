@@ -239,12 +239,12 @@ def word_new_section_kb(*, daily: int = 10) -> InlineKeyboardMarkup:
 
 def word_new_pick_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('📊 Уровни', callback_data='words:bank')],
         [
-            InlineKeyboardButton('👀 Что знаешь?', callback_data='words:survey:menu'),
+            InlineKeyboardButton('📊 Уровни', callback_data='words:bank'),
+            InlineKeyboardButton('👀 Знаю?', callback_data='words:survey:menu'),
             InlineKeyboardButton('🔍 Поиск', callback_data='words:search'),
         ],
-        [InlineKeyboardButton('← Словарь', callback_data='words:new')],
+        [InlineKeyboardButton('← Слова', callback_data='words:hub')],
     ])
 
 
@@ -304,7 +304,7 @@ def word_survey_levels_kb(user_level: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(lbl('b2'), callback_data='words:survey:level:b2'),
             InlineKeyboardButton(lbl('c1'), callback_data='words:survey:level:c1'),
         ],
-        [InlineKeyboardButton('← Словарь', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← Словарь', callback_data='words:new')],
     ])
 
 
@@ -318,8 +318,8 @@ def word_repeat_section_kb(*, due: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def word_dict_hub_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+def word_dict_hub_kb(*, learning_count: int = 0) -> InlineKeyboardMarkup:
+    rows = [
         [
             InlineKeyboardButton('📗 Учить', callback_data='words:dict:learning:0'),
             InlineKeyboardButton('✅ Уже знаю', callback_data='words:dict:known:0'),
@@ -328,25 +328,37 @@ def word_dict_hub_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('📁 Темы', callback_data='words:dict:topics'),
             InlineKeyboardButton('📊 Уровни', callback_data='words:dict:levels'),
         ],
-        [InlineKeyboardButton('← Слова', callback_data='words:hub')],
-    ])
+    ]
+    if learning_count > 0:
+        rows.insert(0, [
+            InlineKeyboardButton(
+                f'🎯 Тренировка · {learning_count}',
+                callback_data='srs:start',
+            ),
+        ])
+    rows.append([InlineKeyboardButton('← Слова', callback_data='words:hub')])
+    return InlineKeyboardMarkup(rows)
 
 
-def word_bank_menu_kb() -> InlineKeyboardMarkup:
+def word_bank_menu_kb(user_level: str = 'a1') -> InlineKeyboardMarkup:
+    def lbl(level: str) -> str:
+        u = level.upper()
+        return f'{u} ★' if level.lower() == (user_level or 'a1').lower() else u
+
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('A1', callback_data='words:bank:level:a1:0'),
-            InlineKeyboardButton('A2', callback_data='words:bank:level:a2:0'),
-            InlineKeyboardButton('B1', callback_data='words:bank:level:b1:0'),
-            InlineKeyboardButton('B2', callback_data='words:bank:level:b2:0'),
-            InlineKeyboardButton('C1', callback_data='words:bank:level:c1:0'),
+            InlineKeyboardButton(lbl('a1'), callback_data='words:bank:level:a1:0'),
+            InlineKeyboardButton(lbl('a2'), callback_data='words:bank:level:a2:0'),
+            InlineKeyboardButton(lbl('b1'), callback_data='words:bank:level:b1:0'),
+            InlineKeyboardButton(lbl('b2'), callback_data='words:bank:level:b2:0'),
+            InlineKeyboardButton(lbl('c1'), callback_data='words:bank:level:c1:0'),
         ],
-        [InlineKeyboardButton('← Добавить', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← Словарь', callback_data='words:new')],
     ])
 
 
-def word_add_menu_kb() -> InlineKeyboardMarkup:
-    return word_bank_menu_kb()
+def word_add_menu_kb(user_level: str = 'a1') -> InlineKeyboardMarkup:
+    return word_bank_menu_kb(user_level)
 
 
 def word_dict_levels_kb() -> InlineKeyboardMarkup:
@@ -362,6 +374,29 @@ def word_dict_levels_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def _word_page_nav_row(
+    prefix: str,
+    *,
+    page: int,
+    pages: int,
+) -> list[InlineKeyboardButton] | None:
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton('◀️ Назад', callback_data=f'{prefix}:{page - 1}'))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton('▶️ След. стр.', callback_data=f'{prefix}:{page + 1}'))
+    return nav or None
+
+
+def _word_page_training_row(*, learning_count: int) -> list[InlineKeyboardButton] | None:
+    if learning_count <= 0:
+        return None
+    return [InlineKeyboardButton(
+        f'🎯 Тренировка · {learning_count}',
+        callback_data='srs:start',
+    )]
+
+
 def word_bank_list_page_kb(
     items: list[dict],
     prefix: str,
@@ -370,29 +405,35 @@ def word_bank_list_page_kb(
     pages: int,
     back_data: str = 'words:bank',
     level: str | None = None,
+    topic: str | None = None,
+    learning_count: int = 0,
 ) -> InlineKeyboardMarkup:
-    """Bank browse: three actions per page — know all, learn all, check one-by-one."""
+    """Bank browse: page training, one-by-one survey, bulk mark, pagination."""
+    del learning_count  # page-scoped training only
     rows: list[list[InlineKeyboardButton]] = []
-    if level and items:
-        rows.append([
-            InlineKeyboardButton(
-                '✅ Знаю · вся страница',
-                callback_data=f'words:bank:page:known:{level}:{page}',
-            ),
-            InlineKeyboardButton(
-                '🎯 Учить · вся страница',
-                callback_data=f'words:bank:page:learn:{level}:{page}',
-            ),
-        ])
+    if items and (level or topic):
+        n = len(items)
+        if level:
+            train_cb = f'words:bank:page:train:{level}:{page}'
+            survey_cb = f'words:survey:page:{level}:{page}'
+            known_cb = f'words:bank:page:known:{level}:{page}'
+            learn_cb = f'words:bank:page:learn:{level}:{page}'
+        else:
+            train_cb = f'words:bank:page:train:topic:{topic}:{page}'
+            survey_cb = None
+            known_cb = f'words:bank:page:known:topic:{topic}:{page}'
+            learn_cb = f'words:bank:page:learn:topic:{topic}:{page}'
         rows.append([InlineKeyboardButton(
-            '▶️ Проверить по одному',
-            callback_data=f'words:survey:page:{level}:{page}',
+            f'🎯 Тренировка · {n}',
+            callback_data=train_cb,
         )])
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton('◀️ Назад', callback_data=f'{prefix}:{page - 1}'))
-    if page + 1 < pages:
-        nav.append(InlineKeyboardButton('▶️ След. стр.', callback_data=f'{prefix}:{page + 1}'))
+        if survey_cb:
+            rows.append([InlineKeyboardButton('▶️ По одному', callback_data=survey_cb)])
+        rows.append([
+            InlineKeyboardButton('✅ Знаю', callback_data=known_cb),
+            InlineKeyboardButton('🎯 Учить', callback_data=learn_cb),
+        ])
+    nav = _word_page_nav_row(prefix, page=page, pages=pages)
     if nav:
         rows.append(nav)
     rows.append([InlineKeyboardButton('← Уровни', callback_data=back_data)])
@@ -405,21 +446,37 @@ def word_list_page_kb(
     page: int,
     pages: int,
     back_data: str = 'words:mydict',
+    learning_count: int = 0,
+    bulk_known_cb: str | None = None,
+    bulk_learn_cb: str | None = None,
 ) -> InlineKeyboardMarkup:
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton('◀️ Назад', callback_data=f'{prefix}:{page - 1}'))
-    if page + 1 < pages:
-        nav.append(InlineKeyboardButton('▶️ След. стр.', callback_data=f'{prefix}:{page + 1}'))
-    rows = []
+    """Personal dictionary lists: bulk mark, training, pagination."""
+    rows: list[list[InlineKeyboardButton]] = []
+    train_row = _word_page_training_row(learning_count=learning_count)
+    if train_row:
+        rows.append(train_row)
+    bulk_row: list[InlineKeyboardButton] = []
+    if bulk_known_cb:
+        bulk_row.append(InlineKeyboardButton(
+            '✅ Знаю · вся страница',
+            callback_data=bulk_known_cb,
+        ))
+    if bulk_learn_cb:
+        bulk_row.append(InlineKeyboardButton(
+            '🎯 Учить · вся страница',
+            callback_data=bulk_learn_cb,
+        ))
+    if bulk_row:
+        rows.append(bulk_row)
+    nav = _word_page_nav_row(prefix, page=page, pages=pages)
     if nav:
         rows.append(nav)
     rows.append([InlineKeyboardButton('← Назад', callback_data=back_data)])
     return InlineKeyboardMarkup(rows)
 
 
-def word_bank_hub_kb() -> InlineKeyboardMarkup:
-    return word_bank_menu_kb()
+def word_bank_hub_kb(user_level: str = 'a1') -> InlineKeyboardMarkup:
+    return word_bank_menu_kb(user_level)
 
 
 def word_bank_topics_kb(topics: list[tuple[str, int]]) -> InlineKeyboardMarkup:
@@ -481,16 +538,16 @@ def word_survey_kb(bank_entry_id: int) -> InlineKeyboardMarkup:
 
 def word_survey_finish_kb(
     *,
-    learning_count: int,
-    due_count: int = 0,
+    session_learn_count: int = 0,
+    learning_count: int = 0,
     back_data: str | None = None,
 ) -> InlineKeyboardMarkup:
+    del learning_count
     rows = []
-    if learning_count > 0:
-        count = due_count or learning_count
+    if session_learn_count > 0:
         rows.append([InlineKeyboardButton(
-            f'🎯 Тренировка · {count}',
-            callback_data='srs:start',
+            f'🎯 Тренировка · {session_learn_count}',
+            callback_data='words:survey:train',
         )])
     if back_data:
         rows.append([InlineKeyboardButton('← К списку', callback_data=back_data)])
@@ -504,7 +561,7 @@ def word_intro_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton('Тренировка', callback_data='words:learn:quiz'),
             InlineKeyboardButton('Слушать', callback_data='tts:say'),
         ],
-        [InlineKeyboardButton('← Словарь', callback_data='words:new:pick')],
+        [InlineKeyboardButton('← Словарь', callback_data='words:new')],
     ])
 
 

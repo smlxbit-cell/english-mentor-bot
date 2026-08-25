@@ -21,6 +21,7 @@ LEVEL_INDEX = {level: idx for idx, level in enumerate(CEFR_LEVELS)}
 from learning.word_bank.level_quotas import LEVEL_TARGETS as RECOMMENDED_TARGETS
 
 DAILY_NEW_WORDS = 10
+MIN_LEARNING_QUEUE = 10
 SURVEY_BATCH = 10
 SURVEY_LEVEL_MAX = 80
 
@@ -63,6 +64,14 @@ def format_word_stats_line(summary: dict[str, Any]) -> str:
     )
 
 
+def format_training_queue_line(summary: dict[str, Any]) -> str:
+    """Compact «учить N» for list pages."""
+    learning = summary.get('learning', 0)
+    if learning <= 0:
+        return ''
+    return f'📗 учить <b>{learning}</b>'
+
+
 def _learning_bank_english(user_id: int) -> list[str]:
     """Headwords explicitly marked «учить» in the bank."""
     return [
@@ -85,17 +94,29 @@ def _known_bank_english(user_id: int) -> list[str]:
 
 
 def count_learning_due(user_id: int) -> int:
-    """Due SRS rows among bank-marked «учить» words only."""
+    """Words marked «учить» that are ready for SRS now (same rules as get_due_words)."""
     learning = _learning_bank_english(user_id)
     if not learning:
         return 0
     now = timezone.now()
-    return (
-        UserWordProgress.objects.filter(user_id=user_id, word__english__in=learning)
-        .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
-        .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
-        .count()
+    due: set[str] = set()
+    progressed: set[str] = set()
+    qs = UserWordProgress.objects.filter(
+        user_id=user_id,
+        word__english__in=learning,
     )
+    for en, next_at, st in qs.values_list(
+        'word__english', 'next_review_at', 'status',
+    ):
+        progressed.add(en.lower())
+        if st == UserWordProgress.Status.KNOWN and next_at is None:
+            continue
+        if next_at is None or next_at <= now:
+            due.add(en.lower())
+    for en in learning:
+        if en.lower() not in progressed:
+            due.add(en.lower())
+    return len(due)
 
 
 def sync_word_from_bank(user_id: int, entry: WordBankEntry, *, status: str) -> Word:
@@ -346,6 +367,93 @@ def prepare_practice_fallback_intro(
     return {'intro': [entry_to_dict(entry) for entry in entries]}
 
 
+def ensure_min_learning_queue(
+    user_id: int,
+    user_level: str,
+    interest_tokens: list[str] | None = None,
+) -> int:
+    """Top up «учить» to MIN_LEARNING_QUEUE only when below minimum."""
+    learning = get_personal_dict_summary(user_id).get('learning', 0)
+    if learning >= MIN_LEARNING_QUEUE:
+        return 0
+    need = MIN_LEARNING_QUEUE - learning
+    entries = pick_practice_fallback_entries(
+        user_id, user_level, interest_tokens, limit=need,
+    )
+    added = 0
+    for entry in entries:
+        mark_bank_entry(user_id, entry.id, UserWordBankStatus.Status.LEARNING)
+        added += 1
+    return added
+
+
+def pick_training_words(
+    user_id: int,
+    user_level: str,
+    *,
+    limit: int = DAILY_NEW_WORDS,
+) -> list[dict]:
+    """Batch for practice: due first, then any «учить» words."""
+    from progress_app.models import UserWordProgress
+
+    del user_level
+    learning_en = _learning_bank_english(user_id)
+    if not learning_en:
+        return []
+
+    now = timezone.now()
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _append_from_english(en: str, word_id: int | None) -> None:
+        if len(out) >= limit or en.lower() in seen:
+            return
+        entry = WordBankEntry.objects.filter(
+            english__iexact=en, is_active=True,
+        ).first()
+        if not entry:
+            return
+        row = entry_to_dict(entry)
+        row['word_id'] = word_id
+        out.append(row)
+        seen.add(en.lower())
+
+    due_qs = (
+        UserWordProgress.objects.filter(
+            user_id=user_id,
+            word__english__in=learning_en,
+        )
+        .filter(Q(next_review_at__lte=now) | Q(next_review_at__isnull=True))
+        .exclude(status=UserWordProgress.Status.KNOWN, next_review_at__isnull=True)
+        .select_related('word')
+        .order_by('next_review_at')
+    )
+    for uwp in due_qs:
+        if len(out) >= limit:
+            break
+        _append_from_english(uwp.word.english, uwp.word_id)
+
+    if len(out) < limit:
+        for en in learning_en:
+            if len(out) >= limit:
+                break
+            _append_from_english(en, None)
+
+    return out
+
+
+def get_review_words_for_dicts(
+    profile_id: int,
+    word_dicts: list[dict],
+) -> list[dict]:
+    """Build drill queue from survey/page word dicts (already marked in bank)."""
+    ids = [w['bank_entry_id'] for w in word_dicts if w.get('bank_entry_id')]
+    if not ids:
+        return []
+    entries = list(WordBankEntry.objects.filter(id__in=ids, is_active=True))
+    return get_review_words_for_entries(profile_id, entries)
+
+
 def commit_daily_learning_entries(
     user_id: int,
     entries: list[WordBankEntry],
@@ -358,7 +466,6 @@ def commit_daily_learning_entries(
 def format_word_hub_text(overview: dict[str, Any]) -> str:
     user_lvl = overview['user_level'].upper()
     learning_total = sum(s['learning'] for s in overview['levels'])
-    due = overview.get('due_count', 0)
     lines = [
         '📚 <b>Слова</b>',
         '',
@@ -372,12 +479,9 @@ def format_word_hub_text(overview: dict[str, Any]) -> str:
             f"{lvl} {stat['bar']} "
             f"<b>{stat['known']}</b>/{stat['target']} · учить {stat['learning']}{here}"
         )
-    train_line = f'🎯 <b>Тренировка</b> — учить {learning_total}'
-    if due:
-        train_line += f', готово {words_count_ru(due)}'
     lines.extend([
         '',
-        train_line,
+        f'🎯 <b>Тренировка</b> — {words_count_ru(learning_total)}',
     ])
     return '\n'.join(lines)
 
@@ -393,9 +497,10 @@ def format_word_new_section_text(overview: dict[str, Any]) -> str:
 
 
 def format_word_new_pick_text(overview: dict[str, Any]) -> str:
+    lvl = overview['user_level'].upper()
     return (
-        '📖 <b>Добавить из словаря</b>\n\n'
-        'Выберите <b>уровень</b> → слово → <b>Знаю</b> / <b>Учить</b>.'
+        f'📘 <b>Словарь · {lvl}</b>\n\n'
+        'Отметьте слова «🎯 Учить» или «✅ Знаю» — потом тренировка из «учить».'
     )
 
 
@@ -423,19 +528,16 @@ def format_word_repeat_section_text(
     overview: dict[str, Any],
     summary: dict[str, Any],
 ) -> str:
-    due = summary.get('due', overview.get('due_count', 0))
-    if summary['learning'] == 0 and due == 0:
+    learning = summary.get('learning', 0)
+    if learning == 0:
         return (
             '🎯 <b>Тренировка</b>\n\n'
             'Подберём <b>10 слов</b> вашего уровня по интересам — '
             'отметьте «🎯 Учить» или «✅ Знаю».'
         )
     stats = format_word_stats_line(summary)
-    if due:
-        batch = min(due, DAILY_NEW_WORDS)
-        tail = f'\n\nСейчас: <b>{words_count_ru(due)}</b> · за раз — <b>{batch}</b>.'
-    else:
-        tail = '\n\nСлов к тренировке пока нет — загляните позже.'
+    batch = min(learning, DAILY_NEW_WORDS)
+    tail = f'\n\nЗа раз — <b>{batch}</b> из <b>{learning}</b>.'
     return f'🎯 <b>Тренировка</b>\n\n{stats}{tail}'
 
 
@@ -564,14 +666,24 @@ def list_personal_words(
     total = qs.count()
     pages = max(1, (total + page_size - 1) // page_size)
     page = max(0, min(page, pages - 1))
+    page_rows = list(qs[page * page_size:(page + 1) * page_size])
+    english_on_page = [uwp.word.english for uwp in page_rows]
+    bank_by_en = {
+        e.english.lower(): e.id
+        for e in WordBankEntry.objects.filter(
+            english__in=english_on_page,
+            is_active=True,
+        ).only('id', 'english')
+    }
     items = []
-    for uwp in qs[page * page_size:(page + 1) * page_size]:
+    for uwp in page_rows:
         items.append({
             'english': uwp.word.english,
             'translation': uwp.word.translation,
             'example': uwp.word.example,
             'status': uwp.status,
             'word_id': uwp.word_id,
+            'bank_entry_id': bank_by_en.get(uwp.word.english.lower()),
         })
     return {'items': items, 'total': total, 'page': page, 'pages': pages}
 
