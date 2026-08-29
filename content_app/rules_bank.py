@@ -14,6 +14,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'Hello / Hi / Good morning',
+        'nav_ru': 'Приветствия',
         'order': 1,
         'summary_ru': 'Самые частые приветствия. Hi — неформально, Good morning — до полудня.',
         'table': {
@@ -36,6 +37,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'Goodbye / See you',
+        'nav_ru': 'Прощания',
         'order': 2,
         'summary_ru': 'Прощания: от нейтрального до тёплого.',
         'table': {
@@ -78,6 +80,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Вежливые слова и фразы',
         'title': 'Thank you / You\'re welcome',
+        'nav_ru': 'Благодарность',
         'order': 2,
         'summary_ru': 'Благодарность и короткие ответы на неё.',
         'table': {
@@ -99,6 +102,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Вежливые слова и фразы',
         'title': 'Sorry / Excuse me',
+        'nav_ru': 'Извинения',
         'order': 3,
         'summary_ru': 'Sorry — извинение. Excuse me — привлечь внимание или пройти.',
         'table': {
@@ -119,6 +123,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Вежливые слова и фразы',
         'title': 'Yes / No / OK / Sure',
+        'nav_ru': 'Да, нет, OK',
         'order': 4,
         'summary_ru': 'Короткие ответы в разговоре: yes, no, ok, sure.',
         'table': {
@@ -139,6 +144,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'My name is… / Nice to meet you',
+        'nav_ru': 'Знакомство',
         'order': 3,
         'summary_ru': 'Представление: имя, страна, приятно познакомиться.',
         'table': {
@@ -159,6 +165,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'Numbers 1–20',
+        'nav_ru': 'Числа 1–20',
         'order': 4,
         'summary_ru': 'Числа 1–20 — база для возраста, цены, времени.',
         'table': {
@@ -179,6 +186,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': '21–100 · How many?',
+        'nav_ru': 'Числа 21–100',
         'order': 5,
         'summary_ru': 'Десятки и «сколько?»: twenty, thirty… · How many?',
         'table': {
@@ -199,6 +207,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'What time is it? · o\'clock',
+        'nav_ru': 'Который час?',
         'order': 6,
         'summary_ru': 'Время: What time is it? · It\'s three o\'clock.',
         'table': {
@@ -219,6 +228,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'Days / Months · Monday… January…',
+        'nav_ru': 'Дни и месяцы',
         'order': 7,
         'summary_ru': 'Дни недели и месяцы: on Monday · in January.',
         'table': {
@@ -239,6 +249,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'A coffee, please',
+        'nav_ru': 'Заказ в кафе',
         'order': 8,
         'summary_ru': 'Заказ в кафе: коротко и вежливо с please.',
         'table': {
@@ -259,6 +270,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'How are you? · Fine, thanks',
+        'nav_ru': '«Как дела?»',
         'order': 9,
         'summary_ru': '«Как дела?» — короткий ответ лучше длинного.',
         'table': {
@@ -279,6 +291,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Приветствия',
         'title': 'Good night / Sleep well',
+        'nav_ru': '«Спокойной ночи»',
         'order': 10,
         'summary_ru': 'Перед сном: Good night · Sleep well · Sweet dreams.',
         'table': {
@@ -300,6 +313,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I am / you are / he is',
+        'nav_ru': 'To be · I am / you are',
         'order': 1,
         'summary_ru': 'To be = «быть». Не требует вспомогательного do в вопросах.',
         'table': {
@@ -321,6 +335,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I am not / isn\'t / aren\'t',
+        'nav_ru': 'To be · отрицание',
         'order': 2,
         'summary_ru': 'Отрицание с to be: am not / isn\'t / aren\'t — без do.',
         'table': {
@@ -341,6 +356,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Am I…? / Are you…? / Is he…?',
+        'nav_ru': 'To be · вопросы',
         'order': 3,
         'summary_ru': 'Вопрос с to be: форма am/is/are **в начале** — без do.',
         'table': {
@@ -361,6 +377,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I\'m / you\'re / he\'s',
+        'nav_ru': 'To be · сокращения',
         'order': 4,
         'summary_ru': 'В разговорной речи to be почти всегда сокращают.',
         'table': {
@@ -381,6 +398,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'There is / There are',
+        'nav_ru': 'There is / there are',
         'order': 5,
         'summary_ru': 'There is + единственное · There are + множественное — «есть / имеется».',
         'table': {
@@ -401,6 +419,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Is there…? / Are there…?',
+        'nav_ru': 'There is · вопросы',
         'order': 6,
         'summary_ru': 'Вопрос с there: Is there…? / Are there…? — порядок как в утверждении.',
         'table': {
@@ -421,6 +440,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол have',
         'title': 'I have / She has',
+        'nav_ru': 'Have / has',
         'order': 7,
         'summary_ru': 'Have = «иметь, у меня есть». В US English: I have, she has.',
         'table': {
@@ -441,6 +461,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол have',
         'title': 'Do you have…? / Does she have…?',
+        'nav_ru': 'Have · вопросы',
         'order': 8,
         'summary_ru': 'Do you have…? = «У тебя есть…?» · Does she have…?',
         'table': {
@@ -461,6 +482,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Open… / Sit down / Listen',
+        'nav_ru': 'Повелительное наклонение',
         'order': 9,
         'summary_ru': 'Повелительное наклонение: глагол без подлежащего. Please смягчает.',
         'table': {
@@ -481,6 +503,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Don\'t… / Don\'t worry',
+        'nav_ru': '«Don\'t…» · запрет',
         'order': 10,
         'summary_ru': 'Отрицательный приказ: don\'t + глагол. Тон дружелюбный, не грубый.',
         'table': {
@@ -501,6 +524,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I can / She can',
+        'nav_ru': 'Can · умение',
         'order': 11,
         'summary_ru': 'Can = «уметь, мочь». После can — глагол без to.',
         'table': {
@@ -521,6 +545,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Can I…? / Can you…?',
+        'nav_ru': 'Can · просьба',
         'order': 12,
         'summary_ru': 'Can I…? = вежливая просьба о разрешении. Can you…? = «можешь…?»',
         'table': {
@@ -541,6 +566,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I can\'t / She can\'t',
+        'nav_ru': 'Can · отрицание',
         'order': 13,
         'summary_ru': 'Can\'t = cannot = «не могу / не умею». После can\'t — глагол без to.',
         'table': {
@@ -561,6 +587,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I work / You live',
+        'nav_ru': 'Present Simple · I / you',
         'order': 14,
         'summary_ru': 'Present Simple: факты и привычки. I/you/we/they — глагол без -s.',
         'table': {
@@ -581,6 +608,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'He works / She lives',
+        'nav_ru': 'Present Simple · he / she',
         'order': 15,
         'summary_ru': 'He/she/it — глагол с -s: works, lives, plays.',
         'table': {
@@ -601,6 +629,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I like reading',
+        'nav_ru': 'Like / love + -ing',
         'order': 16,
         'summary_ru': 'Like / love + -ing: нравится заниматься чем-то.',
         'table': {
@@ -621,6 +650,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'I want / I\'d like',
+        'nav_ru': 'Want / would like',
         'order': 17,
         'summary_ru': 'Want = «хочу». I\'d like = вежливее, часто в кафе и просьбах.',
         'table': {
@@ -641,6 +671,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Глагол to be',
         'title': 'Let\'s go / Let\'s start',
+        'nav_ru': 'Let\'s · «давай…»',
         'order': 18,
         'summary_ru': 'Let\'s = Let us — предложение сделать что-то вместе.',
         'table': {
@@ -655,6 +686,32 @@ RULES_BANK: list[dict] = [
             {'en': 'Let\'s eat.', 'ru': 'Давай поедим.'},
         ],
         'tip_ru': 'Let\'s = Let us. После let\'s — глагол без to.',
+    },
+    # ── A1 · Местоимения ──────────────────────────────────────────────
+    {
+        'key': 'subject-pronouns',
+        'level': 'a1',
+        'topic': 'Местоимения',
+        'title': 'I / you / he / she / we / they',
+        'nav_ru': 'Личные местоимения',
+        'order': 0,
+        'summary_ru': 'Личные местоимения — вместо имени: I = я, he = он, she = она.',
+        'table': {
+            'headers': ['EN', 'RU', 'Пример'],
+            'rows': [
+                ['I', 'я', 'I am Anna. · Я Анна.'],
+                ['you', 'ты / вы', 'You are kind. · Ты добрый.'],
+                ['he', 'он', 'He is Tom. · Он Том.'],
+                ['she', 'она', 'She is a teacher. · Она учитель.'],
+                ['we', 'мы', 'We are friends. · Мы друзья.'],
+                ['they', 'они', 'They are here. · Они здесь.'],
+            ],
+        },
+        'examples': [
+            {'en': 'I am fine.', 'ru': 'У меня всё хорошо.'},
+            {'en': 'She is from London.', 'ru': 'Она из Лондона.'},
+        ],
+        'tip_ru': 'Дальше — глагол to be: I am, you are, he is…',
     },
     # ── A1 · Артикли ──────────────────────────────────────────────────
     {
@@ -685,7 +742,7 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Существительные',
         'title': 'Множественное число (+s)',
-        'order': 1,
+        'order': 2,
         'summary_ru': 'Большинство слов: просто +s в конце.',
         'table': {
             'headers': ['Единственное', 'Множественное', 'Пример · перевод'],
@@ -705,7 +762,8 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Указатели',
         'title': 'This / That — «этот» и «тот»',
-        'order': 1,
+        'nav_ru': 'This / that · указательные',
+        'order': 3,
         'summary_ru': 'This — близко (это здесь). That — дальше (то там).',
         'table': {
             'headers': ['Форма', 'Пример', 'Перевод'],
@@ -726,7 +784,8 @@ RULES_BANK: list[dict] = [
         'level': 'a1',
         'topic': 'Притяжательные',
         'title': 'My / Your / His / Her',
-        'order': 1,
+        'nav_ru': 'Притяжательные my/your',
+        'order': 4,
         'summary_ru': 'Притяжательные местоимения стоят перед существительным без артикля.',
         'table': {
             'headers': ['Форма', 'Пример', 'Перевод'],

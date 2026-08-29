@@ -6,6 +6,7 @@ import random
 from typing import Any
 
 from content_app.models import GrammarRule
+from content_app.rules_bank import RULES_BANK
 from progress_app.models import UserRule
 
 from .categories import (
@@ -14,6 +15,7 @@ from .categories import (
     category_label,
     category_slug_for_topic,
 )
+from .nav import CATEGORY_PAGE_HINTS, rule_nav_label
 
 LEVELS = ('a1', 'a2', 'b1', 'b2', 'c1')
 PRACTICE_BATCH = 10
@@ -54,6 +56,7 @@ def _rule_browse_item(rule: GrammarRule, user_status: dict[int, str]) -> dict[st
     return {
         'key': rule.key,
         'title': rule.title,
+        'nav_label': rule_nav_label(key=rule.key, title=rule.title, topic=rule.topic),
         'level': rule.level.upper(),
         'topic': rule.topic,
         'summary_ru': (rule.summary_ru or '')[:120],
@@ -105,8 +108,12 @@ def format_rules_bank_page_text(
     page: int,
     pages: int,
     total: int,
+    category: str | None = None,
 ) -> str:
     lines = [f'<b>{title}</b>']
+    hint = CATEGORY_PAGE_HINTS.get(category or '')
+    if hint:
+        lines.append(f'<i>{hint}</i>')
     if not items:
         lines.append('')
         lines.append('Правил пока нет.')
@@ -182,9 +189,10 @@ def list_rule_categories(
 
 
 def format_rules_category_menu_text(*, level: str) -> str:
+    lvl = level.upper()
     return (
-        f'📊 <b>{level.upper()} · разделы</b>\n\n'
-        '<i>Выберите раздел</i>'
+        f'📊 <b>{lvl} · разделы</b>\n\n'
+        '<i>Выберите раздел. С нуля: 👋 фразы → 📝 местоимения → ⚡ to be.</i>'
     )
 
 
@@ -266,7 +274,29 @@ def search_rules(
         | Q(summary_ru__icontains=q)
         | Q(topic__icontains=q)
         | Q(key__icontains=q.replace(' ', '-'))
-    ).order_by('level', 'order', 'title')[:limit]
+    ).order_by('level', 'order', 'title')[:limit * 2]
+    nav_keys = [
+        r['key'] for r in RULES_BANK
+        if q.lower() in (r.get('nav_ru') or '').lower()
+    ]
+    if nav_keys:
+        hits = list(hits) + list(
+            GrammarRule.objects.filter(
+                is_published=True,
+                level__in=allowed,
+                key__in=nav_keys,
+            ).order_by('level', 'order', 'title'),
+        )
+        seen: set[str] = set()
+        deduped = []
+        for rule in hits:
+            if rule.key in seen:
+                continue
+            seen.add(rule.key)
+            deduped.append(rule)
+        hits = deduped[:limit]
+    else:
+        hits = list(hits[:limit])
     user_status = _user_status_map(profile_id, [r.id for r in hits])
     return [_rule_browse_item(r, user_status) for r in hits]
 

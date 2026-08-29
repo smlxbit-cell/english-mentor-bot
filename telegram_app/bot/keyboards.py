@@ -901,7 +901,7 @@ def rules_bank_list_page_kb(
     rows: list[list[InlineKeyboardButton]] = []
     for item in items:
         mark = item.get('mark') or ''
-        title = item['title']
+        title = item.get('nav_label') or item['title']
         label = f'{mark} {title}'.strip() if mark else title
         if len(label) > 58:
             label = f'{label[:57]}…'

@@ -6,7 +6,7 @@ from __future__ import annotations
 CATEGORY_META: dict[str, tuple[str, str]] = {
     'phrases': ('👋', 'Фразы и общение'),
     'verbs': ('⚡', 'Глаголы и времена'),
-    'words': ('📝', 'Слова и формы'),
+    'words': ('📝', 'Местоимения и формы'),
     'links': ('🔗', 'Предлоги и связки'),
     'syntax': ('🧩', 'Предложение и вопросы'),
 }

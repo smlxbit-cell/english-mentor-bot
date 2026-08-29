@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase
 
 from learning.grammar.format import format_rule_detail_html, grammar_speak_text
+from learning.grammar.nav import rule_nav_label
 
 
 class GrammarFormatTests(SimpleTestCase):
@@ -67,3 +68,15 @@ class GrammarFormatTests(SimpleTestCase):
         }
         speak = grammar_speak_text(rule)
         self.assertEqual(speak, 'Goodbye! Have a nice day.')
+
+    def test_nav_label_russian_for_english_title(self):
+        self.assertEqual(
+            rule_nav_label(key='greetings-hello', title='Hello / Hi / Good morning'),
+            'Приветствия',
+        )
+
+    def test_nav_label_finds_subject_pronouns(self):
+        self.assertEqual(
+            rule_nav_label(key='subject-pronouns', title='I / you / he / she / we / they'),
+            'Личные местоимения',
+        )

@@ -2116,6 +2116,7 @@ async def _show_rules_bank_page(
         page=data['page'],
         pages=data['pages'],
         total=data['total'],
+        category=category,
     )
     context.user_data['rules_bank_page_cb'] = f'{prefix}:{page}'
     await _send(
