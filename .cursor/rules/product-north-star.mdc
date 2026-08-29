@@ -9,6 +9,8 @@ Full specs: `docs/PRODUCT_CONCEPT.md`, `docs/DAILY_PROGRAM_V2.md`, `docs/PROGRAM
 
 Locked behavior (voice, TTS, STT, tutor): `docs/PRODUCT_INVARIANTS.md` — **never break when extending the program**.
 
+Locked **Слова / dictionary / training** navigation & queue policy: `docs/WORD_BANK_NAV.md` — **never break when changing word flows**.
+
 ## Mission
 
 Be an **interesting, high-quality personal tutor** with a **full program for each user**:

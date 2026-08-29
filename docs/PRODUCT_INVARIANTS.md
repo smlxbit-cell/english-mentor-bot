@@ -1,11 +1,11 @@
 # Product Invariants — Do Not Break
 
-**Last updated:** 2026-07-07  
+**Last updated:** 2026-08-25  
 **Purpose:** Locked rules agreed with the product owner. **Read this before any change**
-to voice, lessons, tutor, STT/TTS, or prompts. If a fix would violate an invariant,
+to voice, lessons, tutor, STT/TTS, dictionary/training, or prompts. If a fix would violate an invariant,
 fix it another way or extend — never remove.
 
-**Related:** `docs/PRODUCT_CONCEPT.md`, `docs/PROGRAM_STRUCTURE.md`, `docs/DAILY_PROGRAM_V2.md`, `docs/TARIFFS.md`
+**Related:** `docs/PRODUCT_CONCEPT.md`, `docs/PROGRAM_STRUCTURE.md`, `docs/DAILY_PROGRAM_V2.md`, `docs/TARIFFS.md`, `docs/WORD_BANK_NAV.md`
 
 ---
 
@@ -124,13 +124,39 @@ Optional fallbacks: `whisper-large-v3`, `whisper-1`, `gpt-4.1-mini`, `gpt-4.1-na
 - [ ] No new hard ❌ on benign STT artifacts
 - [ ] Tests pass: `telegram_app.tests.LessonTTSTests`, `ai_app.tests.WhisperSTTTests`, `ai_app.tests.BilingualSTTTests`
 - [ ] Server bot restarted after deploy
+- [ ] Dictionary/training: `docs/WORD_BANK_NAV.md` §11 smoke checklist
 
 ---
 
-## 8. Change log (invariant updates)
+## 8. Dictionary & word training (🎯 Тренировка → Слова)
+
+**Full navigation map + queue policy:** `docs/WORD_BANK_NAV.md` (LOCKED — read before any dictionary/training change).
+
+| Rule | Detail |
+|------|--------|
+| **★ on user level** | Dictionary level picker (`words:bank`) must show **★** on the learner's CEFR level (same as survey levels). |
+| **Page-scoped training** | On a dictionary **page**, «🎯 Тренировка · N» = **words on that page only** — never global pile count (e.g. not · 79 when page has 6). |
+| **Survey session training** | After «по одному», train button uses **session** «Учить» count only (`words:survey:train`). |
+| **Post-drill review** | After word drill completes, **always** run final ✅ Знаю / 🎯 Учить pass on drilled words; «Знаю» removes from «Учить» pile. |
+| **Min pile 10** | Auto top-up to `MIN_LEARNING_QUEUE=10` **only when** «Учить» &lt; 10 — prefer user level + interests. |
+| **No pile spam** | If user already has ≥10 (or 79+) in «Учить», **do not** add daily plan words each day. |
+| **Training source** | `pick_training_words`: due + «Учить» pile first; no random unseen fallback when pile is sufficient. |
+| **Level filter** | Auto-added / fallback unseen words: **user CEFR only** — B2 user must not get A1 in training. |
+| **Example RU** | Training/intro cards: EN example + **(RU)** line; translations sanitized for display. |
+| **Compact dictionary UX** | `words:new` → straight to Уровни / Знаю? / Поиск — no redundant «Начать · 10» gate. |
+| **Headword quality** | No 2-letter abbreviations (`ab`, `ac`, …) in bank; min conversational quality via `word_quality.py`; run `purge_junk_headwords` after seed changes. |
+| **Proper-noun display** | Countries/places: **Afghanistan — Афганистан** (`english_display.ALWAYS_CAP` + `format_headword` / `format_translation_display`). Never show lowercase country names in UI. |
+
+**Key files:** `telegram_app/bot/handlers.py`, `telegram_app/bot/keyboards.py`, `learning/word_bank/service.py`, `learning/word_bank/word_quality.py`, `learning/english_display.py`
+
+---
+
+## 9. Change log (invariant updates)
 
 | Date | Change |
 |------|--------|
 | 2026-07-07 | Initial document: TTS on all English, STT fallback fix, Spirit/grammar rules, meta-rule |
+| 2026-08-25 | §8 Dictionary & word training: page-scoped drill, ★ level, post-drill review, min-10 queue, no daily pile spam |
+| 2026-08-26 | §8 Headword quality (no ab/ac junk) + proper-noun capitalization in dictionary display |
 
-When the product owner adds a new rule, **append here and update `.cursor/rules/product-invariants.mdc`**.
+When the product owner adds a new rule, **append here, update `docs/WORD_BANK_NAV.md`, and update `.cursor/rules/product-invariants.mdc`**.

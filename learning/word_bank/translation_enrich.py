@@ -215,6 +215,7 @@ def sanitize_translation_for_display(
     raw = (translation or '').strip()
     if not raw:
         return raw
+    raw = re.sub(r'\s*\(TR!\)\s*', ', ', raw, flags=re.I)
     en = (english or '').strip().lower()
     override = translation_overrides().get(en)
     if override:

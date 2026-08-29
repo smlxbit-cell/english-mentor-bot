@@ -487,6 +487,7 @@ class BilingualSTTTests(TestCase):
     def test_pure_russian_ignores_en_translation_hallucination(self):
         from ai_app.speech.bilingual import (
             is_pure_russian_speech,
+            is_translation_help_request,
             merge_tutor_transcripts,
             tutor_transcript_label,
         )
@@ -505,6 +506,29 @@ class BilingualSTTTests(TestCase):
         self.assertNotIn('Could you please', merged)
         label = tutor_transcript_label(merged)
         self.assertIn('по-русски', label)
+
+    def test_how_to_say_russian_question_not_graded_as_english(self):
+        from ai_app.speech.bilingual import (
+            english_portion_for_tutor,
+            is_translation_help_request,
+            merge_tutor_transcripts,
+            tutor_transcript_label,
+        )
+
+        ru = 'как сказать по-английски сегодня был очень сложный день'
+        en = 'How to say it in English: Today was a very difficult day.'
+        merged = merge_tutor_transcripts(ru, en)
+        self.assertIn('как сказать', merged.lower())
+        self.assertNotIn('How to say it in English', merged)
+        self.assertTrue(is_translation_help_request(merged))
+        self.assertEqual(english_portion_for_tutor(merged, from_voice=True), '')
+        label = tutor_transcript_label(merged)
+        self.assertIn('по-русски', label)
+
+        merged_en_only = merge_tutor_transcripts('', en)
+        self.assertTrue(merged_en_only.startswith('[перевод]'))
+        self.assertIn('Today was a very difficult day', merged_en_only)
+        self.assertTrue(is_translation_help_request(merged_en_only))
 
     def test_identical_en_passes_deduped(self):
         from ai_app.speech.bilingual import merge_tutor_transcripts, tutor_transcript_label

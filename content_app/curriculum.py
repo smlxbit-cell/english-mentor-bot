@@ -225,8 +225,8 @@ _COFFEE_STEPS = [
              'Как вежливо сказать «Нет, спасибо»?',
      'content': {
          'exercise_type': 'multiple_choice',
-         'options': ['No.', 'No, thank you.', 'Not.'],
-         'correct': ['No, thank you.'],
+                 'options': ['No.', 'No, thank you.', 'Not.'],
+                 'correct': ['No, thank you.'],
          'hint_detail_ru': (
              '💡 Вежливый отказ: <b>No, thank you</b> — «Нет, спасибо». '
              'Просто «No» звучит сухо.'
@@ -369,7 +369,7 @@ _PLANE_STEPS = [
      'text': 'Собери вопрос из слов: from / are / where / you',
      'content': {
          'exercise_type': 'word_order',
-         'correct': ['where are you from'],
+                 'correct': ['where are you from'],
          'explanation': (
              '✅ <b>Where are you from?</b> — «Откуда ты?»\n'
              'С <b>to be</b> (are) частица do не нужна.'
@@ -414,8 +414,8 @@ _PLANE_STEPS = [
      'text': 'Как ответить на «Nice to meet you»?',
      'content': {
          'exercise_type': 'multiple_choice',
-         'options': ['Nice to meet you too!', 'Yes.', 'Thank you bye.'],
-         'correct': ['Nice to meet you too!'],
+                 'options': ['Nice to meet you too!', 'Yes.', 'Thank you bye.'],
+                 'correct': ['Nice to meet you too!'],
          'explanation': (
              '✅ <b>Nice to meet you too!</b> — зеркальный ответ.\n'
              '❌ <b>Yes</b> — не отвечает на знакомство.\n'

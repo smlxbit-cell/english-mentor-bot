@@ -170,6 +170,19 @@ bot_app          — LEGACY, выводится из эксплуатации
 
 ---
 
+## 6.1 Locked product maps (не обнулять)
+
+| Документ | Что зафиксировано |
+|----------|-------------------|
+| `docs/PRODUCT_INVARIANTS.md` | TTS, STT, Spirit, deploy — §1–§7 |
+| `docs/WORD_BANK_NAV.md` | **Слова / словарь / тренировка** — навигация, ★ уровня, тренировка по странице, финальный Знаю/Учить, min-10 в «Учить», без спама |
+| `docs/DAILY_PROGRAM_V2.md` | План дня, размер главы |
+
+Любое изменение логики слов → **сначала** правка `WORD_BANK_NAV.md`, потом код.  
+Cursor rules: `.cursor/rules/product-invariants.mdc`, `product-north-star.mdc`.
+
+---
+
 ## 7. Как запускать (dev)
 
 ```bash

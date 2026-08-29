@@ -95,10 +95,13 @@ def apply_level_quotas(
     kelly_ranks: dict[str, int] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], set[str]]:
     """
-    Keep up to LEVEL_TARGETS words per native CEFR band — no cross-level promotion.
+    Keep up to LEVEL_TARGETS per CEFR band.
 
-    Each slug appears in exactly one level (its native Kelly tag).
+    Kelly-native rows fill first; quality supplements top up shortfalls.
+    Each slug appears in exactly one level.
     """
+    from learning.word_bank.supplement import is_supplement_row
+
     if kelly_ranks is None:
         kelly_ranks = load_kelly_ranks()
 
@@ -127,16 +130,30 @@ def apply_level_quotas(
             continue
 
         target = LEVEL_TARGETS.get(lvl, len(native))
-        pool = sorted(
-            [(slug, row) for slug, row in native if slug not in reserved],
+        native_pool = sorted(
+            [(slug, row) for slug, row in native if slug not in reserved and not is_supplement_row(row)],
+            key=lambda pair: _row_sort_key(pair[1], kelly_ranks),
+        )
+        supplement_pool = sorted(
+            [(slug, row) for slug, row in native if slug not in reserved and is_supplement_row(row)],
             key=lambda pair: _row_sort_key(pair[1], kelly_ranks),
         )
 
-        for slug, row in pool[:target]:
+        picked = 0
+        for slug, row in native_pool:
+            if picked >= target:
+                break
             kept[slug] = row
             reserved.add(slug)
-        for slug, _row in pool[target:]:
-            dropped.add(slug)
+            picked += 1
+
+        for slug, row in supplement_pool:
+            if picked >= target:
+                break
+            kept[slug] = row
+            reserved.add(slug)
+            picked += 1
+
         for slug, _row in native:
             if slug not in reserved:
                 dropped.add(slug)

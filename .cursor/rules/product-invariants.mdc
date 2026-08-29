@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Product invariants (do not break)
 
-Full reference: `docs/PRODUCT_INVARIANTS.md` — read before voice/tutor/lesson/STT/TTS changes.
+Full reference: `docs/PRODUCT_INVARIANTS.md` — read before voice/tutor/lesson/STT/TTS/**dictionary/training** changes.
+
+**Dictionary & training map (LOCKED):** `docs/WORD_BANK_NAV.md` — page-scoped drill, ★ level, post-drill review, min-10 pile, no daily spam.
 
 ## Meta-rule
 Fixing one thing must not break another. Re-check invariants before shipping.
@@ -22,5 +24,9 @@ Fixing one thing must not break another. Re-check invariants before shipping.
 
 5. **Deploy** — Production server only; restart `english-mentor-bot` after deploy; don't run local bot while server is up.
 
+6. **Dictionary / training** — Read `docs/WORD_BANK_NAV.md` before changing Слова flows. Page training = page count only; ★ on user level; post-drill Знаю/Учить; min 10 in «Учить» without spamming users who already have a big pile.
+
+7. **Word bank quality** — No 2-letter junk (`ab`, `ac`); countries/places capitalized (**Afghanistan — Афганистан**). Filters in `word_quality.py` + `english_display.py`; never bypass for quota fill.
+
 ## Before merge
-Run `LessonTTSTests`, `WhisperSTTTests`, `BilingualSTTTests`. Verify 🔊 on a lesson hook and tutor voice round-trip.
+Run `LessonTTSTests`, `WhisperSTTTests`, `BilingualSTTTests`. Verify 🔊 on a lesson hook and tutor voice round-trip. Dictionary changes: smoke checklist in `docs/WORD_BANK_NAV.md` §11.

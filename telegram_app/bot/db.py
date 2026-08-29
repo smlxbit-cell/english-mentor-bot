@@ -1326,10 +1326,10 @@ def get_word_bank_overview(profile_id: int, user_level: str) -> dict:
 
 
 @sync_to_async
-def format_word_hub_text(overview: dict) -> str:
+def format_word_hub_text(overview: dict, *, diagnostic_completed: bool = True) -> str:
     from learning.word_bank.service import format_word_hub_text as _fmt
 
-    return _fmt(overview)
+    return _fmt(overview, diagnostic_completed=diagnostic_completed)
 
 
 @sync_to_async
@@ -1705,12 +1705,15 @@ def _levels_up_to(level: str) -> list[str]:
 
 
 @sync_to_async
-def get_rules_map(profile_id: int) -> dict:
+def get_rules_map(profile_id: int, *, user_level: str | None = None) -> dict:
     from content_app.models import GrammarRule
     from progress_app.models import UserRule
 
     profile = UserProfile.objects.get(id=profile_id)
-    level = (profile.cefr_level or 'A1').lower()
+    if user_level:
+        level = user_level.lower()
+    else:
+        level = (profile.cefr_level or 'A1').lower()
     allowed = _levels_up_to(level)
 
     user_status = {
@@ -1748,6 +1751,152 @@ def get_rules_map(profile_id: int) -> dict:
     )
 
     return {'topics': sorted_topics, 'level': level.upper(), 'total': sum(len(v) for v in sorted_topics.values())}
+
+
+@sync_to_async
+def get_rules_overview(profile_id: int, user_level: str) -> dict:
+    from learning.grammar.service import get_rules_overview as _go
+
+    return _go(profile_id, user_level)
+
+
+@sync_to_async
+def format_rules_hub_text(overview: dict, *, diagnostic_completed: bool = True) -> str:
+    from learning.grammar.service import format_rules_hub_text as _fmt
+
+    return _fmt(overview, diagnostic_completed=diagnostic_completed)
+
+
+@sync_to_async
+def pick_practice_rule_keys(profile_id: int, user_level: str, *, limit: int = 10) -> list[str]:
+    from learning.grammar.service import pick_practice_rule_keys as _pick
+
+    return _pick(profile_id, user_level, limit=limit)
+
+
+@sync_to_async
+def get_my_rules_summary(profile_id: int, user_level: str) -> dict:
+    from learning.grammar.service import get_my_rules_summary as _summary
+
+    return _summary(profile_id, user_level)
+
+
+@sync_to_async
+def format_my_rules_hub(summary: dict) -> str:
+    from learning.grammar.service import format_my_rules_hub as _fmt
+
+    return _fmt(summary)
+
+
+@sync_to_async
+def list_my_rules(
+    profile_id: int,
+    user_level: str,
+    *,
+    status: str,
+    page: int = 0,
+) -> dict:
+    from learning.grammar.service import list_my_rules as _list
+
+    return _list(profile_id, user_level, status=status, page=page)
+
+
+@sync_to_async
+def format_rule_list_page(data: dict) -> str:
+    from learning.grammar.service import format_rule_list_page as _fmt
+
+    return _fmt(data)
+
+
+@sync_to_async
+def format_rules_guide_pick_text(overview: dict, *, diagnostic_completed: bool = True) -> str:
+    from learning.grammar.service import format_rules_guide_pick_text as _fmt
+
+    return _fmt(overview, diagnostic_completed=diagnostic_completed)
+
+
+@sync_to_async
+def format_rules_bank_menu_text(user_level: str) -> str:
+    from learning.grammar.service import format_rules_bank_menu_text as _fmt
+
+    return _fmt(user_level)
+
+
+@sync_to_async
+def format_rule_survey_levels_text(user_level: str) -> str:
+    from learning.grammar.service import format_rule_survey_levels_text as _fmt
+
+    return _fmt(user_level)
+
+
+@sync_to_async
+def format_rules_bank_page_text(**kwargs) -> str:
+    from learning.grammar.service import format_rules_bank_page_text as _fmt
+
+    return _fmt(**kwargs)
+
+
+@sync_to_async
+def browse_rules_bank(profile_id: int, user_level: str, **kwargs) -> dict:
+    from learning.grammar.service import browse_rules_bank as _browse
+
+    return _browse(profile_id, user_level, **kwargs)
+
+
+@sync_to_async
+def list_rule_categories(profile_id: int, user_level: str, level: str, **kwargs) -> list:
+    from learning.grammar.service import list_rule_categories as _list
+
+    return _list(profile_id, user_level, level, **kwargs)
+
+
+@sync_to_async
+def format_rules_category_menu_text(*, level: str) -> str:
+    from learning.grammar.service import format_rules_category_menu_text as _fmt
+
+    return _fmt(level=level)
+
+
+@sync_to_async
+def pick_rule_survey_batch(profile_id: int, level: str, *, limit: int = 10) -> list:
+    from learning.grammar.service import pick_rule_survey_batch as _pick
+
+    return _pick(profile_id, level, limit=limit)
+
+
+@sync_to_async
+def search_rules(profile_id: int, user_level: str, query: str, *, limit: int = 8) -> list:
+    from learning.grammar.service import search_rules as _search
+
+    return _search(profile_id, user_level, query, limit=limit)
+
+
+@sync_to_async
+def mark_rules_bulk(profile_id: int, rule_keys: list[str], status: str) -> int:
+    from learning.grammar.service import mark_rules_bulk as _mark
+
+    return _mark(profile_id, rule_keys, status)
+
+
+@sync_to_async
+def list_my_rule_topic_counts(profile_id: int, user_level: str) -> list:
+    from learning.grammar.service import list_my_rule_topic_counts as _list
+
+    return _list(profile_id, user_level)
+
+
+@sync_to_async
+def list_my_rules_filtered(profile_id: int, user_level: str, **kwargs) -> dict:
+    from learning.grammar.service import list_my_rules_filtered as _list
+
+    return _list(profile_id, user_level, **kwargs)
+
+
+@sync_to_async
+def format_my_rules_stats_line(summary: dict) -> str:
+    from learning.grammar.service import format_my_rules_stats_line as _fmt
+
+    return _fmt(summary)
 
 
 @sync_to_async

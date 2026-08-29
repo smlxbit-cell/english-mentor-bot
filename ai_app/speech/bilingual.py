@@ -940,13 +940,18 @@ def _prefer_russian_over_en_translation(ru: str, en: str) -> bool:
     if not en or _has_cyrillic(en):
         return False
     ru_word_count = len(re.findall(r'[а-яё]+', ru.lower()))
-    if ru_word_count < 6:
-        return False
     ru_low = ru.lower()
     en_low = en.lower()
+    if _TRANSLATION_RU_MARKERS.search(ru_low) and (
+        en_pass_is_translation_meta_hallucination(en)
+        or re.search(r'(?:how (?:do you |to )?say|translate (?:this|it))', en_low)
+    ):
+        return ru_word_count >= 3
+    if ru_word_count < 6:
+        return False
     if (
         re.search(r'(?:объясни|грамматик|предложен|перевед|как сказать|по-английски)', ru_low)
-        and re.search(r'(?:explain|grammar|sentence|translate)', en_low)
+        and re.search(r'(?:explain|grammar|sentence|translate|how (?:do you |to )?say)', en_low)
     ):
         return True
     if looks_like_english_speech_misheard_as_russian(ru, en):
@@ -1318,13 +1323,76 @@ def looks_like_english_speech_misheard_as_russian(ru: str, en: str) -> bool:
     return score >= 1 and len(en_words) >= 5
 
 
+_TRANSLATION_META_EN = re.compile(
+    r'^how (?:do you |to )?say(?: it)?(?: in english)?[:\s,—-]+',
+    re.I,
+)
+_TRANSLATION_RU_MARKERS = re.compile(
+    r'(?:как сказать|как будет|как по-английски|переведи\b|перевод\b|скажи по-английски)',
+    re.I,
+)
+
+
+def en_pass_is_translation_meta_hallucination(text: str) -> bool:
+    """EN STT invented «How to say…» + translation — learner spoke Russian only."""
+    text = (text or '').strip()
+    if not text or _has_cyrillic(text):
+        return False
+    if _TRANSLATION_META_EN.search(text):
+        return True
+    low = text.lower()
+    if re.search(r'^translate (?:this|it)(?: to english)?[:\s]', low):
+        return True
+    if re.search(r"^what(?:'s| is) .+ in english\??$", low):
+        return True
+    return False
+
+
+def format_translation_request_from_en_hallucination(en: str) -> str:
+    """Rebuild a Russian translation-help intent from EN-pass STT noise."""
+    en = (text := (en or '').strip())
+    phrase = ''
+    m = re.search(
+        r'how (?:do you |to )?say(?: it)?(?: in english)?[:\s,—-]+(.+)$',
+        en,
+        re.I,
+    )
+    if m:
+        phrase = m.group(1).strip().strip('«»"\'')
+    if phrase:
+        return f'[перевод] как сказать по-английски: «{phrase}»'
+    return f'[перевод] {en}'
+
+
+def is_translation_help_request(text: str) -> bool:
+    """Learner asked how to translate — not spoken English to grade."""
+    t = (text or '').strip()
+    if not t:
+        return False
+    if t.startswith('[перевод]'):
+        return True
+    if _has_cyrillic(t) and _TRANSLATION_RU_MARKERS.search(t):
+        return True
+    return en_pass_is_translation_meta_hallucination(t)
+
+
 def merge_tutor_transcripts(ru: str, en: str) -> str:
     """Combine RU + EN STT into one message for the tutor."""
     ru = (ru or '').strip()
     en = (en or '').strip()
 
+    if en and en_pass_is_translation_meta_hallucination(en):
+        if ru and _has_cyrillic(ru):
+            return ru
+        return format_translation_request_from_en_hallucination(en)
+
     if _both_passes_same_english(ru, en):
-        return normalize_voice_english_transcript(en or ru)
+        candidate = normalize_voice_english_transcript(en or ru)
+        if en_pass_is_translation_meta_hallucination(candidate):
+            if ru and _has_cyrillic(ru):
+                return ru
+            return format_translation_request_from_en_hallucination(candidate)
+        return candidate
 
     if is_pure_russian_speech(ru, en):
         ru_clean, en_from_ru = split_cyrillic_mixed_transcript(ru)
@@ -1343,6 +1411,8 @@ def merge_tutor_transcripts(ru: str, en: str) -> str:
         return embedded_en
 
     if not ru and en:
+        if en_pass_is_translation_meta_hallucination(en):
+            return format_translation_request_from_en_hallucination(en)
         en_only = scaffold_i_like_to(en) or merge_code_switch_transcript('', en)
         if en_only:
             return en_only
@@ -1390,6 +1460,12 @@ def tutor_transcript_label(text: str) -> str:
     """User-facing prefix for what was heard — one clear line, not RU/EN dual dumps."""
     if not text:
         return ''
+    if is_translation_help_request(text):
+        if text.startswith('[перевод]'):
+            body = text.removeprefix('[перевод]').strip()
+            return f'🎙️ Услышал (по-русски): «{body}»'
+        if _has_cyrillic(text):
+            return f'🎙️ Услышал (по-русски): «{text}»'
     if is_code_switch_message(text):
         lines = text.split('\n')
         head = lines[0].strip()
@@ -1421,7 +1497,7 @@ def tutor_transcript_label(text: str) -> str:
 def english_portion_for_tutor(text: str, *, from_voice: bool = False) -> str:
     """English fragment to send to the tutor for grammar analysis."""
     text = (text or '').strip()
-    if not text:
+    if not text or is_translation_help_request(text):
         return ''
     if is_code_switch_message(text):
         parts = [text.split('\n', 1)[0].strip()]

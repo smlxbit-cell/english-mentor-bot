@@ -2,6 +2,13 @@
 
 Reference dictionary for **🎯 Тренировка → Слова**.
 
+## Locked product map
+
+**`docs/WORD_BANK_NAV.md`** — canonical navigation, button order, training scope, queue policy (min 10, no spam), post-drill review.  
+**Read before any change** to handlers/keyboards/service for words. Owner-approved 2026-08-25.
+
+Summary invariants: **`docs/PRODUCT_INVARIANTS.md` §8**.
+
 ## Architecture
 
 | Layer | Model | Role |
@@ -11,13 +18,22 @@ Reference dictionary for **🎯 Тренировка → Слова**.
 | **Personal + SRS** | `Word` + `UserWordProgress` | Training queue, spaced repetition |
 
 Flow:
-1. **Hub** — all levels A1–C1 vs CEFR targets (500 / 1k / 2k / 4k / 8k), user level marked
-2. **Учить новое** — 10 new, survey, bank, search, level pages
-3. **Повтор** — SRS + my dictionary
-4. **Разметка** — card flow: Знаю · Учу · Позже → `UserWordBankStatus`
+1. **Hub** — level progress vs CEFR targets; **🎯 Тренировка** pulls from «Учить» pile (up to 10)
+2. **📘 Новые слова** — compact entry: Уровни / Знаю? / Поиск (see NAV doc)
+3. **📖 Словарь** — browse by level; page-scoped training + survey + bulk mark
+4. **Drill** — multi-step training + **final Знаю/Учить pass** after completion
+5. **Queue policy** — auto top-up to 10 only when pile &lt; 10; no daily dump if user has 79+
 
 Integration with lessons/tutor: **`docs/WORD_BANK_INTEGRATION.md`**
-Navigation map: **`docs/WORD_BANK_NAV.md`**
+
+## Service constants
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `DAILY_NEW_WORDS` | 10 | Words per training session / daily slice |
+| `MIN_LEARNING_QUEUE` | 10 | Auto top-up threshold for «Учить» pile |
+
+Key functions: `ensure_min_learning_queue`, `pick_training_words`, `get_review_words_for_dicts`.
 
 ## Seed the database
 
@@ -41,9 +57,7 @@ Sources (later overrides earlier for same slug):
 
 ## Telegram UX
 
-**🎯 Тренировка → Слова** — hub: all level bars + **2 buttons** (Учить новое / Повтор).
-
-Full button map: **`docs/WORD_BANK_NAV.md`**. Do not remove flows without approval.
+**🎯 Тренировка → Слова** — hub + dictionary paths per **`docs/WORD_BANK_NAV.md`**. Do not remove flows without approval.
 
 ## Phase 3 (later)
 

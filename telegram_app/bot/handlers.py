@@ -45,6 +45,7 @@ from ai_app.speech import get_stt_provider, get_tutor_stt_provider
 from ai_app.speech.bilingual import (
     english_portion_for_tutor,
     is_code_switch_message,
+    is_translation_help_request,
     merge_tutor_transcripts,
     merge_whisper_tutor_transcript,
     prepare_tutor_voice_transcript,
@@ -124,6 +125,50 @@ def _main_menu(context: ContextTypes.DEFAULT_TYPE) -> keyboards.ReplyKeyboardMar
     )
 
 
+def _practice_user_level(profile: dict) -> str:
+    """Level for words/training; guest default A2 until diagnostic."""
+    if profile.get('diagnostic_completed') and profile.get('level_code'):
+        return profile['level_code']
+    if profile.get('diagnostic_completed') and profile.get('cefr_level'):
+        return profile['cefr_level'].lower()
+    return 'a2'
+
+
+def _needs_personalize_hint(profile: dict) -> bool:
+    return not profile.get('diagnostic_completed') or not profile.get('onboarding_complete')
+
+
+def _personalize_hint_html() -> str:
+    return (
+        '\n\n<i>Чтобы программа была точнее — '
+        '· тест · или · профиль · ниже 👇</i>'
+    )
+
+
+async def _send_training_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    profile: dict | None = None,
+) -> None:
+    profile = profile or await _ensure_profile(update, context)
+    chat_id = _chat_id(update)
+    personalize = _needs_personalize_hint(profile)
+    lines = [
+        '🎯 <b>Тренировка</b>',
+        '',
+        '📚 <b>5000+ слов</b> · 🎓 <b>Грамматика</b> · 💬 <b>AI-наставник</b>',
+    ]
+    if personalize:
+        lines.append(_personalize_hint_html())
+    await _send(
+        context, chat_id,
+        '\n'.join(lines),
+        reply_markup=keyboards.training_menu_kb(personalize=personalize),
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def _handle_primary_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """▶️ Начать / Продолжить — урок или план дня."""
     profile = await _ensure_profile(update, context)
@@ -135,12 +180,8 @@ async def _handle_primary_action(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def _show_training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _ensure_profile(update, context)
-    await _send(
-        context, _chat_id(update),
-        'Тренировка — выбери направление:',
-        reply_markup=keyboards.training_menu_kb(),
-    )
+    profile = await _ensure_profile(update, context)
+    await _send_training_menu(update, context, profile=profile)
 
 
 async def _ack_callback(query, text: str | None = None, *, show_alert: bool = False) -> None:
@@ -237,28 +278,6 @@ def _table_html(headers: list, rows: list) -> str:
         if trans:
             parts.append(f'   🇷🇺 {_esc(trans)}')
     return '\n'.join(parts)
-
-
-def _grammar_speak_text(content: dict) -> str | None:
-    """Collect all English phrases from a grammar rule for TTS."""
-    ens: list[str] = []
-    table = content.get('table') or {}
-    for row in table.get('rows', []):
-        for i, cell in enumerate(row):
-            cell = str(cell).strip()
-            if not cell or not _is_english(cell):
-                continue
-            # Prefer example column; skip bare patterns with ellipsis only.
-            if i == 0 and cell.endswith('…'):
-                continue
-            if cell not in ens:
-                ens.append(cell)
-    for ex in content.get('examples') or []:
-        if isinstance(ex, dict) and ex.get('en'):
-            ens.append(ex['en'])
-        elif isinstance(ex, str) and _is_english(ex):
-            ens.append(ex)
-    return '. '.join(ens) if ens else None
 
 
 def _grammar_html(step: dict) -> str:
@@ -815,7 +834,9 @@ def _speak_text_for_step(step: dict) -> str | None:
         return '. '.join(english) or None
 
     if stype == 'grammar_note':
-        return _grammar_speak_text(content)
+        from learning.grammar.format import grammar_speak_text
+
+        return grammar_speak_text(content)
 
     for candidate in (_compose_step_text(step), step.get('text'), step.get('title')):
         if not candidate:
@@ -853,10 +874,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_mentor_reaction(context, chat_id, 'welcome_back')
         await _send(
             context, chat_id,
-            f'Привет, {name}!\n\n'
-            'Я — English Mentor: истории, упражнения и наставник.\n'
-            'Сначала — короткая диагностика уровня (5–7 мин).',
-            reply_markup=keyboards.start_diagnostic_kb(),
+            f'Привет, {name}! 👋\n\n'
+            'Я — <b>Спирит</b>, дух английского ✨\n'
+            'Не лекции, а живая практика: интерактивные упражнения, '
+            'грамматика, произношение и говорение.\n\n'
+            'За 5–7 минут определим уровень и соберём программу под тебя '
+            f'(<i>кнопка {keyboards.BTN_START}</i>).\n'
+            'Или сразу к практике — 5000+ слов, грамматика, AI-наставник '
+            f'(<i>кнопка {keyboards.BTN_TRAINING}</i>).',
+            reply_markup=_main_menu(context),
+            parse_mode=ParseMode.HTML,
         )
         return
 
@@ -1970,33 +1997,545 @@ async def _prompt_notifications(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
-async def show_rules_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _show_rules_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     chat_id = _chat_id(update)
-    data = await db.get_rules_map(profile['id'])
-
-    if not data.get('topics'):
-        await _send(
-            context, chat_id,
-            'Карта правил пока пуста. Пройди эпизод — правила появятся здесь '
-            'после блока грамматики. Или нажми «Выучил» в уроке.',
-            reply_markup=_main_menu(context),
-        )
-        return
-
-    lines = [
-        f'📖 <b>Карта правил</b> — твой уровень: {data["level"]}',
-        f'Разделов: {len(data["topics"])} · правил: {data.get("total", 0)}',
-        '✅ выучил  •  🟢 уже знал  •  ⬜ ещё не отмечено',
-        '',
-        '<i>Выбери раздел — внутри правила с уровнем и кратким описанием.</i>',
-    ]
-    context.user_data['rules_topics_map'] = data['topics']
+    user_level = _practice_user_level(profile)
+    overview = await db.get_rules_overview(profile['id'], user_level)
+    text = await db.format_rules_hub_text(
+        overview,
+        diagnostic_completed=bool(profile.get('diagnostic_completed')),
+    )
+    if _needs_personalize_hint(profile):
+        text += _personalize_hint_html()
+    context.user_data['mode'] = None
+    context.user_data.pop('rules_topics_map', None)
+    kb = keyboards.rules_hub_kb(practice_count=overview['practice_count'])
+    if _needs_personalize_hint(profile):
+        from telegram import InlineKeyboardMarkup
+        rows = list(kb.inline_keyboard)
+        rows.extend(keyboards.personalize_hint_kb().inline_keyboard)
+        kb = InlineKeyboardMarkup(rows)
     await _send(
-        context, chat_id, '\n'.join(lines),
-        reply_markup=keyboards.rules_topics_kb(data['topics']),
+        context, chat_id, text,
+        reply_markup=kb,
         parse_mode=ParseMode.HTML,
     )
+
+
+async def show_rules_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Справочник — компактный вход как у словаря."""
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    overview = await db.get_rules_overview(profile['id'], user_level)
+    text = await db.format_rules_guide_pick_text(
+        overview,
+        diagnostic_completed=bool(profile.get('diagnostic_completed')),
+    )
+    if _needs_personalize_hint(profile):
+        text += _personalize_hint_html()
+    kb = keyboards.rules_guide_pick_kb()
+    if _needs_personalize_hint(profile):
+        from telegram import InlineKeyboardMarkup
+        rows = list(kb.inline_keyboard)
+        rows.extend(keyboards.personalize_hint_kb().inline_keyboard)
+        kb = InlineKeyboardMarkup(rows)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=kb,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_rules_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    text = await db.format_rules_bank_menu_text(user_level)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_bank_menu_kb(user_level),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_rules_bank_categories(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    level: str,
+) -> None:
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    categories = await db.list_rule_categories(
+        profile['id'], user_level, level, only_unseen=False,
+    )
+    text = await db.format_rules_category_menu_text(level=level)
+    if not categories:
+        text = (
+            f'📊 <b>{level.upper()}</b>\n\n'
+            'На этом уровне все правила уже отмечены 👍'
+        )
+        await _send(
+            context, _chat_id(update), text,
+            reply_markup=keyboards.rules_bank_menu_kb(user_level),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_bank_categories_kb(categories, level=level),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_rules_bank_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    level: str,
+    page: int,
+    category: str | None = None,
+):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    from learning.grammar.categories import category_label
+
+    if category:
+        prefix = f'rules:bank:cat:{level}:{category}'
+        title = f'📊 {level.upper()} · {category_label(category)}'
+    else:
+        prefix = f'rules:bank:level:{level}'
+        title = f'📊 {level.upper()} · правила'
+    data = await db.browse_rules_bank(
+        profile['id'], user_level, level=level, category=category, page=page,
+        only_unseen=False,
+    )
+    text = await db.format_rules_bank_page_text(
+        title=title,
+        items=data['items'],
+        page=data['page'],
+        pages=data['pages'],
+        total=data['total'],
+    )
+    context.user_data['rules_bank_page_cb'] = f'{prefix}:{page}'
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_bank_list_page_kb(
+            data['items'], prefix,
+            page=data['page'], pages=data['pages'],
+            level=level, category=category,
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _refresh_rules_bank_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    page_cb = context.user_data.get('rules_bank_page_cb', '')
+    if page_cb.startswith('rules:bank:cat:'):
+        parts = page_cb.split(':')
+        if len(parts) >= 6 and parts[-1].isdigit():
+            level = parts[3]
+            category = parts[4]
+            page = int(parts[-1])
+            await _show_rules_bank_page(
+                update, context, level=level, page=page, category=category,
+            )
+        return
+    parts = page_cb.rsplit(':', 1)
+    if len(parts) == 2 and parts[1].isdigit() and ':level:' in page_cb:
+        level = page_cb.split(':level:', 1)[1].rsplit(':', 1)[0]
+        await _show_rules_bank_page(update, context, level=level, page=int(parts[1]))
+
+
+async def _prompt_rule_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    context.user_data['expect'] = 'rule_search'
+    await _send(
+        context, _chat_id(update),
+        '🔍 <b>Поиск правил</b>\n\n'
+        'Напиши название, тему или слово из описания (от 2 букв).',
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('← Справочник', callback_data='rules:guide'),
+        ]]),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_rule_search(update, context, query: str):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    results = await db.search_rules(profile['id'], user_level, query)
+    context.user_data['expect'] = None
+    if not results:
+        await _send(
+            context, _chat_id(update),
+            'Ничего не нашёл. Попробуй другое написание.',
+            reply_markup=keyboards.rules_bank_menu_kb(user_level),
+        )
+        return
+    lines = ['🔍 <b>Результаты</b>', '']
+    for item in results[:6]:
+        lines.append(
+            f'{item["mark"]} [{item["level"]}] <b>{item["title"]}</b>',
+        )
+        if item.get('summary_ru'):
+            lines.append(f'   <i>{item["summary_ru"]}</i>')
+    await _send(
+        context, _chat_id(update), '\n'.join(lines),
+        reply_markup=keyboards.rules_search_result_kb(results),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_rule_survey_level_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    text = await db.format_rule_survey_levels_text(user_level)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_survey_levels_kb(user_level),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _launch_rules_practice_keys(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    keys: list[str],
+) -> None:
+    trainable: list[str] = []
+    for key in keys:
+        session = await db.get_rule_training(key)
+        if session:
+            trainable.append(key)
+    if not trainable:
+        if update.callback_query:
+            await _ack_callback(
+                update.callback_query,
+                'Для этих правил практика пока не готова',
+                show_alert=True,
+            )
+        return
+    context.user_data['rule_practice_queue'] = trainable[1:]
+    context.user_data['rule_practice_total'] = len(trainable)
+    context.user_data['rule_practice_done'] = 0
+    await start_rule_training(update, context, rule_key=trainable[0])
+
+
+async def start_rules_page_practice(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    level: str,
+    page: int,
+    category: str | None = None,
+) -> None:
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    data = await db.browse_rules_bank(
+        profile['id'], user_level, level=level, category=category, page=page,
+    )
+    keys = [item['key'] for item in data['items'] if item.get('has_training')]
+    if not keys:
+        keys = [item['key'] for item in data['items']]
+    await _launch_rules_practice_keys(update, context, keys)
+
+
+async def start_rule_survey_for_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    level: str,
+    page: int,
+    *,
+    category: str | None = None,
+):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    data = await db.browse_rules_bank(
+        profile['id'], user_level, level=level, category=category, page=page,
+    )
+    batch = data['items']
+    if not batch:
+        if update.callback_query:
+            await _ack_callback(
+                update.callback_query,
+                'На этой странице нет новых правил',
+                show_alert=True,
+            )
+        return
+    if category:
+        prefix = f'rules:bank:cat:{level}:{category}'
+    else:
+        prefix = f'rules:bank:level:{level}'
+    context.user_data['rules_bank_page_cb'] = f'{prefix}:{page}'
+    context.user_data['rule_survey_return'] = f'{prefix}:{page}'
+    context.user_data['mode'] = 'rule_survey'
+    context.user_data['rule_survey_total'] = len(batch)
+    context.user_data['rule_survey_queue'] = list(batch)
+    context.user_data['rule_survey_session_practice'] = []
+    context.user_data['rule_survey_session_known'] = []
+    await _send(
+        context, _chat_id(update),
+        f'👀 <b>{level.upper()}</b> · стр. {page + 1} · {len(batch)} правил\n'
+        '✅ Знаю · 🎯 Учить',
+        parse_mode=ParseMode.HTML,
+    )
+    await _show_rule_survey_card(update, context)
+
+
+async def start_rule_survey_for_level(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, level: str,
+):
+    profile = await _ensure_profile(update, context)
+    batch = await db.pick_rule_survey_batch(profile['id'], level)
+    if not batch:
+        await _send(
+            context, _chat_id(update),
+            f'На уровне {level.upper()} все правила уже отмечены 👍',
+            reply_markup=keyboards.rules_survey_levels_kb(
+                _practice_user_level(profile),
+            ),
+        )
+        return
+    context.user_data['mode'] = 'rule_survey'
+    context.user_data['rule_survey_total'] = len(batch)
+    context.user_data['rule_survey_queue'] = batch
+    context.user_data['rule_survey_session_practice'] = []
+    context.user_data['rule_survey_session_known'] = []
+    await _send(
+        context, _chat_id(update),
+        f'👀 <b>{level.upper()}</b> · {len(batch)} правил\n'
+        '✅ Знаю · 🎯 Учить',
+        parse_mode=ParseMode.HTML,
+    )
+    await _show_rule_survey_card(update, context)
+
+
+async def _show_rule_survey_card(update, context):
+    queue = context.user_data.get('rule_survey_queue') or []
+    chat_id = _chat_id(update)
+    if not queue:
+        done_total = context.user_data.get('rule_survey_total') or 0
+        back_data = context.user_data.pop('rule_survey_return', None)
+        context.user_data['mode'] = None
+        context.user_data.pop('rule_survey_total', None)
+        session_practice = context.user_data.get('rule_survey_session_practice') or []
+        session_known = context.user_data.get('rule_survey_session_known') or []
+        practice_n = len(session_practice)
+        known_n = len(session_known)
+        if practice_n > 0:
+            lines = [
+                f'✅ <b>{done_total} правил готово</b>',
+                f'✅ в библиотеке <b>{known_n}</b> · 🎯 учить <b>{practice_n}</b>',
+                '',
+                'Сразу практика 👇',
+            ]
+            await _send(
+                context, chat_id,
+                '\n'.join(lines),
+                reply_markup=keyboards.rules_survey_finish_kb(
+                    session_practice_count=practice_n,
+                    back_data=back_data,
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            context.user_data.pop('rule_survey_session_practice', None)
+            context.user_data.pop('rule_survey_session_known', None)
+            await _send(
+                context, chat_id,
+                f'✅ <b>{done_total} правил готово</b>\n\n'
+                f'✅ в библиотеке <b>{known_n}</b> · для практики отметь «Учить».',
+                reply_markup=keyboards.rules_survey_finish_kb(
+                    session_practice_count=0,
+                    back_data=back_data,
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+        return
+    rule = queue[0]
+    total = context.user_data.get('rule_survey_total') or len(queue)
+    pos = total - len(queue) + 1
+    lines = [
+        f'📖 {pos}/{total} · {rule["level"]}',
+        '',
+        f'<b>{_esc(rule["title"])}</b>',
+    ]
+    if rule.get('summary_ru'):
+        lines.append(f'\n<i>{_esc(rule["summary_ru"])}</i>')
+    await _send(
+        context, chat_id, '\n'.join(lines),
+        reply_markup=keyboards.rules_survey_kb(rule['key']),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _handle_rule_survey_action(
+    update, context, *, rule_key: str, action: str,
+):
+    profile_id = context.user_data.get('profile_id')
+    if not profile_id:
+        return
+    queue = context.user_data.get('rule_survey_queue') or []
+    current = queue[0] if queue and queue[0].get('key') == rule_key else None
+    if action == 'known':
+        await db.set_user_rule_status(profile_id, rule_key, 'learned')
+        if current:
+            context.user_data.setdefault('rule_survey_session_known', []).append(current)
+    elif action == 'learn':
+        if current:
+            context.user_data.setdefault('rule_survey_session_practice', []).append(
+                current['key'],
+            )
+    if queue and queue[0].get('key') == rule_key:
+        queue.pop(0)
+    context.user_data['rule_survey_queue'] = queue
+    await _show_rule_survey_card(update, context)
+
+
+async def start_rule_survey_session_training(
+    update: Update, context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    keys = context.user_data.pop('rule_survey_session_practice', None) or []
+    context.user_data.pop('rule_survey_session_known', None)
+    if not keys:
+        if update.callback_query:
+            await _ack_callback(
+                update.callback_query,
+                'Нет правил для практики — отметь «Учить»',
+                show_alert=True,
+            )
+        return
+    await _launch_rules_practice_keys(update, context, keys)
+
+
+async def _show_my_rules_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    topics = await db.list_my_rule_topic_counts(profile['id'], user_level)
+    if not topics:
+        await _send(
+            context, _chat_id(update),
+            'Темы появятся, когда отметишь правила в справочнике.',
+            reply_markup=keyboards.rules_mylib_hub_kb(),
+        )
+        return
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = []
+    for topic, count in topics[:12]:
+        label = topic if len(topic) <= 28 else f'{topic[:27]}…'
+        rows.append([InlineKeyboardButton(
+            f'📂 {label} ({count})',
+            callback_data=f'rules:mylib:topic:{topic}:0',
+        )])
+    rows.append([InlineKeyboardButton('← Мои правила', callback_data='rules:mylib')])
+    await _send(
+        context, _chat_id(update),
+        '📁 <b>Мои правила · темы</b>\n\nВыбери раздел:',
+        reply_markup=InlineKeyboardMarkup(rows),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_my_rules_levels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _send(
+        context, _chat_id(update),
+        '📊 <b>Мои правила · по уровню</b>',
+        reply_markup=keyboards.rules_mylib_levels_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_my_rules_filtered_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    prefix: str,
+    title: str,
+    page: int,
+    back_data: str = 'rules:mylib',
+    **filters,
+):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    data = await db.list_my_rules_filtered(
+        profile['id'], user_level, page=page, **filters,
+    )
+    overview = await db.get_rules_overview(profile['id'], user_level)
+    text = await db.format_rule_list_page({
+        'title': title,
+        'items': data['items'],
+        'page': data['page'],
+        'pages': data['pages'],
+        'total': data['total'],
+    })
+    stats = await db.format_my_rules_stats_line(
+        await db.get_my_rules_summary(profile['id'], user_level),
+    )
+    text = f'{stats}\n\n{text}'
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_mylib_list_page_kb(
+            prefix,
+            items=data['items'],
+            page=data['page'],
+            pages=data['pages'],
+            back_data=back_data,
+            practice_count=overview['practice_count'],
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_my_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    user_level = _practice_user_level(profile)
+    summary = await db.get_my_rules_summary(profile['id'], user_level)
+    overview = await db.get_rules_overview(profile['id'], user_level)
+    text = await db.format_my_rules_hub(summary)
+    await _send(
+        context, _chat_id(update), text,
+        reply_markup=keyboards.rules_mylib_hub_kb(
+            practice_count=overview['practice_count'],
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def _show_my_rules_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    status: str,
+    page: int,
+):
+    title = '✅ Выучил' if status == 'learned' else '🟢 Уже знаю'
+    prefix = f'rules:mylib:{status}'
+    await _show_my_rules_filtered_page(
+        update, context,
+        prefix=prefix,
+        title=title,
+        page=page,
+        back_data='rules:mylib',
+        status=status,
+    )
+
+
+async def _start_rules_practice_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    profile = await _ensure_profile(update, context)
+    chat_id = _chat_id(update)
+    user_level = _practice_user_level(profile)
+    keys = await db.pick_practice_rule_keys(profile['id'], user_level, limit=10)
+    if not keys:
+        await _send(
+            context, chat_id,
+            'Пока нет правил с упражнениями на твоём уровне. '
+            'Загляни в 📘 Справочник — там таблицы и примеры.',
+            reply_markup=keyboards.rules_hub_kb(),
+        )
+        return
+    await _launch_rules_practice_keys(update, context, keys)
 
 
 async def show_rules_topic(
@@ -2007,15 +2546,7 @@ async def show_rules_topic(
 ):
     chat_id = _chat_id(update)
     lines = [f'📂 <b>{_esc(topic)}</b>', '']
-    for rule in rules:
-        level = rule.get('level', '')
-        summary = rule.get('summary_ru', '')
-        line = f'{rule["mark"]} <b>[{level}]</b> {_esc(rule["title"])}'
-        if summary:
-            line += f'\n   <i>{_esc(summary)}</i>'
-        lines.append(line)
-        lines.append('')
-    lines.append('<i>Нажми правило — откроется таблица и примеры.</i>')
+    lines.append('<i>Нажми правило — карточка + 🔊</i>')
     await _send(
         context, chat_id, '\n'.join(lines),
         reply_markup=keyboards.rules_topic_kb(topic, rules),
@@ -2023,39 +2554,63 @@ async def show_rules_topic(
     )
 
 
-def _rule_to_html(rule: dict) -> str:
-    step = {
-        'title': rule.get('title'),
-        'content': {
-            'rule_ru': rule.get('summary_ru', ''),
-            'table': rule.get('table', {}),
-            'examples': rule.get('examples', []),
-            'tip_ru': rule.get('tip_ru', ''),
-        },
-    }
-    return _grammar_html(step)
+def _rule_to_html(rule: dict, *, has_card: bool = False) -> str:
+    from learning.grammar.format import format_rule_detail_html
+
+    return format_rule_detail_html(rule, has_card=has_card)
 
 
 async def show_rule_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, rule_key: str):
+    from learning.grammar.card_media import rule_card_absolute_path
+
     rule = await db.get_rule_detail(context.user_data['profile_id'], rule_key)
     chat_id = _chat_id(update)
     if not rule:
         await _send(context, chat_id, 'Правило не найдено.', reply_markup=_main_menu(context))
         return
-    status_note = ''
-    if rule.get('status') == 'learned':
-        status_note = '\n\n✅ В твоей библиотеке'
-    elif rule.get('status') == 'known':
-        status_note = '\n\n🟢 Отмечено как «уже знаю»'
-    context.user_data['tts_text'] = _grammar_speak_text({
+    from learning.grammar.format import grammar_speak_text
+
+    speak_content = {
         'table': rule.get('table', {}),
-        'examples': rule.get('examples', []),
-    }) or ''
-    await _send(
-        context, chat_id, _rule_to_html(rule) + status_note,
-        reply_markup=keyboards.rule_detail_kb(rule_key, rule.get('status', '')),
-        parse_mode=ParseMode.HTML,
+        'tip_ru': rule.get('tip_ru', ''),
+    }
+    context.user_data['tts_text'] = grammar_speak_text(speak_content) or ''
+    card_path = rule_card_absolute_path(rule_key)
+    has_card = card_path is not None
+    back_data = context.user_data.get('rules_bank_page_cb')
+    kb = keyboards.rule_detail_kb(
+        rule_key,
+        rule.get('status', ''),
+        back_data=back_data,
     )
+    if has_card:
+        body = _rule_to_html(rule, has_card=True)
+        if not body.strip():
+            body = '…'
+        try:
+            with open(card_path, 'rb') as photo:
+                await context.bot.send_photo(
+                    chat_id,
+                    photo,
+                    caption=body[:1024],
+                    reply_markup=kb,
+                    parse_mode=ParseMode.HTML,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('rule card photo failed %s: %s', rule_key, exc)
+            has_card = False
+    if not has_card:
+        status_note = ''
+        if rule.get('status') in ('learned', 'known'):
+            status_note = '\n\n✅ В твоей библиотеке'
+        body = _rule_to_html(rule, has_card=False) + status_note
+        await _send(
+            context, chat_id, body,
+            reply_markup=kb,
+            parse_mode=ParseMode.HTML,
+        )
+    if context.user_data.get('tts_text'):
+        await _play_tts(context, chat_id, context.user_data['tts_text'])
 
 
 async def _show_exercise_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2106,9 +2661,11 @@ async def _maybe_show_mistake_rule_tablet(
         header += 'ℹ️ Это правило уже есть в твоей библиотеке — можно повторить или потренировать.\n\n'
     else:
         header += 'ℹ️ Этого правила ещё нет в библиотеке — можешь добавить.\n\n'
-    context.user_data['tts_text'] = _grammar_speak_text({
+    from learning.grammar.format import grammar_speak_text
+
+    context.user_data['tts_text'] = grammar_speak_text({
         'table': rule.get('table', {}),
-        'examples': rule.get('examples', []),
+        'tip_ru': rule.get('tip_ru', ''),
     }) or ''
     await _send(
         context, chat_id,
@@ -2126,14 +2683,23 @@ async def start_rule_training(
     if not rule_key:
         rule_key = await db.get_next_unlearned_rule_key(profile_id)
     if not rule_key:
+        context.user_data.pop('rule_practice_queue', None)
+        context.user_data.pop('rule_practice_total', None)
+        context.user_data.pop('rule_practice_done', None)
         await _send(
             context, chat_id,
             'Все правила отмечены — отлично! 🎉 Новые появятся в следующих эпизодах.',
-            reply_markup=_main_menu(context),
+            reply_markup=keyboards.rules_hub_kb(),
         )
         return
     session = await db.get_rule_training(rule_key)
     if not session:
+        queue = context.user_data.get('rule_practice_queue') or []
+        if queue:
+            next_key = queue.pop(0)
+            context.user_data['rule_practice_queue'] = queue
+            await start_rule_training(update, context, rule_key=next_key)
+            return
         await _send(context, chat_id, 'Для этого правила тренировка пока не готова.')
         return
     context.user_data['mode'] = 'rule_drill'
@@ -2145,9 +2711,14 @@ async def start_rule_training(
         'score': 0,
     }
     context.user_data.pop('rule_drill', None)
+    batch_note = ''
+    total = context.user_data.get('rule_practice_total')
+    if total:
+        done = context.user_data.get('rule_practice_done', 0)
+        batch_note = f' · правило {done + 1}/{total}'
     await _send(
         context, chat_id,
-        f'🎯 Тренировка: «{session["rule_title"]}»\n'
+        f'🎯 Практика: «{session["rule_title"]}»{batch_note}\n'
         f'Заданий: {len(session["exercises"])}',
     )
     await _show_rule_training_step(update, context)
@@ -2194,11 +2765,34 @@ async def _finish_rule_training(update, context):
         )
         msg = f'✅ Отлично! {score}/{total} — правило в библиотеке.'
     else:
-        msg = f'📊 Результат: {score}/{total}. Повтори правило в 📖 Правила.'
+        msg = f'📊 Результат: {score}/{total}. Повтори правило в 📘 Справочнике.'
     context.user_data['mode'] = None
     context.user_data['expect'] = None
     context.user_data.pop('rule_training', None)
     block_id = context.user_data.pop('plan_rule_drill_block', None)
+
+    queue = context.user_data.get('rule_practice_queue') or []
+    batch_total = context.user_data.get('rule_practice_total')
+    if queue and batch_total and not block_id:
+        context.user_data['rule_practice_done'] = (
+            context.user_data.get('rule_practice_done', 0) + 1
+        )
+        next_key = queue.pop(0)
+        context.user_data['rule_practice_queue'] = queue
+        done = context.user_data['rule_practice_done']
+        await _send(
+            context, chat_id,
+            msg + f'\n\nСледующее правило ({done + 1}/{batch_total})…',
+        )
+        await start_rule_training(update, context, rule_key=next_key)
+        return
+    if batch_total and not block_id:
+        done = context.user_data.get('rule_practice_done', 0) + 1
+        context.user_data.pop('rule_practice_queue', None)
+        context.user_data.pop('rule_practice_total', None)
+        context.user_data.pop('rule_practice_done', None)
+        msg += f'\n\n🎉 Практика завершена — {done} из {batch_total} правил.'
+
     if block_id:
         await db.mark_plan_block_done(context.user_data['profile_id'], block_id)
         plan = await db.get_daily_plan(context.user_data['profile_id'])
@@ -2210,7 +2804,7 @@ async def _finish_rule_training(update, context):
         await _send(context, chat_id, msg)
         await _plan_continue(update, context)
         return
-    await _send(context, chat_id, msg, reply_markup=_main_menu(context))
+    await _send(context, chat_id, msg, reply_markup=keyboards.rules_hub_kb())
 
 
 async def _grade_rule_training_answer(update, context, answer: str) -> None:
@@ -3044,9 +3638,14 @@ async def show_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _show_word_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
-    user_level = profile.get('level_code') or profile.get('cefr_level') or 'a1'
+    user_level = _practice_user_level(profile)
     overview = await db.get_word_bank_overview(profile['id'], user_level)
-    text = await db.format_word_hub_text(overview)
+    text = await db.format_word_hub_text(
+        overview,
+        diagnostic_completed=bool(profile.get('diagnostic_completed')),
+    )
+    if _needs_personalize_hint(profile):
+        text += _personalize_hint_html()
     context.user_data['mode'] = None
     context.user_data.pop('word_survey_queue', None)
     context.user_data.pop('word_survey_session_learn', None)
@@ -3058,12 +3657,18 @@ async def _show_word_hub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop('daily_intro_source', None)
     context.user_data.pop('drill_from_plan', None)
     context.user_data['words_overview'] = overview
+    kb = keyboards.word_hub_kb(
+        due_count=overview['due_count'],
+        unseen_total=overview['unseen_total'],
+    )
+    if _needs_personalize_hint(profile):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        rows = list(kb.inline_keyboard)
+        rows.extend(keyboards.personalize_hint_kb().inline_keyboard)
+        kb = InlineKeyboardMarkup(rows)
     await _send(
         context, _chat_id(update), text,
-        reply_markup=keyboards.word_hub_kb(
-            due_count=overview['due_count'],
-            unseen_total=overview['unseen_total'],
-        ),
+        reply_markup=kb,
         parse_mode=ParseMode.HTML,
     )
 
@@ -3707,7 +4312,7 @@ async def start_page_word_training(
     ids = [w['bank_entry_id'] for w in items if w.get('bank_entry_id')]
     await db.mark_word_bank_entries_bulk(profile['id'], ids, 'learning')
     words = await db.get_review_words_for_dicts(profile['id'], items)
-    await _start_word_drill(update, context, words, new_words=True)
+    await _start_practice_intro(update, context, words, source='training')
 
 
 async def start_survey_session_training(
@@ -3727,7 +4332,7 @@ async def start_survey_session_training(
     if not profile_id:
         return
     words = await db.get_review_words_for_dicts(profile_id, session_learn)
-    await _start_word_drill(update, context, words, new_words=True)
+    await _start_practice_intro(update, context, words, source='training')
 
 
 async def start_daily_word_learning(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4449,8 +5054,11 @@ async def _start_practice_flow(
         profile['id'], user_level, limit=DAILY_NEW_WORDS,
     )
     if words:
-        context.user_data['drill_from_plan'] = from_plan
-        await _start_word_drill(update, context, words, new_words=True)
+        await _start_practice_intro(
+            update, context, words,
+            source='training',
+            from_plan=from_plan,
+        )
         return
 
     if from_plan:
@@ -4517,14 +5125,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await db.heal_diagnostic_if_needed(profile['id']):
         profile = await db.get_or_create_profile(update.effective_user)
 
-    if not profile['diagnostic_completed']:
-        await _send(context, chat_id,
-                    'Сначала пройдём диагностику уровня 🙂',
-                    reply_markup=keyboards.start_diagnostic_kb())
-        return
-
     d = await db.get_profile_detail(profile['id'])
     name = d['first_name'] or 'друг'
+    if profile.get('diagnostic_completed'):
+        level_line = f'Уровень {d["level"]} → цель {d.get("target_cefr_level") or "—"}'
+    else:
+        level_line = 'Уровень не определён · <i>пройди тест — подберём программу</i>'
     target = d.get('target_cefr_level') or '—'
     sphere = d.get('sphere') or '—'
     tier = d.get('access_tier', 'free')
@@ -4534,14 +5140,27 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         f'<b>{name}</b>\n'
-        f'Уровень {d["level"]} → цель {target}\n'
+        f'{level_line}\n'
         f'Сфера: {sphere}\n'
         f'Ритм: {d.get("daily_minutes", 20)} мин · {d.get("study_days_per_week", 5)} дн/нед\n\n'
         f'XP {d["xp"]} · серия {d["streak"]} · уроков {d["completed_lessons"]}\n'
         f'Тариф: {tier_ru} — подробнее /subscribe\n\n'
         'Настройки — кнопки ниже.'
     )
-    await _send(context, chat_id, text, reply_markup=keyboards.profile_kb(), parse_mode=ParseMode.HTML)
+    if not profile.get('diagnostic_completed'):
+        text += (
+            '\n\n<i>🎯 Тест уровня · цель · интересы · карта пути — '
+            'заполни по мере желания, программа станет точнее.</i>'
+        )
+    kb = keyboards.profile_kb()
+    if not profile.get('diagnostic_completed'):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        rows = list(kb.inline_keyboard)
+        rows.insert(0, [
+            InlineKeyboardButton('🎯 Пройти тест уровня', callback_data='diag:start'),
+        ])
+        kb = InlineKeyboardMarkup(rows)
+    await _send(context, chat_id, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
 async def show_interests(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4849,11 +5468,27 @@ async def start_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile = await _ensure_profile(update, context)
     context.user_data['mode'] = 'tutor'
     context.user_data['tutor_history'] = []
-    context.user_data['tutor_level'] = profile.get('level_code', 'a2')
+    context.user_data['tutor_level'] = _practice_user_level(profile)
     await send_mentor_reaction(context, _chat_id(update), 'tutor_start')
+    intro = TUTOR_INTRO
+    if _needs_personalize_hint(profile):
+        intro += _personalize_hint_html()
+    kb = _main_menu(context)
+    if _needs_personalize_hint(profile):
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        kb = InlineKeyboardMarkup(
+            keyboards.personalize_hint_kb().inline_keyboard,
+        )
+        await _send(
+            context, _chat_id(update), intro,
+            reply_markup=kb,
+            parse_mode=ParseMode.HTML,
+        )
+        await _send(context, _chat_id(update), 'Пиши текстом или 🎙️', reply_markup=_main_menu(context))
+        return
     await _send(
         context, _chat_id(update),
-        TUTOR_INTRO,
+        intro,
         reply_markup=_main_menu(context),
         parse_mode=ParseMode.HTML,
     )
@@ -4861,6 +5496,7 @@ async def start_tutor(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _send_tutor_reply(context, chat_id: int, reply: str, *, update=None):
     context.user_data['mode'] = 'tutor'
+    reply = _format_tutor_reply_html(reply)
     tts = _english_text_for_tts(reply)
     context.user_data['tts_text'] = tts or None
     if tts:
@@ -4874,6 +5510,31 @@ async def _send_tutor_reply(context, chat_id: int, reply: str, *, update=None):
         rows.append([InlineKeyboardButton('↩️ Вернуться к уроку', callback_data='lesson:resume')])
     kb = InlineKeyboardMarkup(rows) if rows else None
     await _send(context, chat_id, reply, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+
+def _format_tutor_reply_html(text: str) -> str:
+    """Air between tutor blocks — easier to scan on phone."""
+    if not text:
+        return text
+    markers = (
+        r'🇷🇺\s*<b>По-русски:</b>',
+        r'🇬🇧\s*<b>English:</b>',
+        r'<b>Грамматика(?: подробно)?:</b>',
+        r'<b>Слово:</b>',
+        r'<b>Ещё можно сказать:</b>',
+        r'<b>Ещё примеры:</b>',
+        r'<b>Ответ Спирита:</b>',
+        r'<b>По-английски:</b>',
+        r'Разбираем фразу:',
+        r'Услышал:',
+        r'👍\s',
+        r'Примеры фраз:',
+    )
+    out = text.strip()
+    for pat in markers:
+        out = re.sub(rf'(?<!\n\n)({pat})', r'\n\n\1', out)
+    out = re.sub(r'\n{3,}', '\n\n', out)
+    return out.strip()
 
 
 async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: bool = False):
@@ -4915,6 +5576,9 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         return
 
     check_english = bool(english_portion_for_tutor(user_text, from_voice=from_voice))
+    translation_help = is_translation_help_request(user_text)
+    if translation_help:
+        check_english = False
     code_switch = is_code_switch_message(user_text)
     grammar_followup = is_grammar_followup_turn(user_text, history)
     followup_target = extract_grammar_followup_target(history) if grammar_followup else ''
@@ -4941,7 +5605,7 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         phrase_practice = False
     spirit_chat = (
         (is_spirit_chat_turn(user_text) or spirit_fulfillment) and not grammar_followup
-        and not phrase_practice
+        and not phrase_practice and not translation_help
     )
     reply = await tutor.reply(
         history=history,
@@ -4956,6 +5620,7 @@ async def _handle_tutor_turn(update, context, user_text: str, *, from_voice: boo
         fulfillment_kind=fulfillment_kind,
         phrase_practice=phrase_practice,
         practice_phrase=practice_phrase,
+        translation_help=translation_help,
     )
     await db.register_tutor_message(profile_id)
     reply, tagged_keys = strip_rule_tags(reply)
@@ -5323,6 +5988,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _begin_diagnostic(update, context, retake=True)
             return
         await _begin_diagnostic(update, context)
+    elif data == 'start:training':
+        profile = await db.get_or_create_profile(update.effective_user)
+        await _send_training_menu(update, context, profile=profile)
+    elif data == 'profile:open':
+        await show_profile(update, context)
     elif data.startswith('diag:claim:'):
         if (
             await db.diagnostic_locked(context.user_data['profile_id'])
@@ -5690,7 +6360,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'train:rules':
         context.user_data['mode'] = None
         context.user_data['expect'] = None
-        await show_rules_map(update, context)
+        await _show_rules_hub(update, context)
     elif data == 'train:tutor':
         await start_tutor(update, context)
     elif data == 'lesson:next':
@@ -5833,11 +6503,131 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('rule:learn:'):
         key = data.split(':', 2)[2]
         await db.set_user_rule_status(context.user_data['profile_id'], key, 'learned')
-        await query.answer('✅ Добавлено в библиотеку')
+        await query.answer('✅ В библиотеке')
     elif data.startswith('rule:known:'):
         key = data.split(':', 2)[2]
-        await db.set_user_rule_status(context.user_data['profile_id'], key, 'known')
-        await query.answer('🟢 Отмечено как «уже знаю»')
+        await db.set_user_rule_status(context.user_data['profile_id'], key, 'learned')
+        await query.answer('✅ В библиотеке')
+    elif data == 'rules:hub':
+        await _show_rules_hub(update, context)
+    elif data == 'rules:guide':
+        await show_rules_map(update, context)
+    elif data == 'rules:repeat':
+        await _start_rules_practice_flow(update, context)
+    elif data == 'rules:mylib':
+        await _show_my_rules(update, context)
+    elif data.startswith('rules:mylib:learned:'):
+        page = int(data.rsplit(':', 1)[1])
+        await _show_my_rules_page(update, context, status='learned', page=page)
+    elif data.startswith('rules:mylib:known:'):
+        page = int(data.rsplit(':', 1)[1])
+        await _show_my_rules_page(update, context, status='known', page=page)
+    elif data == 'rules:bank':
+        await _show_rules_bank_menu(update, context)
+    elif data == 'rules:search':
+        await _prompt_rule_search(update, context)
+    elif data == 'rules:survey:menu':
+        await _show_rule_survey_level_menu(update, context)
+    elif data.startswith('rules:survey:level:'):
+        level = data.rsplit(':', 1)[1]
+        await start_rule_survey_for_level(update, context, level)
+    elif data.startswith('rules:survey:page:'):
+        from learning.grammar.categories import parse_rules_survey_page_cb
+        parsed = parse_rules_survey_page_cb(data)
+        if not parsed:
+            return
+        level, category, page = parsed
+        await start_rule_survey_for_page(
+            update, context, level, page, category=category,
+        )
+    elif data.startswith('rules:survey:known:'):
+        key = data.removeprefix('rules:survey:known:')
+        await _handle_rule_survey_action(update, context, rule_key=key, action='known')
+    elif data.startswith('rules:survey:learn:'):
+        key = data.removeprefix('rules:survey:learn:')
+        await _handle_rule_survey_action(update, context, rule_key=key, action='learn')
+    elif data == 'rules:survey:train':
+        await start_rule_survey_session_training(update, context)
+    elif data.startswith('rules:bank:page:train:'):
+        from learning.grammar.categories import parse_rules_bank_page_cb
+        parsed = parse_rules_bank_page_cb(data, 'train')
+        if not parsed:
+            return
+        level, category, page = parsed
+        await start_rules_page_practice(
+            update, context, level=level, page=page, category=category,
+        )
+    elif data.startswith('rules:bank:page:known:') or data.startswith('rules:bank:page:learn:'):
+        from learning.grammar.categories import parse_rules_bank_page_cb
+        action = 'known' if ':known:' in data else 'learn'
+        parsed = parse_rules_bank_page_cb(data, action)
+        if not parsed:
+            return
+        level, category, page = parsed
+        profile = await _ensure_profile(update, context)
+        user_level = _practice_user_level(profile)
+        page_data = await db.browse_rules_bank(
+            profile['id'], user_level, level=level, category=category, page=page,
+        )
+        keys = [i['key'] for i in page_data['items']]
+        if action == 'known':
+            n = await db.mark_rules_bulk(profile['id'], keys, 'learned')
+            await _ack_callback(query, f'✅ В библиотеке · {n}')
+            await _show_rules_bank_page(
+                update, context, level=level, page=page, category=category,
+            )
+        else:
+            await _launch_rules_practice_keys(update, context, keys)
+    elif data.startswith('rules:bank:pick:'):
+        level = data.rsplit(':', 1)[1]
+        await _show_rules_bank_categories(update, context, level=level)
+    elif data.startswith('rules:bank:cat:'):
+        parts = data.split(':')
+        if len(parts) < 6 or not parts[-1].isdigit():
+            return
+        level = parts[3]
+        category = parts[4]
+        page = int(parts[5])
+        await _show_rules_bank_page(
+            update, context, level=level, page=page, category=category,
+        )
+    elif data.startswith('rules:bank:level:'):
+        from learning.word_bank.navigation import parse_paged_callback
+        parsed = parse_paged_callback(data, 'rules:bank:level:')
+        if not parsed:
+            return
+        level, page = parsed
+        await _show_rules_bank_page(update, context, level=level, page=page)
+    elif data == 'rules:mylib:topics':
+        await _show_my_rules_topics(update, context)
+    elif data == 'rules:mylib:levels':
+        await _show_my_rules_levels(update, context)
+    elif data.startswith('rules:mylib:level:'):
+        from learning.word_bank.navigation import parse_paged_callback
+        parsed = parse_paged_callback(data, 'rules:mylib:level:')
+        if not parsed:
+            return
+        level, page = parsed
+        await _show_my_rules_filtered_page(
+            update, context,
+            prefix=f'rules:mylib:level:{level}',
+            title=f'🗂 {level.upper()}',
+            page=page,
+            back_data='rules:mylib:levels',
+            level=level,
+        )
+    elif data.startswith('rules:mylib:topic:'):
+        parts = data.split(':')
+        page = int(parts[-1])
+        topic = ':'.join(parts[3:-1])
+        await _show_my_rules_filtered_page(
+            update, context,
+            prefix=f'rules:mylib:topic:{topic}',
+            title=f'📂 {topic}',
+            page=page,
+            back_data='rules:mylib:topics',
+            topic=topic,
+        )
     elif data == 'rules:map':
         await show_rules_map(update, context)
     elif data.startswith('rules:topic:'):
@@ -5845,7 +6635,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         topics = context.user_data.get('rules_topics_map') or {}
         if not topics:
             profile = await _ensure_profile(update, context)
-            data_map = await db.get_rules_map(profile['id'])
+            user_level = _practice_user_level(profile)
+            data_map = await db.get_rules_map(profile['id'], user_level=user_level)
             topics = data_map.get('topics') or {}
             context.user_data['rules_topics_map'] = topics
         topic_keys = list(topics.keys())
@@ -5855,21 +6646,38 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         topic = topic_keys[idx]
         await show_rules_topic(update, context, topic, topics[topic])
     elif data == 'rules:drill':
-        await start_rule_training(update, context, rule_key=None)
+        await _start_rules_practice_flow(update, context)
     elif data.startswith('rules:train:'):
         await start_rule_training(update, context, rule_key=data.split(':', 2)[2])
     elif data.startswith('rules:view:'):
         await show_rule_detail(update, context, data.split(':', 2)[2])
     elif data.startswith('rules:listen:'):
+        from learning.grammar.format import grammar_speak_text
+
         rule = await db.get_rule_detail(
             context.user_data['profile_id'], data.split(':', 2)[2],
         )
-        speak = _grammar_speak_text({
+        speak = grammar_speak_text({
             'table': (rule or {}).get('table', {}),
-            'examples': (rule or {}).get('examples', []),
+            'tip_ru': (rule or {}).get('tip_ru', ''),
         })
         if speak:
             await _play_tts(context, _chat_id(update), speak)
+        else:
+            await query.answer('Нет примеров для озвучки', show_alert=True)
+    elif data.startswith('rules:examples:'):
+        rule_key = data.split(':', 2)[2]
+        rule = await db.get_rule_detail(context.user_data['profile_id'], rule_key)
+        if not rule or not rule.get('examples'):
+            await query.answer('Примеров пока нет', show_alert=True)
+            return
+        from learning.grammar.format import format_rule_examples_html
+
+        await _send(
+            context, _chat_id(update),
+            format_rule_examples_html(rule),
+            parse_mode=ParseMode.HTML,
+        )
     elif data == 'rules:noop':
         await query.answer()
     elif data == 'notify:yes':
@@ -6179,7 +6987,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboards.BTN_PROFILE: show_profile,
         keyboards.BTN_PROGRESS: show_progress,
         keyboards.BTN_WORDS: show_words,
-        keyboards.BTN_RULES: show_rules_map,
+        keyboards.BTN_RULES: _show_rules_hub,
         keyboards.BTN_TUTOR: start_tutor,
         keyboards.BTN_SUBSCRIBE: show_subscription,
         '📚 Учиться': _handle_primary_action,
@@ -6243,6 +7051,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if context.user_data.get('expect') == 'word_search':
         await _handle_word_search(update, context, text)
+        return
+
+    if context.user_data.get('expect') == 'rule_search':
+        await _handle_rule_search(update, context, text)
         return
 
     _restore_tutor_mode_if_active(context)

@@ -60,6 +60,7 @@ def build_tutor_system(
     grammar_followup: bool = False, followup_target: str = '',
     spirit_fulfillment: bool = False, fulfillment_kind: str = '',
     phrase_practice: bool = False, practice_phrase: str = '',
+    translation_help: bool = False,
 ) -> ChatMessage:
     level_name = LEVEL_NAMES.get(level, level.upper())
     content = (
@@ -197,6 +198,20 @@ def build_tutor_system(
             'present-simple-questions, wh-questions-basics, navigation-where, '
             'navigation-directions, prepositions-place, modal-can, modal-could-polite, '
             'hotel-check-in. Omit [RULE:…] if grammar was fully correct or no topic fits.'
+        )
+    if translation_help:
+        content += (
+            '\n\nTRANSLATION HELP (learner asked in RUSSIAN how to say something — '
+            'they did NOT speak English for grading):\n'
+            '- Do NOT use «Услышал: «…»» with invented English they never said.\n'
+            '- Do NOT say «✅ Грамматически верно» — they were not practicing English.\n'
+            '- In 🇷🇺 section use blank lines between blocks:\n'
+            '  1. «Ты спросил: …» — quote their Russian question / phrase to translate.\n'
+            '  2. <b>По-английски:</b> natural translation «…» — «русский перевод»\n'
+            '  3. <b>Грамматика:</b> 1–2 short RU bullets (tense, word order, adjective, etc.)\n'
+            '  4. <b>Ещё можно сказать:</b> 1 alternative — RU translation\n'
+            '  5. One warm Spirit line; optional short question.\n'
+            '- 🇬🇧 section: key English phrase(s) with RU gloss only.\n'
         )
     if phrase_practice and practice_phrase:
         content += (

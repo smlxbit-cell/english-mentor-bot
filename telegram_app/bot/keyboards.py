@@ -43,17 +43,6 @@ def main_menu(*, continue_mode: bool = False) -> ReplyKeyboardMarkup:
     )
 
 
-def training_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Тренировка»: слова, правила, AI-наставник."""
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton('📚 Слова', callback_data='train:words'),
-            InlineKeyboardButton('🎓 Правила', callback_data='train:rules'),
-        ],
-        [InlineKeyboardButton('💬 AI · Наставник', callback_data='train:tutor')],
-    ])
-
-
 # --------------------------------------------------------------------------- #
 # Navigation helpers
 # --------------------------------------------------------------------------- #
@@ -79,6 +68,41 @@ def start_diagnostic_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton('🎯 Пройти диагностику', callback_data='diag:start')]]
     )
+
+
+def start_welcome_kb() -> InlineKeyboardMarkup:
+    """First screen for new users: diagnostic or jump into training."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('🎯 Диагностика', callback_data='diag:start'),
+            InlineKeyboardButton('📚 Тренировка', callback_data='start:training'),
+        ],
+    ])
+
+
+def personalize_hint_kb() -> InlineKeyboardMarkup:
+    """Low-key links — not a big CTA block."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton('· тест ·', callback_data='diag:start'),
+        InlineKeyboardButton('· профиль ·', callback_data='profile:open'),
+    ]])
+
+
+def training_menu_kb(*, personalize: bool = False) -> InlineKeyboardMarkup:
+    """Подменю «Тренировка»: слова, правила, AI-наставник."""
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton('📚 Слова', callback_data='train:words'),
+            InlineKeyboardButton('🎓 Грамматика', callback_data='train:rules'),
+        ],
+        [InlineKeyboardButton('💬 AI · Наставник', callback_data='train:tutor')],
+    ]
+    if personalize:
+        rows.append([
+            InlineKeyboardButton('· тест ·', callback_data='diag:start'),
+            InlineKeyboardButton('· профиль ·', callback_data='profile:open'),
+        ])
+    return InlineKeyboardMarkup(rows)
 
 
 def diagnostic_self_assess_kb() -> InlineKeyboardMarkup:
@@ -423,12 +447,17 @@ def word_bank_list_page_kb(
             survey_cb = None
             known_cb = f'words:bank:page:known:topic:{topic}:{page}'
             learn_cb = f'words:bank:page:learn:topic:{topic}:{page}'
-        rows.append([InlineKeyboardButton(
+        train_btn = InlineKeyboardButton(
             f'🎯 Тренировка · {n}',
             callback_data=train_cb,
-        )])
+        )
         if survey_cb:
-            rows.append([InlineKeyboardButton('▶️ По одному', callback_data=survey_cb)])
+            rows.append([
+                train_btn,
+                InlineKeyboardButton('▶️ По одному', callback_data=survey_cb),
+            ])
+        else:
+            rows.append([train_btn])
         rows.append([
             InlineKeyboardButton('✅ Знаю', callback_data=known_cb),
             InlineKeyboardButton('🎯 Учить', callback_data=learn_cb),
@@ -620,10 +649,9 @@ def exercise_text_kb(
 
 def grammar_rule_compact_kb(rule_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton('🔊 Слушать примеры', callback_data='tts:step')],
         [
+            InlineKeyboardButton('🔊 Слушать', callback_data='tts:step'),
             InlineKeyboardButton('✅ Выучил', callback_data=f'rule:learn:{rule_key}'),
-            InlineKeyboardButton('👌 Уже знаю', callback_data=f'rule:known:{rule_key}'),
         ],
         [InlineKeyboardButton('➡️ Далее', callback_data='lesson:next')],
     ])
@@ -786,10 +814,9 @@ def speaking_bite_kb() -> InlineKeyboardMarkup:
 def grammar_rule_kb(rule_key: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton('🔊 Слушать примеры', callback_data='tts:step')],
             [
+                InlineKeyboardButton('🔊 Слушать', callback_data='tts:step'),
                 InlineKeyboardButton('✅ Выучил', callback_data=f'rule:learn:{rule_key}'),
-                InlineKeyboardButton('👌 Уже знаю', callback_data=f'rule:known:{rule_key}'),
             ],
             [InlineKeyboardButton('💬 Спросить', callback_data='lesson:ask')],
             [InlineKeyboardButton('➡️ Далее', callback_data='lesson:next')],
@@ -808,8 +835,262 @@ def lesson_help_kb(label: str = '➡️ Далее') -> InlineKeyboardMarkup:
     )
 
 
+def rules_guide_pick_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('📊 Уровни', callback_data='rules:bank'),
+            InlineKeyboardButton('👀 Знаю?', callback_data='rules:survey:menu'),
+            InlineKeyboardButton('🔍 Поиск', callback_data='rules:search'),
+        ],
+        [InlineKeyboardButton('← Грамматика', callback_data='rules:hub')],
+    ])
+
+
+def rules_bank_menu_kb(user_level: str = 'a1') -> InlineKeyboardMarkup:
+    def lbl(level: str) -> str:
+        u = level.upper()
+        return f'{u} ★' if level.lower() == (user_level or 'a1').lower() else u
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(lbl('a1'), callback_data='rules:bank:pick:a1'),
+            InlineKeyboardButton(lbl('a2'), callback_data='rules:bank:pick:a2'),
+            InlineKeyboardButton(lbl('b1'), callback_data='rules:bank:pick:b1'),
+            InlineKeyboardButton(lbl('b2'), callback_data='rules:bank:pick:b2'),
+            InlineKeyboardButton(lbl('c1'), callback_data='rules:bank:pick:c1'),
+        ],
+        [InlineKeyboardButton('← Справочник', callback_data='rules:guide')],
+    ])
+
+
+def rules_bank_categories_kb(categories: list[dict], *, level: str) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for cat in categories:
+        row.append(InlineKeyboardButton(
+            cat['button'],
+            callback_data=f'rules:bank:cat:{level}:{cat["slug"]}:0',
+        ))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton('← Уровни', callback_data='rules:bank')])
+    return InlineKeyboardMarkup(rows)
+
+
+def _rules_page_nav_row(prefix: str, *, page: int, pages: int) -> list[InlineKeyboardButton] | None:
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton('‹', callback_data=f'{prefix}:{page - 1}'))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton('›', callback_data=f'{prefix}:{page + 1}'))
+    return nav or None
+
+
+def rules_bank_list_page_kb(
+    items: list[dict],
+    prefix: str,
+    *,
+    page: int,
+    pages: int,
+    level: str,
+    category: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in items:
+        mark = item.get('mark') or ''
+        title = item['title']
+        label = f'{mark} {title}'.strip() if mark else title
+        if len(label) > 58:
+            label = f'{label[:57]}…'
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f'rules:view:{item["key"]}'),
+        ])
+    if items:
+        n = len(items)
+        trainable = sum(1 for i in items if i.get('has_training'))
+        train_n = trainable or n
+        cat_part = f':{category}' if category else ''
+        action_row = [
+            InlineKeyboardButton(
+                f'🎯 Практика · {train_n}',
+                callback_data=f'rules:bank:page:train:{level}{cat_part}:{page}',
+            ),
+        ]
+        nav = _rules_page_nav_row(prefix, page=page, pages=pages)
+        if nav:
+            action_row.extend(nav)
+        rows.append(action_row)
+    back = f'rules:bank:pick:{level}' if category else 'rules:bank'
+    rows.append([InlineKeyboardButton('← Разделы' if category else '← Уровни', callback_data=back)])
+    return InlineKeyboardMarkup(rows)
+
+
+def rules_survey_levels_kb(user_level: str) -> InlineKeyboardMarkup:
+    def lbl(level: str) -> str:
+        u = level.upper()
+        return f'{u} ★' if level.lower() == (user_level or 'a1').lower() else u
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(lbl('a1'), callback_data='rules:survey:level:a1'),
+            InlineKeyboardButton(lbl('a2'), callback_data='rules:survey:level:a2'),
+            InlineKeyboardButton(lbl('b1'), callback_data='rules:survey:level:b1'),
+            InlineKeyboardButton(lbl('b2'), callback_data='rules:survey:level:b2'),
+            InlineKeyboardButton(lbl('c1'), callback_data='rules:survey:level:c1'),
+        ],
+        [InlineKeyboardButton('← Справочник', callback_data='rules:guide')],
+    ])
+
+
+def rules_survey_kb(rule_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('✅ Знаю', callback_data=f'rules:survey:known:{rule_key}'),
+            InlineKeyboardButton('🎯 Учить', callback_data=f'rules:survey:learn:{rule_key}'),
+        ],
+    ])
+
+
+def rules_survey_finish_kb(
+    *,
+    session_practice_count: int = 0,
+    back_data: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows = []
+    if session_practice_count > 0:
+        rows.append([InlineKeyboardButton(
+            f'🎯 Практика · {session_practice_count}',
+            callback_data='rules:survey:train',
+        )])
+    if back_data:
+        rows.append([InlineKeyboardButton('← К списку', callback_data=back_data)])
+    rows.append([InlineKeyboardButton('← Грамматика', callback_data='rules:hub')])
+    return InlineKeyboardMarkup(rows)
+
+
+def rules_search_result_kb(items: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for item in items[:6]:
+        label = f'[{item["level"]}] {item["title"]}'
+        if len(label) > 58:
+            label = f'{label[:57]}…'
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f'rules:view:{item["key"]}'),
+        ])
+    rows.append([InlineKeyboardButton('← Справочник', callback_data='rules:guide')])
+    return InlineKeyboardMarkup(rows)
+
+
+def rules_mylib_levels_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('A1', callback_data='rules:mylib:level:a1:0'),
+            InlineKeyboardButton('A2', callback_data='rules:mylib:level:a2:0'),
+            InlineKeyboardButton('B1', callback_data='rules:mylib:level:b1:0'),
+            InlineKeyboardButton('B2', callback_data='rules:mylib:level:b2:0'),
+            InlineKeyboardButton('C1', callback_data='rules:mylib:level:c1:0'),
+        ],
+        [InlineKeyboardButton('← Мои правила', callback_data='rules:mylib')],
+    ])
+
+
+def rules_mylib_list_page_kb(
+    prefix: str,
+    *,
+    items: list[dict],
+    page: int,
+    pages: int,
+    back_data: str = 'rules:mylib',
+    practice_count: int = 0,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if practice_count > 0:
+        rows.append([
+            InlineKeyboardButton(
+                f'🎯 Практика · {practice_count}',
+                callback_data='rules:repeat',
+            ),
+        ])
+    for item in items:
+        label = f'{item.get("mark", "•")} [{item["level"]}] {item["title"]}'
+        if len(label) > 58:
+            label = f'{label[:57]}…'
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f'rules:view:{item["key"]}'),
+        ])
+    nav = _rules_page_nav_row(prefix, page=page, pages=pages)
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton('← Назад', callback_data=back_data)])
+    return InlineKeyboardMarkup(rows)
+
+
+def rules_hub_kb(*, practice_count: int = 0) -> InlineKeyboardMarkup:
+    label = f'🎯 Практика · {practice_count}' if practice_count else '🎯 Практика'
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(label, callback_data='rules:repeat'),
+            InlineKeyboardButton('📘 Справочник', callback_data='rules:guide'),
+            InlineKeyboardButton('📗 Мои правила', callback_data='rules:mylib'),
+        ],
+    ])
+
+
+def rules_mylib_hub_kb(*, practice_count: int = 0) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton('✅ Выучил', callback_data='rules:mylib:learned:0'),
+            InlineKeyboardButton('🟢 Уже знаю', callback_data='rules:mylib:known:0'),
+        ],
+        [
+            InlineKeyboardButton('📁 Темы', callback_data='rules:mylib:topics'),
+            InlineKeyboardButton('📊 Уровни', callback_data='rules:mylib:levels'),
+        ],
+    ]
+    if practice_count > 0:
+        rows.insert(0, [
+            InlineKeyboardButton(
+                f'🎯 Практика · {practice_count}',
+                callback_data='rules:repeat',
+            ),
+        ])
+    rows.append([InlineKeyboardButton('← Грамматика', callback_data='rules:hub')])
+    return InlineKeyboardMarkup(rows)
+
+
+def rules_list_page_kb(
+    *,
+    items: list[dict],
+    status: str,
+    page: int,
+    pages: int,
+) -> InlineKeyboardMarkup:
+    prefix = f'rules:mylib:{status}'
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in items:
+        label = f'[{item["level"]}] {item["title"]}'
+        if len(label) > 58:
+            label = f'{label[:57]}…'
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f'rules:view:{item["key"]}'),
+        ])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton('◀️', callback_data=f'{prefix}:{page - 1}'))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton('▶️', callback_data=f'{prefix}:{page + 1}'))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton('← Мои правила', callback_data='rules:mylib')])
+    rows.append([InlineKeyboardButton('← Грамматика', callback_data='rules:hub')])
+    return InlineKeyboardMarkup(rows)
+
+
 def rules_topics_kb(topics: dict[str, list]) -> InlineKeyboardMarkup:
-    """First level: pick a topic section."""
+    """Topic sections inside the grammar guide."""
     rows = []
     for i, (topic, rules) in enumerate(topics.items()):
         done = sum(1 for r in rules if r.get('mark') != '⬜')
@@ -819,8 +1100,7 @@ def rules_topics_kb(topics: dict[str, list]) -> InlineKeyboardMarkup:
                 callback_data=f'rules:topic:{i}',
             )
         ])
-    rows.append([InlineKeyboardButton('🎯 Тренировать правила', callback_data='rules:drill')])
-    rows.append([InlineKeyboardButton('🏠 В меню', callback_data='nav:menu')])
+    rows.append([InlineKeyboardButton('← Грамматика', callback_data='rules:hub')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -832,8 +1112,8 @@ def rules_topic_kb(topic: str, rules: list[dict]) -> InlineKeyboardMarkup:
         rows.append([
             InlineKeyboardButton(label[:60], callback_data=f'rules:view:{rule["key"]}'),
         ])
-    rows.append([InlineKeyboardButton('◀️ К разделам', callback_data='rules:map')])
-    rows.append([InlineKeyboardButton('🏠 В меню', callback_data='nav:menu')])
+    rows.append([InlineKeyboardButton('◀️ К разделам', callback_data='rules:guide')])
+    rows.append([InlineKeyboardButton('← Грамматика', callback_data='rules:hub')])
     return InlineKeyboardMarkup(rows)
 
 
@@ -841,17 +1121,32 @@ def rules_map_kb(topics: dict[str, list]) -> InlineKeyboardMarkup:
     return rules_topics_kb(topics)
 
 
-def rule_detail_kb(rule_key: str, status: str) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton('🔊 Слушать примеры', callback_data=f'rules:listen:{rule_key}')],
+def rule_detail_kb(
+    rule_key: str,
+    status: str,
+    *,
+    has_examples: bool = False,
+    back_data: str | None = None,
+) -> InlineKeyboardMarkup:
+    del has_examples  # always show full 2×2 layout; handler validates examples
+    in_library = status in ('learned', 'known')
+    mark_btn = InlineKeyboardButton(
+        '✅ В библиотеке' if in_library else '✅ Выучил',
+        callback_data=f'rule:learn:{rule_key}',
+    )
+    return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton('✅ Выучил', callback_data=f'rule:learn:{rule_key}'),
-            InlineKeyboardButton('👌 Уже знаю', callback_data=f'rule:known:{rule_key}'),
+            mark_btn,
+            InlineKeyboardButton('🎯 Тренировать', callback_data=f'rules:train:{rule_key}'),
         ],
-        [InlineKeyboardButton('🎯 Тренировать', callback_data=f'rules:train:{rule_key}')],
-        [InlineKeyboardButton('◀️ К карте правил', callback_data='rules:map')],
-    ]
-    return InlineKeyboardMarkup(rows)
+        [
+            InlineKeyboardButton('📖 Ещё примеры', callback_data=f'rules:examples:{rule_key}'),
+            InlineKeyboardButton(
+                '◀️ Назад',
+                callback_data=back_data or 'rules:guide',
+            ),
+        ],
+    ])
 
 
 def mistake_rule_kb(rule_key: str, status: str) -> InlineKeyboardMarkup:

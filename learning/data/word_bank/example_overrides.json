@@ -50,5 +50,9 @@
   "learn": {
     "example": "I learn ten new words every week.",
     "example_ru": "Я учу десять новых слов каждую неделю."
+  },
+  "watt": {
+    "example": "This device uses one watt of power.",
+    "example_ru": "Это устройство потребляет один ватт мощности."
   }
 }

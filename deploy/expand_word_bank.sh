@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build conversational word bank v2: Kelly-only, no junk, native exclusive levels, 2-3 examples.
+# Expand word bank toward 5000: Kelly + EN-RU + FreeDict supplements, then examples.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY="${PY:-.venv/bin/python}"
-LOG="${LOG:-/home/mentor/build_word_bank_v2.log}"
+LOG="${LOG:-/home/mentor/expand_word_bank.log}"
 STATUS="${STATUS:-/home/mentor/word_bank_status.txt}"
 PHASE="${PHASE:-/home/mentor/word_bank_phase.txt}"
 
@@ -20,34 +20,31 @@ write_status() {
   cat "$STATUS" >> "$LOG"
 }
 
-phase "START"
-write_status
-
-log "migrate"
-"$PY" manage.py migrate --noinput >> "$LOG" 2>&1
-
-phase "1/5 fetch Kelly + FreeDict (RU enrichment only)"
+phase "1/4 fetch + merge supplements"
+log "fix_translations (pre-clean)"
+"$PY" manage.py fix_translations >> "$LOG" 2>&1 || true
+log "seed fetch Kelly + EN-RU + FreeDict supplements"
 "$PY" manage.py seed_word_bank --fetch --fetch-freedict --include-remote --apply-quotas --level c1 >> "$LOG" 2>&1
 write_status
 
-phase "2/5 fill 2-3 examples per level"
-for level in a1 a2 b1 b2 c1; do
-  phase "2/5 fill ${level}"
+phase "2/4 fill examples (new words only)"
+for level in b2 c1; do
+  phase "2/4 fill ${level}"
   "$PY" manage.py fill_level_examples --level "$level" --until-complete >> "$LOG" 2>&1 || true
   write_status
 done
 
-phase "3/5 import examples + purge junk slugs"
+phase "3/4 import examples"
 "$PY" manage.py seed_word_bank --include-remote --apply-quotas --level c1 >> "$LOG" 2>&1
 write_status
 
-phase "4/5 second example pass"
-for level in a1 a2 b1 b2 c1; do
-  "$PY" manage.py fill_level_examples --level "$level" --until-complete >> "$LOG" 2>&1 || true
+phase "4/4 second pass B2 C1"
+for level in b2 c1; do
+  "$PY" manage.py fill_level_examples --level "$level" --limit 200 >> "$LOG" 2>&1 || true
 done
 "$PY" manage.py seed_word_bank --include-remote --apply-quotas --level c1 >> "$LOG" 2>&1
-write_status
+"$PY" manage.py fix_translations >> "$LOG" 2>&1 || true
 
 phase "DONE"
 write_status
-log "=== BUILD WORD BANK V2 COMPLETE ==="
+log "=== EXPAND WORD BANK COMPLETE ==="

@@ -36,6 +36,7 @@ class EnglishTutor:
         fulfillment_kind: str = '',
         phrase_practice: bool = False,
         practice_phrase: str = '',
+        translation_help: bool = False,
     ) -> str:
         system = build_tutor_system(
             level=level, check_english=check_english, from_voice=from_voice,
@@ -43,6 +44,7 @@ class EnglishTutor:
             grammar_followup=grammar_followup, followup_target=followup_target,
             spirit_fulfillment=spirit_fulfillment, fulfillment_kind=fulfillment_kind,
             phrase_practice=phrase_practice, practice_phrase=practice_phrase,
+            translation_help=translation_help,
         )
         window = list(history)[-settings.AI_HISTORY_MESSAGES:]
         if grammar_followup and followup_target and window and window[-1].role == 'user':
@@ -68,6 +70,8 @@ class EnglishTutor:
             cap = 1100
         elif phrase_practice:
             cap = 1000
+        elif translation_help:
+            cap = 750
         elif grammar_followup:
             cap = 900
         elif check_english:

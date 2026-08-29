@@ -463,15 +463,25 @@ def commit_daily_learning_entries(
         mark_bank_entry(user_id, entry.id, UserWordBankStatus.Status.LEARNING)
 
 
-def format_word_hub_text(overview: dict[str, Any]) -> str:
+def format_word_hub_text(
+    overview: dict[str, Any],
+    *,
+    diagnostic_completed: bool = True,
+) -> str:
     user_lvl = overview['user_level'].upper()
     learning_total = sum(s['learning'] for s in overview['levels'])
     lines = [
         '📚 <b>Слова</b>',
         '',
-        f'Твой уровень: <b>{user_lvl}</b> · по результатам теста',
-        '',
     ]
+    if diagnostic_completed:
+        lines.append(f'Твой уровень: <b>{user_lvl}</b> · по результатам теста')
+    else:
+        lines.append(
+            f'Пока без теста · слова с <b>{user_lvl}</b> '
+            f'<i>(уточни уровень — подберём точнее)</i>',
+        )
+    lines.append('')
     for stat in overview['levels']:
         lvl = stat['level'].upper()
         here = ' ← ты здесь' if stat['level'] == overview['user_level'] else ''

@@ -98,9 +98,10 @@ ssh root@109.71.244.197 "sudo -u mentor bash -c 'cd /home/mentor/english-mentor-
 | Файл | Зачем |
 |------|--------|
 | `PROJECT_STATE.md` | Что за проект, архитектура |
+| `docs/WORD_BANK_NAV.md` | **LOCKED:** Слова / словарь / тренировка — навигация и логика очереди |
+| `docs/PRODUCT_INVARIANTS.md` | Не ломать TTS, STT, тьютора, словарь (§8) |
 | `docs/TARIFFS.md` | Тарифы и лимиты |
 | `docs/YOOKASSA_SUBMISSION.md` | Материалы для ЮKassa |
-| `docs/PRODUCT_INVARIANTS.md` | TTS/STT — не ломать |
 | `docs/DAILY_PROGRAM_V2.md` | План дня |
 
 ---

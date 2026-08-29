@@ -67,3 +67,12 @@ class TranslationEnrichTests(SimpleTestCase):
         self.assertIn('агрессивный', result)
         self.assertNotIn('Characterized', result)
         self.assertNotIn('/', result)
+
+    def test_assignment_override_full_homework_phrase(self):
+        raw = 'назначение, домашнее, ассигнование, документ'
+        result = sanitize_translation_for_display(raw, english='assignment')
+        self.assertEqual(
+            result,
+            'задание, домашнее задание, назначение, поручение',
+        )
+        self.assertNotIn('домашнее,', result)

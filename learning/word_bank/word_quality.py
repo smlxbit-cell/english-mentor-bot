@@ -23,6 +23,16 @@ _MEDICAL_RU = re.compile(
     re.I,
 )
 _CONSONANT_RUN = re.compile(r'[^aeiou\-]{5,}', re.I)
+# Conversational bank: no obscure 2-letter abbreviations (ab, ac, …).
+_TWO_LETTER_ALLOW = frozenset({
+    'ok', 'tv', 'pc', 'id', 'uk', 'us', 'eu', 'ai', 'it', 'pm', 'am',
+})
+# Latin-only 2–3 letter tokens that are abbreviations, not vocabulary.
+_ABBREV_RE = re.compile(
+    r'^(?:ab|ac|ad|bc|cf|eg|et|ex|ff|ib|id|ie|lb|oz|vs|viz|vol|yr'
+    r'|adj|adv|fig|max|min|num|ref|syn)$',
+    re.I,
+)
 
 
 def is_acceptable_headword(
@@ -40,6 +50,13 @@ def is_acceptable_headword(
     ru = (translation or '').strip()
     if not en or len(en) < 2:
         return False
+    if len(en) == 2:
+        if en not in _TWO_LETTER_ALLOW:
+            return False
+    if len(en) <= 3 and _ABBREV_RE.match(en):
+        return False
+    if not en.isalpha() and not en.replace('-', '').isalpha():
+        return False
     if len(en) > 22:
         return False
     if en.count('-') > 2:
@@ -53,8 +70,8 @@ def is_acceptable_headword(
     if ru and _MEDICAL_RU.search(ru.lower()):
         return False
     pos = (part_of_speech or '').lower()
-    if source == 'freedict_supplement' and not pos:
-        return False
+    if source in ('enru_supplement', 'freedict_supplement'):
+        return bool((translation or '').strip())
     return True
 
 

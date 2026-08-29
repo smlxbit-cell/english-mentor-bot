@@ -58,6 +58,10 @@ def collect_word_bank_rows(
 
     if fetch_remote:
         from learning.word_bank.fetch_remote import iter_remote_rows
+        from learning.word_bank.supplement import (
+            iter_enru_supplement_rows,
+            iter_freedict_supplement_rows,
+        )
 
         remote_rows = list(iter_remote_rows(freedict_lookup=freedict_lookup))
         if data_dir:
@@ -68,11 +72,46 @@ def collect_word_bank_rows(
             )
         for row in remote_rows:
             merged[row['slug']] = row
+
+        kelly_words = {row['english'].lower() for row in remote_rows}
+        enru_words = set()
+        try:
+            from learning.word_bank.fetch_remote import load_en_ru_lookup
+            enru_words = set(load_en_ru_lookup().keys())
+        except Exception:
+            pass
+        supplement_rows = list(
+            iter_enru_supplement_rows(
+                kelly_words=kelly_words,
+                freedict_lookup=freedict_lookup,
+            ),
+        )
+        supplement_rows.extend(
+            iter_freedict_supplement_rows(
+                kelly_words=kelly_words,
+                enru_words=enru_words,
+                freedict_lookup=freedict_lookup,
+            ),
+        )
+        if data_dir:
+            sup_path = data_dir / 'supplement.json'
+            sup_path.write_text(
+                json.dumps(supplement_rows, ensure_ascii=False, indent=0),
+                encoding='utf-8',
+            )
+        for row in supplement_rows:
+            if row['slug'] not in merged:
+                merged[row['slug']] = row
     elif include_remote and data_dir:
         cache_path = data_dir / REMOTE_CACHE
         if cache_path.is_file():
             for row in json.loads(cache_path.read_text(encoding='utf-8')):
                 merged[row['slug']] = row
+        sup_path = data_dir / 'supplement.json'
+        if sup_path.is_file():
+            for row in json.loads(sup_path.read_text(encoding='utf-8')):
+                if row['slug'] not in merged:
+                    merged[row['slug']] = row
 
     for row in iter_builtin_rows():
         merged[row['slug']] = row
