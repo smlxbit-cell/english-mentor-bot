@@ -119,7 +119,9 @@ def format_rules_bank_page_text(
         lines.append('Правил пока нет.')
         return '\n'.join(lines)
     if pages > 1:
-        lines.append(f'<i>Стр. {page + 1}/{pages}</i>')
+        lines.append(f'<i>Стр. {page + 1}/{pages} · всего {total}</i>')
+    else:
+        lines.append(f'<i>Уроков: {total} — выбирай любой</i>')
     return '\n'.join(lines)
 
 
@@ -275,7 +277,7 @@ def browse_rules_bank(
 ) -> dict[str, Any]:
     levels = [level.lower()] if level else _levels_up_to(user_level)
     qs = GrammarRule.objects.filter(is_published=True, level__in=levels).order_by(
-        'level', 'order', 'title',
+        'order', 'title',
     )
     if category and level:
         topics = _topics_for_category(level, category)

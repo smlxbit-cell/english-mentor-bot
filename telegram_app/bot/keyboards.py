@@ -869,7 +869,7 @@ def rules_bank_categories_kb(categories: list[dict], *, level: str) -> InlineKey
     for cat in categories:
         row.append(InlineKeyboardButton(
             cat['button'],
-            callback_data=f'rules:bank:topics:{level}:{cat["slug"]}',
+            callback_data=f'rules:bank:cat:{level}:{cat["slug"]}:0',
         ))
         if len(row) == 2:
             rows.append(row)
@@ -947,12 +947,9 @@ def rules_bank_list_page_kb(
         if nav:
             action_row.extend(nav)
         rows.append(action_row)
-    if topic_idx is not None and category:
-        back = f'rules:bank:topics:{level}:{category}'
-        back_label = '← Темы'
-    elif category:
-        back = f'rules:bank:topics:{level}:{category}'
-        back_label = '← Темы'
+    if category:
+        back = f'rules:bank:pick:{level}'
+        back_label = '← Разделы'
     else:
         back = 'rules:bank'
         back_label = '← Уровни'

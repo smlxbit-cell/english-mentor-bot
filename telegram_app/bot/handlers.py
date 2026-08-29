@@ -2131,53 +2131,36 @@ async def _show_rules_bank_page(
     topic: str | None = None,
     topic_idx: int | None = None,
 ):
+    del topic, topic_idx
     profile = await _ensure_profile(update, context)
     user_level = _practice_user_level(profile)
     from learning.grammar.categories import category_label
 
-    if category and topic:
-        prefix = f'rules:bank:topic:{level}:{category}:{topic_idx}'
-    elif category:
+    if category:
         prefix = f'rules:bank:cat:{level}:{category}'
+        title = f'📊 {level.upper()} · {category_label(category)}'
     else:
         prefix = f'rules:bank:level:{level}'
+        title = f'📊 {level.upper()} · правила'
     data = await db.browse_rules_bank(
         profile['id'], user_level, level=level, category=category,
-        topic=topic, page=page, only_unseen=False,
+        page=page, only_unseen=False,
     )
-    if category and topic:
-        text = await db.format_rules_topic_page_text(
-            level=level,
-            category=category,
-            topic=topic,
-            page=data['page'],
-            pages=data['pages'],
-        )
-    elif category:
-        text = await db.format_rules_bank_page_text(
-            title=f'📊 {level.upper()} · {category_label(category)}',
-            items=data['items'],
-            page=data['page'],
-            pages=data['pages'],
-            total=data['total'],
-            category=category,
-        )
-    else:
-        text = await db.format_rules_bank_page_text(
-            title=f'📊 {level.upper()} · правила',
-            items=data['items'],
-            page=data['page'],
-            pages=data['pages'],
-            total=data['total'],
-            category=category,
-        )
+    text = await db.format_rules_bank_page_text(
+        title=title,
+        items=data['items'],
+        page=data['page'],
+        pages=data['pages'],
+        total=data['total'],
+        category=category,
+    )
     context.user_data['rules_bank_page_cb'] = f'{prefix}:{page}'
     await _send(
         context, _chat_id(update), text,
         reply_markup=keyboards.rules_bank_list_page_kb(
             data['items'], prefix,
             page=data['page'], pages=data['pages'],
-            level=level, category=category, topic_idx=topic_idx,
+            level=level, category=category,
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -2189,14 +2172,10 @@ async def _refresh_rules_bank_page(update: Update, context: ContextTypes.DEFAULT
         from learning.grammar.categories import parse_rules_topic_page_cb
         parsed = parse_rules_topic_page_cb(page_cb)
         if parsed:
-            level, category, topic_idx, page = parsed
-            topic = await db.category_topic_at(level, category, topic_idx)
-            if topic:
-                await _show_rules_bank_page(
-                    update, context,
-                    level=level, page=page, category=category,
-                    topic=topic, topic_idx=topic_idx,
-                )
+            level, category, _topic_idx, page = parsed
+            await _show_rules_bank_page(
+                update, context, level=level, page=page, category=category,
+            )
         return
     if page_cb.startswith('rules:bank:cat:'):
         parts = page_cb.split(':')
@@ -6682,27 +6661,18 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split(':')
         if len(parts) < 5:
             return
-        level = parts[3]
-        category = parts[4]
-        await _show_rules_category_topics(
-            update, context, level=level, category=category,
+        level, category = parts[3], parts[4]
+        await _show_rules_bank_page(
+            update, context, level=level, page=0, category=category,
         )
     elif data.startswith('rules:bank:topic:'):
         from learning.grammar.categories import parse_rules_topic_page_cb
         parsed = parse_rules_topic_page_cb(data)
         if not parsed:
             return
-        level, category, topic_idx, page = parsed
-        topic = await db.category_topic_at(level, category, topic_idx)
-        if not topic:
-            await _show_rules_category_topics(
-                update, context, level=level, category=category,
-            )
-            return
+        level, category, _topic_idx, page = parsed
         await _show_rules_bank_page(
-            update, context,
-            level=level, page=page, category=category,
-            topic=topic, topic_idx=topic_idx,
+            update, context, level=level, page=page, category=category,
         )
     elif data.startswith('rules:bank:cat:'):
         parts = data.split(':')
@@ -6710,8 +6680,9 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         level = parts[3]
         category = parts[4]
-        await _show_rules_category_topics(
-            update, context, level=level, category=category,
+        page = int(parts[5])
+        await _show_rules_bank_page(
+            update, context, level=level, page=page, category=category,
         )
     elif data.startswith('rules:bank:level:'):
         from learning.word_bank.navigation import parse_paged_callback
