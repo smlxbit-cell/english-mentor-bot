@@ -869,7 +869,7 @@ def rules_bank_categories_kb(categories: list[dict], *, level: str) -> InlineKey
     for cat in categories:
         row.append(InlineKeyboardButton(
             cat['button'],
-            callback_data=f'rules:bank:cat:{level}:{cat["slug"]}:0',
+            callback_data=f'rules:bank:topics:{level}:{cat["slug"]}',
         ))
         if len(row) == 2:
             rows.append(row)
@@ -889,6 +889,26 @@ def _rules_page_nav_row(prefix: str, *, page: int, pages: int) -> list[InlineKey
     return nav or None
 
 
+def rules_bank_topics_kb(
+    topics: list[dict],
+    *,
+    level: str,
+    category: str,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in topics:
+        rows.append([
+            InlineKeyboardButton(
+                item['button'],
+                callback_data=f'rules:bank:topic:{level}:{category}:{item["idx"]}:0',
+            ),
+        ])
+    rows.append([
+        InlineKeyboardButton('← Разделы', callback_data=f'rules:bank:pick:{level}'),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
 def rules_bank_list_page_kb(
     items: list[dict],
     prefix: str,
@@ -897,6 +917,7 @@ def rules_bank_list_page_kb(
     pages: int,
     level: str,
     category: str | None = None,
+    topic_idx: int | None = None,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for item in items:
@@ -912,19 +933,30 @@ def rules_bank_list_page_kb(
         n = len(items)
         trainable = sum(1 for i in items if i.get('has_training'))
         train_n = trainable or n
-        cat_part = f':{category}' if category else ''
+        if topic_idx is not None and category:
+            train_cb = (
+                f'rules:bank:page:train:{level}:{category}:{topic_idx}:{page}'
+            )
+        else:
+            cat_part = f':{category}' if category else ''
+            train_cb = f'rules:bank:page:train:{level}{cat_part}:{page}'
         action_row = [
-            InlineKeyboardButton(
-                f'🎯 Практика · {train_n}',
-                callback_data=f'rules:bank:page:train:{level}{cat_part}:{page}',
-            ),
+            InlineKeyboardButton(f'🎯 Практика · {train_n}', callback_data=train_cb),
         ]
         nav = _rules_page_nav_row(prefix, page=page, pages=pages)
         if nav:
             action_row.extend(nav)
         rows.append(action_row)
-    back = f'rules:bank:pick:{level}' if category else 'rules:bank'
-    rows.append([InlineKeyboardButton('← Разделы' if category else '← Уровни', callback_data=back)])
+    if topic_idx is not None and category:
+        back = f'rules:bank:topics:{level}:{category}'
+        back_label = '← Темы'
+    elif category:
+        back = f'rules:bank:topics:{level}:{category}'
+        back_label = '← Темы'
+    else:
+        back = 'rules:bank'
+        back_label = '← Уровни'
+    rows.append([InlineKeyboardButton(back_label, callback_data=back)])
     return InlineKeyboardMarkup(rows)
 
 

@@ -58,7 +58,7 @@ TOPIC_TO_CATEGORY: dict[str, str] = {
 }
 
 LEVEL_CATEGORY_ORDER: dict[str, list[str]] = {
-    'a1': ['phrases', 'words', 'verbs', 'links', 'syntax'],
+    'a1': ['words', 'phrases', 'verbs', 'links', 'syntax'],
     'a2': ['phrases', 'verbs', 'words', 'links', 'syntax'],
     'b1': ['verbs', 'syntax', 'phrases', 'words', 'links'],
     'b2': ['verbs', 'syntax', 'words', 'links', 'phrases'],
@@ -81,8 +81,10 @@ def category_button_label(slug: str, count: int) -> str:
     return f'{emoji} {short} · {count}'
 
 
-def parse_rules_bank_page_cb(data: str, action: str) -> tuple[str, str | None, int] | None:
-    """Parse ``rules:bank:page:{action}:{level}[:{category}]:{page}``."""
+def parse_rules_bank_page_cb(
+    data: str, action: str,
+) -> tuple[str, str | None, int] | tuple[str, str, int, int] | None:
+    """Parse page train/learn callbacks with optional topic index."""
     prefix = f'rules:bank:page:{action}:'
     if not data.startswith(prefix):
         return None
@@ -90,14 +92,34 @@ def parse_rules_bank_page_cb(data: str, action: str) -> tuple[str, str | None, i
     parts = rest.split(':')
     if len(parts) == 2:
         level, page_s = parts
-        category = None
-    elif len(parts) == 3:
+        if not page_s.isdigit():
+            return None
+        return level, None, int(page_s)
+    if len(parts) == 3:
         level, category, page_s = parts
-    else:
+        if not page_s.isdigit():
+            return None
+        return level, category, int(page_s)
+    if len(parts) == 4:
+        level, category, topic_idx_s, page_s = parts
+        if not topic_idx_s.isdigit() or not page_s.isdigit():
+            return None
+        return level, category, int(topic_idx_s), int(page_s)
+    return None
+
+
+def parse_rules_topic_page_cb(data: str) -> tuple[str, str, int, int] | None:
+    """Parse ``rules:bank:topic:{level}:{category}:{topic_idx}:{page}``."""
+    prefix = 'rules:bank:topic:'
+    if not data.startswith(prefix):
         return None
-    if not page_s.isdigit():
+    parts = data[len(prefix):].split(':')
+    if len(parts) != 4:
         return None
-    return level, category, int(page_s)
+    level, category, topic_idx_s, page_s = parts
+    if not topic_idx_s.isdigit() or not page_s.isdigit():
+        return None
+    return level, category, int(topic_idx_s), int(page_s)
 
 
 def parse_rules_survey_page_cb(data: str) -> tuple[str, str | None, int] | None:

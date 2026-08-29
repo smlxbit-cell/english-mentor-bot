@@ -1858,6 +1858,34 @@ def format_rules_category_menu_text(*, level: str) -> str:
 
 
 @sync_to_async
+def list_category_topics(level: str, category: str) -> list:
+    from learning.grammar.service import list_category_topics as _list
+
+    return _list(level, category)
+
+
+@sync_to_async
+def category_topic_at(level: str, category: str, topic_idx: int) -> str | None:
+    from learning.grammar.service import category_topic_at as _at
+
+    return _at(level, category, topic_idx)
+
+
+@sync_to_async
+def format_rules_topic_menu_text(**kwargs) -> str:
+    from learning.grammar.service import format_rules_topic_menu_text as _fmt
+
+    return _fmt(**kwargs)
+
+
+@sync_to_async
+def format_rules_topic_page_text(**kwargs) -> str:
+    from learning.grammar.service import format_rules_topic_page_text as _fmt
+
+    return _fmt(**kwargs)
+
+
+@sync_to_async
 def pick_rule_survey_batch(profile_id: int, level: str, *, limit: int = 10) -> list:
     from learning.grammar.service import pick_rule_survey_batch as _pick
 

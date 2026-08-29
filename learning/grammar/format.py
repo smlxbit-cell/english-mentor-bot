@@ -150,6 +150,9 @@ def format_rule_detail_html(rule: dict[str, Any], *, has_card: bool = False) -> 
     title = rule.get('title') or ''
 
     if has_card:
+        topic = rule.get('topic') or ''
+        if topic:
+            parts.append(f'📂 {_esc(topic)}')
         summary = rule.get('summary_ru') or ''
         if summary:
             parts.append(_esc(summary))

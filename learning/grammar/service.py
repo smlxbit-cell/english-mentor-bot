@@ -190,10 +190,76 @@ def list_rule_categories(
 
 def format_rules_category_menu_text(*, level: str) -> str:
     lvl = level.upper()
+    if level.lower() == 'a1':
+        hint = 'С нуля: 📝 местоимения → 👋 фразы → ⚡ глаголы.'
+    else:
+        hint = 'Выберите раздел — внутри сначала тема, потом уроки.'
+    return f'📊 <b>{lvl} · разделы</b>\n\n<i>{hint}</i>'
+
+
+def list_category_topics(
+    level: str,
+    category: str,
+) -> list[dict[str, Any]]:
+    """Topics inside a level+category — sorted by first rule order."""
+    topics = _topics_for_category(level, category)
+    if not topics:
+        return []
+    qs = GrammarRule.objects.filter(
+        is_published=True,
+        level=level.lower(),
+        topic__in=topics,
+    ).order_by('order', 'title')
+    counts: dict[str, int] = {}
+    first_order: dict[str, int] = {}
+    for rule in qs:
+        counts[rule.topic] = counts.get(rule.topic, 0) + 1
+        if rule.topic not in first_order:
+            first_order[rule.topic] = rule.order
+    ordered = sorted(counts.keys(), key=lambda t: (first_order.get(t, 999), t))
+    return [
+        {
+            'topic': topic,
+            'count': counts[topic],
+            'idx': idx,
+            'button': f'📂 {topic} · {counts[topic]}',
+        }
+        for idx, topic in enumerate(ordered)
+    ]
+
+
+def category_topic_at(level: str, category: str, topic_idx: int) -> str | None:
+    topics = list_category_topics(level, category)
+    if topic_idx < 0 or topic_idx >= len(topics):
+        return None
+    return topics[topic_idx]['topic']
+
+
+def format_rules_topic_menu_text(*, level: str, category: str) -> str:
     return (
-        f'📊 <b>{lvl} · разделы</b>\n\n'
-        '<i>Выберите раздел — уроки внутри идут сверху вниз.</i>'
+        f'<b>📊 {level.upper()} · {category_label(category)}</b>\n\n'
+        '<i>Выберите тему — затем уроки внутри.</i>'
     )
+
+
+def format_rules_topic_page_text(
+    *,
+    level: str,
+    category: str,
+    topic: str,
+    page: int,
+    pages: int,
+) -> str:
+    lines = [
+        f'<b>📊 {level.upper()} · {category_label(category)}</b>',
+        f'📂 <b>{topic}</b>',
+    ]
+    hint = CATEGORY_PAGE_HINTS.get(category or '')
+    if hint:
+        lines.append(f'<i>{hint}</i>')
+    if pages > 1:
+        lines.append(f'<i>Стр. {page + 1}/{pages}</i>')
+    return '\n'.join(lines)
 
 
 def browse_rules_bank(
@@ -202,6 +268,7 @@ def browse_rules_bank(
     *,
     level: str | None = None,
     category: str | None = None,
+    topic: str | None = None,
     only_unseen: bool = True,
     page: int = 0,
     page_size: int = PAGE_SIZE,
@@ -212,7 +279,9 @@ def browse_rules_bank(
     )
     if category and level:
         topics = _topics_for_category(level, category)
-        if topics:
+        if topic:
+            qs = qs.filter(topic=topic)
+        elif topics:
             qs = qs.filter(topic__in=topics)
         elif category != 'other':
             qs = qs.none()
@@ -238,6 +307,7 @@ def browse_rules_bank(
         'pages': pages,
         'level': level,
         'category': category,
+        'topic': topic,
     }
 
 
