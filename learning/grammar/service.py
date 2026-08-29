@@ -195,7 +195,7 @@ def format_rules_category_menu_text(*, level: str) -> str:
     if level.lower() == 'a1':
         hint = 'С нуля: 📝 местоимения → 👋 фразы → ⚡ глаголы.'
     else:
-        hint = 'Выберите раздел — внутри сначала тема, потом уроки.'
+        hint = 'Выберите раздел — уроки внутри идут сверху вниз.'
     return f'📊 <b>{lvl} · разделы</b>\n\n<i>{hint}</i>'
 
 
@@ -262,6 +262,51 @@ def format_rules_topic_page_text(
     if pages > 1:
         lines.append(f'<i>Стр. {page + 1}/{pages}</i>')
     return '\n'.join(lines)
+
+
+def program_rule_keys(level: str) -> list[str]:
+    """All rule keys on a level in program order (sections → lessons)."""
+    lvl = level.lower()
+    cat_order = LEVEL_CATEGORY_ORDER.get(lvl, LEVEL_CATEGORY_ORDER['a1'])
+    keys: list[str] = []
+    for cat in cat_order:
+        topics = _topics_for_category(lvl, cat)
+        if not topics:
+            continue
+        qs = GrammarRule.objects.filter(
+            is_published=True,
+            level=lvl,
+            topic__in=topics,
+        ).order_by('order', 'title')
+        keys.extend(qs.values_list('key', flat=True))
+    return keys
+
+
+def rule_program_neighbors(rule_key: str) -> dict[str, Any]:
+    """Prev/next lesson keys on the level program + label for the forward button."""
+    rule = GrammarRule.objects.filter(key=rule_key, is_published=True).first()
+    if not rule:
+        return {'prev_key': None, 'next_key': None, 'next_label': '▶️ Дальше'}
+    keys = program_rule_keys(rule.level)
+    if rule_key not in keys:
+        return {'prev_key': None, 'next_key': None, 'next_label': '▶️ Дальше'}
+    idx = keys.index(rule_key)
+    prev_key = keys[idx - 1] if idx > 0 else None
+    next_key = keys[idx + 1] if idx + 1 < len(keys) else None
+    next_label = '▶️ Дальше'
+    if next_key:
+        next_rule = GrammarRule.objects.filter(key=next_key).first()
+        if next_rule:
+            cur_cat = category_slug_for_topic(rule.topic)
+            nxt_cat = category_slug_for_topic(next_rule.topic)
+            if nxt_cat != cur_cat:
+                _, title = CATEGORY_META.get(nxt_cat, ('', 'Дальше'))
+                next_label = f'▶️ {title}'
+    return {
+        'prev_key': prev_key,
+        'next_key': next_key,
+        'next_label': next_label,
+    }
 
 
 def browse_rules_bank(

@@ -1156,14 +1156,17 @@ def rule_detail_kb(
     *,
     has_examples: bool = False,
     back_data: str | None = None,
+    prev_key: str | None = None,
+    next_key: str | None = None,
+    next_label: str = '▶️ Дальше',
 ) -> InlineKeyboardMarkup:
-    del has_examples  # always show full 2×2 layout; handler validates examples
+    del has_examples
     in_library = status in ('learned', 'known')
     mark_btn = InlineKeyboardButton(
         '✅ В библиотеке' if in_library else '✅ Выучил',
         callback_data=f'rule:learn:{rule_key}',
     )
-    return InlineKeyboardMarkup([
+    rows: list[list[InlineKeyboardButton]] = [
         [
             mark_btn,
             InlineKeyboardButton('🎯 Тренировать', callback_data=f'rules:train:{rule_key}'),
@@ -1171,11 +1174,25 @@ def rule_detail_kb(
         [
             InlineKeyboardButton('📖 Ещё примеры', callback_data=f'rules:examples:{rule_key}'),
             InlineKeyboardButton(
-                '◀️ Назад',
+                '◀️ К списку',
                 callback_data=back_data or 'rules:guide',
             ),
         ],
-    ])
+    ]
+    nav: list[InlineKeyboardButton] = []
+    if prev_key:
+        nav.append(InlineKeyboardButton(
+            '◀️ Пред.',
+            callback_data=f'rules:view:{prev_key}',
+        ))
+    if next_key:
+        nav.append(InlineKeyboardButton(
+            next_label[:58],
+            callback_data=f'rules:view:{next_key}',
+        ))
+    if nav:
+        rows.append(nav)
+    return InlineKeyboardMarkup(rows)
 
 
 def mistake_rule_kb(rule_key: str, status: str) -> InlineKeyboardMarkup:

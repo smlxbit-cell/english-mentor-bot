@@ -1886,6 +1886,13 @@ def format_rules_topic_page_text(**kwargs) -> str:
 
 
 @sync_to_async
+def rule_program_neighbors(rule_key: str) -> dict:
+    from learning.grammar.service import rule_program_neighbors as _nav
+
+    return _nav(rule_key)
+
+
+@sync_to_async
 def pick_rule_survey_batch(profile_id: int, level: str, *, limit: int = 10) -> list:
     from learning.grammar.service import pick_rule_survey_batch as _pick
 

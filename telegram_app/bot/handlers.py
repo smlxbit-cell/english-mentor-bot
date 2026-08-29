@@ -2618,19 +2618,30 @@ async def show_rule_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         return
     from learning.grammar.format import grammar_speak_text
 
+    from learning.grammar.categories import category_slug_for_topic
+
     speak_content = {
         'table': rule.get('table', {}),
         'tip_ru': rule.get('tip_ru', ''),
     }
     context.user_data['tts_text'] = grammar_speak_text(speak_content) or ''
-    card_path = rule_card_absolute_path(rule_key)
-    has_card = card_path is not None
+    cat = category_slug_for_topic(rule.get('topic') or '')
+    if rule.get('level') and cat:
+        context.user_data['rules_bank_page_cb'] = (
+            f'rules:bank:cat:{rule["level"].lower()}:{cat}:0'
+        )
     back_data = context.user_data.get('rules_bank_page_cb')
+    nav = await db.rule_program_neighbors(rule_key)
     kb = keyboards.rule_detail_kb(
         rule_key,
         rule.get('status', ''),
         back_data=back_data,
+        prev_key=nav.get('prev_key'),
+        next_key=nav.get('next_key'),
+        next_label=nav.get('next_label') or '▶️ Дальше',
     )
+    card_path = rule_card_absolute_path(rule_key)
+    has_card = card_path is not None
     if has_card:
         body = _rule_to_html(rule, has_card=True)
         if not body.strip():
