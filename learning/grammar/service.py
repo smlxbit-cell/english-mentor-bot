@@ -192,7 +192,7 @@ def format_rules_category_menu_text(*, level: str) -> str:
     lvl = level.upper()
     return (
         f'📊 <b>{lvl} · разделы</b>\n\n'
-        '<i>Выберите раздел. С нуля: 👋 фразы → 📝 местоимения → ⚡ to be.</i>'
+        '<i>Выберите раздел — уроки внутри идут сверху вниз.</i>'
     )
 
 

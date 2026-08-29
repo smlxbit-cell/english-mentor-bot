@@ -58,7 +58,7 @@ TOPIC_TO_CATEGORY: dict[str, str] = {
 }
 
 LEVEL_CATEGORY_ORDER: dict[str, list[str]] = {
-    'a1': ['phrases', 'verbs', 'words', 'links', 'syntax'],
+    'a1': ['phrases', 'words', 'verbs', 'links', 'syntax'],
     'a2': ['phrases', 'verbs', 'words', 'links', 'syntax'],
     'b1': ['verbs', 'syntax', 'phrases', 'words', 'links'],
     'b2': ['verbs', 'syntax', 'words', 'links', 'phrases'],
